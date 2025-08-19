@@ -1,0 +1,42 @@
+{
+  "name": "scoremate-monorepo",
+  "version": "1.0.0",
+  "description": "ScoreMate Server - Monorepo with Django Backend & Next.js Frontend",
+  "scripts": {
+    "dev": "docker-compose up",
+    "dev:detached": "docker-compose up -d",
+    "dev:backend": "docker-compose up web worker db cache storage",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:frontend:local": "cd frontend && npm ci && npm run dev",
+    
+    "build": "npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "docker-compose build web worker",
+    
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "docker-compose exec web python -m pytest",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend:coverage": "docker-compose exec web python -m pytest --cov",
+    
+    "lint": "npm run lint:frontend",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "docker-compose exec web ruff check .",
+    
+    "clean": "npm run clean:frontend && docker-compose down -v",
+    "clean:frontend": "cd frontend && rm -rf .next node_modules",
+    
+    "logs": "docker-compose logs -f",
+    "logs:backend": "docker-compose logs -f web worker",
+    "logs:frontend": "docker-compose logs -f frontend",
+    
+    "stop": "docker-compose down",
+    "restart": "docker-compose restart",
+    "rebuild": "docker-compose down && docker-compose build && docker-compose up"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  },
+  "workspaces": [
+    "frontend"
+  ]
+}

@@ -11,10 +11,11 @@ dist/
 # Environments
 venv/
 .env
+backend/.env
 
 # Django specific
-media/
-staticfiles/
+backend/media/
+backend/staticfiles/
 db.sqlite3
 
 # IDEs and editors
@@ -35,3 +36,17 @@ Thumbs.db
 
 # MinIO data (if running locally outside of docker volume)
 # minio_data/
+
+# Next.js specific
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+frontend/.env*.local
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Logs directory
+logs/

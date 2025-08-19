@@ -1,0 +1,23 @@
+# Production requirements (extends requirements.txt)
+-r requirements.txt
+
+# Production web server
+gunicorn==21.2.0
+
+# Production-grade database pooling
+psycopg2-binary==2.9.10
+
+# Monitoring and logging
+sentry-sdk[django]==2.13.0
+
+# Security
+django-cors-headers==4.3.1
+
+# Performance
+redis[hiredis]==6.4.0
+
+# Static file serving (if needed)
+whitenoise==6.8.1
+
+# Remove development dependencies
+# (pytest packages will not be included in production)

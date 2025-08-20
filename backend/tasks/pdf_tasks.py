@@ -59,14 +59,17 @@ def process_pdf_info(self, score_id):
                     # Update score with extracted information
                     score.pages = page_count
                     
-                    # Update title and composer if not already set and available in metadata
+                    # Update title if not already set and available in metadata
                     if not score.title and metadata.get('Title'):
-                        score.title = metadata['Title'][:200]  # Limit length
+                        title = metadata['Title'].strip()
+                        if title:  # Only set if non-empty after stripping
+                            score.title = title[:200]  # Limit length
                     
-                    if not score.composer and metadata.get('Author'):
-                        score.composer = metadata['Author'][:100]  # Limit length
+                    # Don't automatically set composer from PDF metadata as it's often incorrect
+                    # PDF Author field commonly contains software names, user accounts, etc.
+                    # Let users manually set composer information
                     
-                    score.save(update_fields=['pages', 'title', 'composer'])
+                    score.save(update_fields=['pages', 'title'])
                 
                 logger.info(f"Successfully extracted PDF info for score {score_id}: {page_count} pages")
                 

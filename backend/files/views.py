@@ -1,7 +1,7 @@
 """
 Views for files app (presigned URLs, file operations)
 """
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404, StreamingHttpResponse
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -10,6 +10,7 @@ from rest_framework.decorators import api_view, permission_classes
 from django.shortcuts import get_object_or_404
 import logging
 import requests
+from urllib.parse import quote
 
 from scores.models import Score
 from .serializers import (
@@ -45,8 +46,8 @@ class FileUploadURLView(APIView):
             # Generate S3 key
             s3_key = generate_upload_s3_key(user.id, filename)
             
-            # Reserve quota with s3_key and mime_type
-            upload_id = QuotaManager.reserve_quota(user, size_bytes, s3_key, mime_type)
+            # Reserve quota with s3_key, mime_type, and original filename
+            upload_id = QuotaManager.reserve_quota(user, size_bytes, s3_key, mime_type, filename)
             
             # Generate presigned URL
             s3_handler = S3Handler()
@@ -89,15 +90,21 @@ class FileDownloadURLView(APIView):
     """Generate presigned URL for file download"""
     permission_classes = [IsAuthenticated]
     
-    def get(self, request):
+    def get(self, request, score_id=None):
         """Generate presigned download URL"""
-        serializer = FileDownloadRequestSerializer(data=request.query_params)
-        serializer.is_valid(raise_exception=True)
+        # Get score_id from URL path parameter or query parameter
+        if score_id is None:
+            serializer = FileDownloadRequestSerializer(data=request.query_params)
+            serializer.is_valid(raise_exception=True)
+            score_id = serializer.validated_data['score_id']
+            file_type = serializer.validated_data['file_type']
+            page = serializer.validated_data.get('page')
+        else:
+            # For URL path parameter, default to original file and get other params from query
+            file_type = request.query_params.get('file_type', 'original')
+            page = request.query_params.get('page')
         
         user = request.user
-        score_id = serializer.validated_data['score_id']
-        file_type = serializer.validated_data['file_type']
-        page = serializer.validated_data.get('page')
         
         # Get score and verify ownership
         score = get_object_or_404(Score, id=score_id, user=user)
@@ -197,9 +204,20 @@ class UploadConfirmationView(APIView):
             # Generate S3 key from reservation data
             s3_key = reservation_data['s3_key']
             
+            # Extract original filename from s3_key or use the title
+            original_filename = ""
+            if 'original_filename' in reservation_data:
+                original_filename = reservation_data['original_filename']
+            elif '/' in s3_key:
+                # Extract filename from s3_key path
+                s3_filename = s3_key.split('/')[-1]
+                if s3_filename and s3_filename != 'original.pdf':
+                    original_filename = s3_filename
+            
             score = Score.objects.create(
                 user=user,
                 title=serializer.validated_data['title'],
+                original_filename=original_filename,
                 composer=serializer.validated_data.get('composer', ''),
                 instrumentation=serializer.validated_data.get('instrument_parts', ''),
                 s3_key=s3_key,
@@ -302,3 +320,88 @@ def get_thumbnail(request, thumbnail_key):
     except Exception as e:
         logger.error(f"Error serving thumbnail {thumbnail_key}: {e}")
         raise Http404("Thumbnail not found")
+
+
+class FileDirectDownloadView(APIView):
+    """Direct download of files through Django proxy"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, score_id):
+        """Stream file directly through Django"""
+        user = request.user
+        file_type = request.query_params.get('file_type', 'original')
+        
+        # Get score and verify ownership
+        score = get_object_or_404(Score, id=score_id, user=user)
+        
+        # Determine S3 key based on file type
+        if file_type == 'original':
+            s3_key = score.s3_key
+            # Use original_filename if available, otherwise use title
+            if score.original_filename:
+                filename = score.original_filename
+            else:
+                filename = f"{score.title}.pdf"
+            content_type = score.mime or 'application/pdf'
+        elif file_type == 'thumbnail':
+            s3_key = score.thumbnail_key or score.generate_thumbnail_s3_key()
+            filename = f"{score.title}_thumbnail.jpg"
+            content_type = 'image/jpeg'
+        else:
+            return Response({
+                'error': 'INVALID_FILE_TYPE',
+                'message': f'Invalid file type: {file_type}',
+                'code': 'E004'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not s3_key:
+            return Response({
+                'error': 'FILE_NOT_FOUND',
+                'message': f'File not available: {file_type}',
+                'code': 'E003'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            # Generate presigned URL for internal use
+            s3_handler = S3Handler()
+            presigned_result = s3_handler.generate_presigned_download_url(s3_key, expiry=60, use_public_endpoint=False)
+            presigned_url = presigned_result['url']
+            
+            # Stream the file from S3 through Django
+            response = requests.get(presigned_url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            # Create streaming response
+            def file_generator():
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+            
+            # Prepare response with appropriate headers
+            django_response = StreamingHttpResponse(
+                file_generator(),
+                content_type=content_type
+            )
+            
+            # Set download headers
+            django_response['Content-Disposition'] = f'attachment; filename="{quote(filename)}"'
+            if 'content-length' in response.headers:
+                django_response['Content-Length'] = response.headers['content-length']
+            
+            logger.info(f"Direct download initiated for user {user.id}, score {score.id}, type {file_type}")
+            return django_response
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to fetch file {s3_key}: {e}")
+            return Response({
+                'error': 'FILE_DOWNLOAD_FAILED',
+                'message': 'Failed to retrieve file from storage',
+                'code': 'E005'
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception as e:
+            logger.error(f"Error downloading file {s3_key}: {e}")
+            return Response({
+                'error': 'DOWNLOAD_ERROR',
+                'message': 'Internal server error during download',
+                'code': 'E500'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

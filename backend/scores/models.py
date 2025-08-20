@@ -12,6 +12,11 @@ class Score(models.Model):
         related_name='scores'
     )
     title = models.CharField(max_length=255)
+    original_filename = models.CharField(
+        max_length=255, 
+        blank=True,
+        help_text="Original filename when uploaded"
+    )
     composer = models.CharField(max_length=255, blank=True)
     instrumentation = models.CharField(max_length=255, blank=True)
     pages = models.IntegerField(null=True, blank=True)

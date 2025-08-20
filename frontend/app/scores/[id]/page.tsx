@@ -39,7 +39,6 @@ export default function ScoreDetailPage() {
   const [editForm, setEditForm] = useState({
     title: '',
     composer: '',
-    arranger: '',
     genre: '',
     difficulty: 1,
     notes: '',
@@ -72,7 +71,6 @@ export default function ScoreDetailPage() {
       setEditForm({
         title: response.data.title,
         composer: response.data.composer || '',
-        arranger: response.data.arranger || '',
         genre: response.data.genre || '',
         difficulty: response.data.difficulty || 1,
         notes: response.data.notes || '',
@@ -95,13 +93,27 @@ export default function ScoreDetailPage() {
     if (!score) return;
 
     try {
-      // Get presigned download URL
-      const response = await apiClient.get(`/files/download/${score.id}/`);
-      const { url } = response.data;
+      // Download file through authenticated API request
+      const response = await apiClient.get(`/files/direct-download/${score.id}/`, {
+        responseType: 'blob',
+      });
       
-      // Open in new tab or trigger download
-      window.open(url, '_blank');
-      toast.success('다운로드가 시작되었습니다');
+      // Create blob URL and trigger download
+      const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary link element and trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${score.title}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('다운로드가 완료되었습니다');
     } catch (err: any) {
       console.error('Download failed:', err);
       toast.error('다운로드에 실패했습니다');
@@ -202,21 +214,21 @@ export default function ScoreDetailPage() {
                 score.title
               )}
             </h1>
-            {score.composer && (
-              <p className="mt-1 text-lg text-gray-600">
-                {isEditing ? (
-                  <input
-                    type="text"
-                    value={editForm.composer}
-                    onChange={(e) => setEditForm({ ...editForm, composer: e.target.value })}
-                    placeholder="작곡가"
-                    className="border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                  />
-                ) : (
-                  score.composer
-                )}
-              </p>
-            )}
+            <p className="mt-1 text-lg text-gray-600">
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editForm.composer}
+                  onChange={(e) => setEditForm({ ...editForm, composer: e.target.value })}
+                  placeholder="작곡가"
+                  className="border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                />
+              ) : score.composer ? (
+                score.composer
+              ) : (
+                <span className="text-gray-400 italic">작곡가 미입력</span>
+              )}
+            </p>
           </div>
           
           <div className="flex items-center gap-2">
@@ -230,7 +242,6 @@ export default function ScoreDetailPage() {
                     setEditForm({
                       title: score.title,
                       composer: score.composer || '',
-                      arranger: score.arranger || '',
                       genre: score.genre || '',
                       difficulty: score.difficulty || 1,
                       notes: score.notes || '',
@@ -313,24 +324,6 @@ export default function ScoreDetailPage() {
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold mb-4">정보</h2>
             <dl className="space-y-3">
-              {score.arranger && (
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">편곡</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editForm.arranger}
-                        onChange={(e) => setEditForm({ ...editForm, arranger: e.target.value })}
-                        placeholder="편곡자"
-                        className="w-full border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                      />
-                    ) : (
-                      score.arranger
-                    )}
-                  </dd>
-                </div>
-              )}
               
               <div>
                 <dt className="text-sm font-medium text-gray-500">장르</dt>

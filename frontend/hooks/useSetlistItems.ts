@@ -49,13 +49,21 @@ export function useSetlistItems({ setlistId }: UseSetlistItemsParams): UseSetlis
 
   // 다중 아이템 추가 뮤테이션
   const addMultipleMutation = useMutation({
-    mutationFn: (scoreIds: string[]) => 
+    mutationFn: ({ scoreIds }: { scoreIds: string[] }) => 
       setlistApi.addMultipleSetlistItems(setlistId, scoreIds),
-    onSuccess: (response) => {
+    onSuccess: (response, { scoreIds }) => {
       queryClient.invalidateQueries({ queryKey: ['setlist-items', setlistId] });
       queryClient.invalidateQueries({ queryKey: ['setlist', setlistId] });
       queryClient.invalidateQueries({ queryKey: ['setlists'] });
-      toast.success(`${response.created_count}개의 악보가 세트리스트에 추가되었습니다.`);
+      
+      if (response.created_count === 0) {
+        toast.info('선택한 악보들이 이미 세트리스트에 있어서 추가되지 않았습니다.');
+      } else if (response.created_count < scoreIds.length) {
+        const duplicateCount = scoreIds.length - response.created_count;
+        toast.success(`${response.created_count}개의 악보가 세트리스트에 추가되었습니다. (${duplicateCount}개는 이미 있어서 제외됨)`);
+      } else {
+        toast.success(`${response.created_count}개의 악보가 세트리스트에 추가되었습니다.`);
+      }
     },
     onError: (error: any) => {
       const errorMessage = extractErrorMessage(error);
@@ -86,11 +94,12 @@ export function useSetlistItems({ setlistId }: UseSetlistItemsParams): UseSetlis
       queryClient.invalidateQueries({ queryKey: ['setlist-items', setlistId] });
       queryClient.invalidateQueries({ queryKey: ['setlist', setlistId] });
       queryClient.invalidateQueries({ queryKey: ['setlists'] });
-      toast.success('악보가 세트리스트에서 제거되었습니다.');
+      // Toast는 페이지에서 처리하므로 여기서는 제거
     },
     onError: (error: any) => {
       const errorMessage = extractErrorMessage(error);
-      toast.error(`악보 제거 실패: ${errorMessage}`);
+      // 에러를 페이지로 전파하기 위해 reject
+      throw new Error(errorMessage);
     }
   });
 
@@ -126,7 +135,7 @@ export function useSetlistItems({ setlistId }: UseSetlistItemsParams): UseSetlis
 
   const addMultipleItems = useCallback(
     async (scoreIds: string[]): Promise<{created_count: number, items: SetlistItem[]}> => {
-      return await addMultipleMutation.mutateAsync(scoreIds);
+      return await addMultipleMutation.mutateAsync({ scoreIds });
     },
     [addMultipleMutation]
   );

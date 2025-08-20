@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import toast from '@/lib/toast';
 import {
   DndContext,
   closestCenter,
@@ -299,17 +300,17 @@ function SortableSetlistItemCard({ item, index, onRemove, isRemoving, isDraggabl
         isDragging 
           ? 'shadow-lg opacity-75 z-50' 
           : 'hover:shadow-md'
-      } ${
-        isDraggable ? 'cursor-grab active:cursor-grabbing' : ''
       }`}
       {...attributes}
-      {...(isDraggable ? listeners : {})}
     >
       <div className="flex items-start gap-4">
         {/* 드래그 핸들 & 순서 번호 */}
         <div className="flex items-center gap-2">
           {isDraggable && (
-            <div className="text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing">
+            <div 
+              className="text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing"
+              {...(isDraggable ? listeners : {})}
+            >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                 <circle cx="4" cy="4" r="1.5"/>
                 <circle cx="12" cy="4" r="1.5"/>
@@ -349,16 +350,18 @@ function SortableSetlistItemCard({ item, index, onRemove, isRemoving, isDraggabl
         </div>
 
         {/* 액션 버튼 */}
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0" style={{ pointerEvents: 'auto' }}>
           <Button
             variant="outline"
             size="xs"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               onRemove(item.id);
             }}
             loading={isRemoving}
             className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+            style={{ pointerEvents: 'auto' }}
           >
             제거
           </Button>
@@ -419,11 +422,16 @@ export default function SetlistDetailPage() {
   };
 
   const handleRemoveItem = async (itemId: string) => {
+    if (!confirm('이 악보를 세트리스트에서 제거하시겠습니까?')) {
+      return;
+    }
+
     try {
       setActionLoading(`remove-${itemId}`);
       await removeItem(itemId);
-    } catch (error) {
-      // 에러는 Hook에서 처리됨
+      toast.success('악보가 세트리스트에서 제거되었습니다.');
+    } catch (error: any) {
+      toast.error(`악보 제거 실패: ${error.message || '알 수 없는 오류가 발생했습니다'}`);
     } finally {
       setActionLoading(null);
     }

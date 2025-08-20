@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +9,9 @@ import Button from '@/components/ui/Button';
 import { Layout } from '@/components/ui/Layout';
 import { useScores } from '@/hooks/useScores';
 import { formatFileSize, formatDate } from '@/lib/utils';
+import AdvancedFilters from '@/components/scores/AdvancedFilters';
+import BulkActions from '@/components/scores/BulkActions';
+import toast from '@/lib/toast';
 import { 
   DocumentIcon,
   MagnifyingGlassIcon,
@@ -23,6 +26,7 @@ import {
 export default function ScoresPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   
   const {
     scores,
@@ -30,19 +34,38 @@ export default function ScoresPage() {
     totalPages,
     isLoading,
     error,
+    isBulkLoading,
     viewMode,
     searchQuery,
     sortField,
     sortOrder,
     currentPage,
+    filters,
+    selectedScores,
     setViewMode,
     setSearchQuery,
     setSortField,
     setSortOrder,
     setCurrentPage,
+    setFilters,
     handleSearch,
-    refetch
+    resetFilters,
+    refetch,
+    toggleScoreSelection,
+    selectAllScores,
+    clearSelection,
+    bulkAddTags,
+    bulkRemoveTags,
+    bulkDelete
   } = useScores({ itemsPerPage: 12 });
+
+  // Check if any advanced filters are active
+  const hasActiveAdvancedFilters = Object.keys(filters).some(key => {
+    if (key === 'search') return false; // Exclude search from advanced filters
+    const value = filters[key as keyof typeof filters];
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && value !== '';
+  });
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -53,6 +76,43 @@ export default function ScoresPage() {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSearch();
+  };
+
+  const handleIntegratedSearch = () => {
+    setCurrentPage(1);
+    refetch();
+  };
+
+  // Bulk action handlers with toast notifications
+  const handleBulkAddTags = async (tags: string[]) => {
+    try {
+      await bulkAddTags(tags);
+      toast.success(`${selectedScores.size}개 악보에 태그가 추가되었습니다`);
+    } catch (err: any) {
+      toast.error(err.message || '태그 추가에 실패했습니다');
+    }
+  };
+
+  const handleBulkRemoveTags = async (tags: string[]) => {
+    try {
+      await bulkRemoveTags(tags);
+      toast.success(`${selectedScores.size}개 악보에서 태그가 제거되었습니다`);
+    } catch (err: any) {
+      toast.error(err.message || '태그 제거에 실패했습니다');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`선택된 ${selectedScores.size}개의 악보를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+      return;
+    }
+    
+    try {
+      await bulkDelete();
+      toast.success(`${selectedScores.size}개 악보가 삭제되었습니다`);
+    } catch (err: any) {
+      toast.error(err.message || '악보 삭제에 실패했습니다');
+    }
   };
 
 
@@ -86,6 +146,7 @@ export default function ScoresPage() {
 
       {/* Search and Filters */}
       <div className="mb-6 space-y-4">
+        {/* Main Search Bar */}
         <form onSubmit={handleSearchSubmit} className="flex gap-2">
           <div className="flex-1 relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -100,7 +161,33 @@ export default function ScoresPage() {
           <Button type="submit" variant="secondary" size="sm">
             검색
           </Button>
+          <Button 
+            type="button" 
+            variant={showAdvancedFilters || hasActiveAdvancedFilters ? "primary" : "outline"} 
+            size="sm"
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className="relative"
+          >
+            <FunnelIcon className="h-4 w-4 mr-1" />
+            고급 필터
+            {hasActiveAdvancedFilters && (
+              <span className="absolute -top-1 -right-1 h-2 w-2 bg-blue-600 rounded-full"></span>
+            )}
+          </Button>
         </form>
+
+        {/* Advanced Filters - collapsible */}
+        <AdvancedFilters 
+          filters={filters}
+          onFiltersChange={(newFilters) => {
+            setFilters(newFilters);
+            setCurrentPage(1);
+          }}
+          onReset={resetFilters}
+          onSearch={handleIntegratedSearch}
+          isVisible={showAdvancedFilters}
+          onToggle={() => setShowAdvancedFilters(!showAdvancedFilters)}
+        />
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -116,11 +203,27 @@ export default function ScoresPage() {
             >
               <option value="created_at-desc">최신순</option>
               <option value="created_at-asc">오래된순</option>
+              <option value="updated_at-desc">최근 수정순</option>
               <option value="title-asc">제목 (가나다)</option>
               <option value="title-desc">제목 (역순)</option>
+              <option value="composer-asc">작곡가 (가나다)</option>
+              <option value="composer-desc">작곡가 (역순)</option>
               <option value="size_bytes-desc">크기 (큰 파일)</option>
               <option value="size_bytes-asc">크기 (작은 파일)</option>
+              <option value="pages-desc">페이지 (많은 순)</option>
+              <option value="pages-asc">페이지 (적은 순)</option>
             </select>
+
+            {/* Select All Button */}
+            {scores.length > 0 && (
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={selectedScores.size === scores.length ? clearSelection : selectAllScores}
+              >
+                {selectedScores.size === scores.length ? '선택 해제' : '모두 선택'}
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -162,9 +265,9 @@ export default function ScoresPage() {
           <DocumentIcon className="mx-auto h-12 w-12 text-gray-300" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">악보가 없습니다</h3>
           <p className="mt-1 text-sm text-gray-500">
-            {searchQuery ? '검색 결과가 없습니다' : '첫 악보를 업로드해보세요'}
+            {searchQuery || Object.keys(filters).some(key => filters[key as keyof typeof filters]) ? '검색 결과가 없습니다' : '첫 악보를 업로드해보세요'}
           </p>
-          {!searchQuery && (
+          {!searchQuery && !Object.keys(filters).some(key => filters[key as keyof typeof filters]) && (
             <div className="mt-6">
               <Link href="/upload">
                 <Button variant="primary" size="sm">
@@ -178,40 +281,54 @@ export default function ScoresPage() {
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {scores.map((score) => (
-            <Link
-              key={score.id}
-              href={`/scores/${score.id}`}
-              className="group bg-white rounded-lg shadow hover:shadow-lg transition-shadow"
-            >
-              <div className="aspect-[3/4] bg-gray-100 rounded-t-lg overflow-hidden">
-                {score.thumbnail_url ? (
-                  <img
-                    src={score.thumbnail_url}
-                    alt={score.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <DocumentIcon className="h-20 w-20 text-gray-300" />
-                  </div>
-                )}
+            <div key={score.id} className="relative group">
+              {/* Checkbox */}
+              <div className="absolute top-2 left-2 z-10">
+                <input
+                  type="checkbox"
+                  checked={selectedScores.has(score.id)}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    toggleScoreSelection(score.id);
+                  }}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
               </div>
-              <div className="p-4">
-                <h3 className="font-medium text-gray-900 truncate">
-                  {score.title}
-                </h3>
-                {score.composer && (
-                  <p className="text-sm text-gray-500 truncate">
-                    {score.composer}
-                  </p>
-                )}
-                <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                  <span>{formatFileSize(score.size_bytes)}</span>
-                  <span>{score.page_count ? `${score.page_count}p` : '-'}</span>
-                  <span>{formatDate(score.created_at)}</span>
+              
+              <Link
+                href={`/scores/${score.id}`}
+                className="block bg-white rounded-lg shadow hover:shadow-lg transition-shadow"
+              >
+                <div className="aspect-[3/4] bg-gray-100 rounded-t-lg overflow-hidden">
+                  {score.thumbnail_url ? (
+                    <img
+                      src={score.thumbnail_url}
+                      alt={score.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <DocumentIcon className="h-20 w-20 text-gray-300" />
+                    </div>
+                  )}
                 </div>
-              </div>
-            </Link>
+                <div className="p-4">
+                  <h3 className="font-medium text-gray-900 truncate">
+                    {score.title}
+                  </h3>
+                  {score.composer && (
+                    <p className="text-sm text-gray-500 truncate">
+                      {score.composer}
+                    </p>
+                  )}
+                  <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                    <span>{formatFileSize(score.size_bytes)}</span>
+                    <span>{score.page_count ? `${score.page_count}p` : '-'}</span>
+                    <span>{formatDate(score.created_at)}</span>
+                  </div>
+                </div>
+              </Link>
+            </div>
           ))}
         </div>
       ) : (
@@ -219,6 +336,14 @@ export default function ScoresPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={scores.length > 0 && selectedScores.size === scores.length}
+                    onChange={selectedScores.size === scores.length ? clearSelection : selectAllScores}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   제목
                 </th>
@@ -238,12 +363,22 @@ export default function ScoresPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {scores.map((score) => (
-                <tr
-                  key={score.id}
-                  onClick={() => router.push(`/scores/${score.id}`)}
-                  className="hover:bg-gray-50 cursor-pointer"
-                >
+                <tr key={score.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={selectedScores.has(score.id)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        toggleScoreSelection(score.id);
+                      }}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                  </td>
+                  <td 
+                    className="px-6 py-4 whitespace-nowrap cursor-pointer"
+                    onClick={() => router.push(`/scores/${score.id}`)}
+                  >
                     <div className="flex items-center">
                       <DocumentIcon className="h-5 w-5 text-gray-400 mr-3" />
                       <span className="text-sm font-medium text-gray-900">
@@ -251,16 +386,28 @@ export default function ScoresPage() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td 
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
+                    onClick={() => router.push(`/scores/${score.id}`)}
+                  >
                     {score.composer || '-'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td 
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
+                    onClick={() => router.push(`/scores/${score.id}`)}
+                  >
                     {formatFileSize(score.size_bytes)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td 
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
+                    onClick={() => router.push(`/scores/${score.id}`)}
+                  >
                     {score.page_count ? `${score.page_count}p` : '-'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td 
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
+                    onClick={() => router.push(`/scores/${score.id}`)}
+                  >
                     {formatDate(score.created_at)}
                   </td>
                 </tr>
@@ -296,6 +443,17 @@ export default function ScoresPage() {
           </Button>
         </div>
       )}
+
+      {/* Bulk Actions */}
+      <BulkActions
+        selectedCount={selectedScores.size}
+        selectedScoreIds={Array.from(selectedScores)}
+        onTagsAdd={handleBulkAddTags}
+        onTagsRemove={handleBulkRemoveTags}
+        onDelete={handleBulkDelete}
+        onClearSelection={clearSelection}
+        isLoading={isBulkLoading}
+      />
     </Layout>
   );
 }

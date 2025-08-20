@@ -34,8 +34,10 @@ def process_pdf_info(self, score_id):
         # Download PDF to temporary file
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
             try:
-                # Generate download URL
-                download_data = s3_handler.generate_presigned_download_url(score.s3_key, expiry=600)
+                # Generate download URL (use internal endpoint for Celery worker)
+                download_data = s3_handler.generate_presigned_download_url(
+                    score.s3_key, expiry=600, use_public_endpoint=False
+                )
                 
                 # Download file (in a real implementation, you'd use requests to download)
                 # For now, we'll simulate the process
@@ -114,8 +116,10 @@ def generate_thumbnail(self, score_id, page_number=1):
         # Download PDF to temporary file
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_pdf:
             try:
-                # Download PDF
-                download_data = s3_handler.generate_presigned_download_url(score.s3_key, expiry=600)
+                # Download PDF (use internal endpoint for Celery worker)
+                download_data = s3_handler.generate_presigned_download_url(
+                    score.s3_key, expiry=600, use_public_endpoint=False
+                )
                 
                 import requests
                 response = requests.get(download_data['url'], timeout=30)

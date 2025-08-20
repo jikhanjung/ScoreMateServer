@@ -48,3 +48,6 @@ export function ContainerLoading({ text = '로딩 중...', className }: { text?:
     </div>
   );
 }
+
+// 기본 export
+export default LoadingSpinner;

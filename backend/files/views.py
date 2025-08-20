@@ -1,12 +1,15 @@
 """
 Views for files app (presigned URLs, file operations)
 """
+from django.http import HttpResponse, Http404
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.decorators import api_view, permission_classes
 from django.shortcuts import get_object_or_404
 import logging
+import requests
 
 from scores.models import Score
 from .serializers import (
@@ -221,3 +224,40 @@ class UploadCancellationView(APIView):
                 'message': 'Failed to cancel upload',
                 'code': 'E008'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Allow unauthenticated access for thumbnails
+def get_thumbnail(request, thumbnail_key):
+    """
+    Serve thumbnail image directly from S3
+    """
+    try:
+        s3_handler = S3Handler()
+        
+        # Generate presigned URL for internal access
+        result = s3_handler.generate_presigned_download_url(
+            thumbnail_key,
+            expiry=300,  # 5 minutes
+            use_public_endpoint=False  # Use internal endpoint
+        )
+        
+        # Fetch the image from S3
+        response = requests.get(result['url'], timeout=10)
+        response.raise_for_status()
+        
+        # Return the image with appropriate headers
+        http_response = HttpResponse(
+            response.content,
+            content_type=response.headers.get('content-type', 'image/jpeg')
+        )
+        http_response['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
+        
+        return http_response
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to fetch thumbnail {thumbnail_key}: {e}")
+        raise Http404("Thumbnail not found")
+    except Exception as e:
+        logger.error(f"Error serving thumbnail {thumbnail_key}: {e}")
+        raise Http404("Thumbnail not found")

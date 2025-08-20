@@ -40,8 +40,13 @@ class S3Handler:
                 ExpiresIn=expiry
             )
             
+            # Replace internal endpoint with public endpoint for client access
+            public_url = response
+            if hasattr(settings, 'STORAGE_PUBLIC_ENDPOINT') and settings.STORAGE_PUBLIC_ENDPOINT:
+                public_url = response.replace(settings.STORAGE_ENDPOINT, settings.STORAGE_PUBLIC_ENDPOINT)
+            
             return {
-                'url': response,
+                'url': public_url,
                 'headers': {
                     'Content-Type': content_type,
                 },
@@ -51,20 +56,42 @@ class S3Handler:
             logger.error(f"Failed to generate upload URL for {s3_key}: {e}")
             raise
     
-    def generate_presigned_download_url(self, s3_key, expiry=None):
+    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True):
         """Generate presigned URL for file download"""
         if expiry is None:
             expiry = settings.PRESIGNED_URL_EXPIRY
         
         try:
-            response = self.s3_client.generate_presigned_url(
-                'get_object',
-                Params={
-                    'Bucket': self.bucket_name,
-                    'Key': s3_key
-                },
-                ExpiresIn=expiry
-            )
+            # If we need public endpoint, create a separate client with public endpoint
+            if (use_public_endpoint and 
+                hasattr(settings, 'STORAGE_PUBLIC_ENDPOINT') and 
+                settings.STORAGE_PUBLIC_ENDPOINT):
+                
+                public_client = boto3.client(
+                    's3',
+                    endpoint_url=settings.STORAGE_PUBLIC_ENDPOINT,
+                    aws_access_key_id=settings.STORAGE_ACCESS_KEY,
+                    aws_secret_access_key=settings.STORAGE_SECRET_KEY,
+                    use_ssl=getattr(settings, 'STORAGE_USE_SSL', True)
+                )
+                
+                response = public_client.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': self.bucket_name,
+                        'Key': s3_key
+                    },
+                    ExpiresIn=expiry
+                )
+            else:
+                response = self.s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={
+                        'Bucket': self.bucket_name,
+                        'Key': s3_key
+                    },
+                    ExpiresIn=expiry
+                )
             
             return {
                 'url': response,

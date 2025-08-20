@@ -62,3 +62,15 @@ export const dismissToast = (toastId: string) => {
 export const dismissAllToasts = () => {
   toast.dismiss();
 };
+
+// 기본 토스트 객체 (편의성을 위해)
+const toastAPI = {
+  success: showSuccess,
+  error: showError,
+  loading: showLoading,
+  info: showInfo,
+  dismiss: dismissToast,
+  dismissAll: dismissAllToasts,
+};
+
+export default toastAPI;

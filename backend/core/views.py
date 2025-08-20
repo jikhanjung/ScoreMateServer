@@ -98,10 +98,13 @@ class DashboardViewSet(viewsets.ViewSet):
         
         # Score statistics
         score_stats = scores_qs.aggregate(
-            total_size_mb=Sum('size_bytes') / (1024 * 1024) if scores_qs.exists() else 0,
+            total_size_bytes=Sum('size_bytes'),
             total_pages=Sum('pages'),
             scores_with_thumbnails=Count('id', filter=Q(thumbnail_key__isnull=False) & ~Q(thumbnail_key=''))
         )
+        
+        # Convert bytes to MB
+        total_size_mb = (score_stats['total_size_bytes'] or 0) / (1024 * 1024)
         
         # Quota information
         quota_used_mb = user.used_quota_mb
@@ -150,7 +153,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 'percentage_used': round(quota_percentage, 1),
             },
             'statistics': {
-                'total_file_size_mb': round(score_stats['total_size_mb'] or 0, 2),
+                'total_file_size_mb': round(total_size_mb, 2),
                 'total_pages': score_stats['total_pages'] or 0,
             },
             'recent_activity': {

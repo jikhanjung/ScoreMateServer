@@ -61,6 +61,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'core.middleware.CorsMiddleware',  # Add CORS middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -224,6 +225,7 @@ AUTH_USER_MODEL = 'core.User'
 
 # Storage settings (for S3/MinIO)
 STORAGE_ENDPOINT = os.environ.get('STORAGE_ENDPOINT')
+STORAGE_PUBLIC_ENDPOINT = os.environ.get('STORAGE_PUBLIC_ENDPOINT', STORAGE_ENDPOINT)
 STORAGE_BUCKET = os.environ.get('STORAGE_BUCKET')
 STORAGE_ACCESS_KEY = os.environ.get('STORAGE_ACCESS_KEY')
 STORAGE_SECRET_KEY = os.environ.get('STORAGE_SECRET_KEY')

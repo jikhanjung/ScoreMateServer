@@ -7,7 +7,8 @@ from .views import (
     FileUploadURLView,
     FileDownloadURLView,
     UploadConfirmationView,
-    UploadCancellationView
+    UploadCancellationView,
+    get_thumbnail
 )
 
 app_name = 'files'
@@ -20,4 +21,7 @@ urlpatterns = [
     # Upload management
     path('files/upload-confirm/', UploadConfirmationView.as_view(), name='upload_confirm'),
     path('files/upload-cancel/', UploadCancellationView.as_view(), name='upload_cancel'),
+    
+    # Thumbnail serving
+    path('files/thumbnail/<path:thumbnail_key>', get_thumbnail, name='thumbnail'),
 ]

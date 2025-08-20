@@ -11,6 +11,35 @@ from rest_framework import status
 logger = logging.getLogger(__name__)
 
 
+class CorsMiddleware(MiddlewareMixin):
+    """
+    Simple CORS middleware for development
+    """
+    
+    def process_response(self, request, response):
+        """Add CORS headers to all responses"""
+        # Allow requests from localhost:3000 (frontend)
+        response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+        response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Accept'
+        response['Access-Control-Allow-Credentials'] = 'true'
+        response['Access-Control-Max-Age'] = '3600'
+        
+        return response
+    
+    def process_request(self, request):
+        """Handle preflight OPTIONS requests"""
+        if request.method == 'OPTIONS':
+            response = JsonResponse({'status': 'ok'})
+            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+            response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Accept'
+            response['Access-Control-Allow-Credentials'] = 'true'
+            response['Access-Control-Max-Age'] = '3600'
+            return response
+        return None
+
+
 class APILoggingMiddleware(MiddlewareMixin):
     """
     Middleware to log API requests and responses for monitoring and debugging

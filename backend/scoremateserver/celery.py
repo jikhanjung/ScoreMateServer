@@ -18,10 +18,11 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
 # Development/testing configuration
-if settings.DEBUG:
-    # Run tasks synchronously in development
-    app.conf.task_always_eager = True
-    app.conf.task_eager_propagates = True
+# Note: task_always_eager is disabled to allow proper worker testing
+# if settings.DEBUG:
+#     # Run tasks synchronously in development
+#     app.conf.task_always_eager = True
+#     app.conf.task_eager_propagates = True
 
 
 @app.task(bind=True)
@@ -30,11 +31,11 @@ def debug_task(self):
     print(f'Request: {self.request!r}')
 
 
-# Task routing (optional - for advanced setups)
-app.conf.task_routes = {
-    'tasks.pdf_tasks.*': {'queue': 'pdf_processing'},
-    'tasks.file_tasks.*': {'queue': 'file_operations'},
-}
+# Task routing disabled for now - all tasks go to default 'celery' queue
+# app.conf.task_routes = {
+#     'tasks.pdf_tasks.*': {'queue': 'pdf_processing'},
+#     'tasks.file_tasks.*': {'queue': 'file_operations'},
+# }
 
 # Task result expires after 1 hour
 app.conf.result_expires = 3600

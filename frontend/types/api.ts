@@ -131,27 +131,68 @@ export interface SetlistReorderRequest {
 }
 
 // 대시보드 관련 타입
-export interface DashboardStats {
-  total_scores: number;
-  total_setlists: number;
-  quota_used_mb: number;
-  quota_total_mb: number;
-  quota_percentage: number;
-  scores_with_thumbnails: number;
-  avg_score_size_mb: number;
+export interface DashboardUserInfo {
+  username: string;
+  email: string;
+  plan: string;
+  created_at: string;
 }
 
-export interface DashboardActivity {
-  scores_added: number;
-  setlists_created: number;
-  period: 'week' | 'month';
+export interface DashboardCounts {
+  total_scores: number;
+  total_setlists: number;
+  scores_with_thumbnails: number;
+}
+
+export interface DashboardQuota {
+  used_mb: number;
+  total_mb: number;
+  available_mb: number;
+  percentage_used: number;
+}
+
+export interface DashboardStatistics {
+  total_file_size_mb: number;
+  total_pages: number;
+}
+
+export interface DashboardRecentActivity {
+  scores_this_week: number;
+  setlists_this_week: number;
+}
+
+// 대시보드에서 사용되는 요약 타입들
+export interface ScoreSummary {
+  id: number;
+  title: string;
+  composer?: string;
+  created_at: string;
+  pages?: number;
+  size_bytes?: number;
+  has_thumbnail?: boolean;
+  thumbnail_url?: string;
+}
+
+export interface SetlistSummary {
+  id: number;
+  name: string;
+  description?: string;
+  created_at: string;
+  total_items: number;
+}
+
+export interface DashboardLatestContent {
+  scores: ScoreSummary[];
+  setlists: SetlistSummary[];
 }
 
 export interface DashboardData {
-  stats: DashboardStats;
-  recent_scores: Score[];
-  recent_setlists: Setlist[];
-  weekly_activity: DashboardActivity;
+  user: DashboardUserInfo;
+  counts: DashboardCounts;
+  quota: DashboardQuota;
+  statistics: DashboardStatistics;
+  recent_activity: DashboardRecentActivity;
+  latest_content: DashboardLatestContent;
   quota_recommendations: string[];
 }
 

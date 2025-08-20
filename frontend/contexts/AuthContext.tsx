@@ -10,7 +10,7 @@ interface AuthContextType {
   tokens: AuthTokens | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
   register: (userData: {
     username: string;
     email: string;
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 현재 사용자 정보 조회
   const fetchCurrentUser = async (accessToken: string): Promise<User | null> => {
     try {
-      const response = await api.get('/api/v1/auth/me/', {
+      const response = await api.get('/user/profile/', {
         headers: {
           Authorization: `Bearer ${accessToken}`
         }
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await api.post('/api/v1/auth/token/refresh/', {
+      const response = await api.post('/auth/token/refresh/', {
         refresh: refreshToken
       });
 
@@ -99,29 +99,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // 로그인
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true);
       
-      const response = await api.post('/api/v1/auth/login/', {
-        username,
+      const response = await api.post('/auth/login/', {
+        email,
         password
       });
 
-      const { access, refresh } = response.data;
-      const newTokens: AuthTokens = { access, refresh };
+      const { user: userData, tokens } = response.data;
+      const newTokens: AuthTokens = { access: tokens.access, refresh: tokens.refresh };
       
       saveTokens(newTokens);
-
-      // 사용자 정보 조회
-      const userData = await fetchCurrentUser(access);
-      if (userData) {
-        saveUser(userData);
-        showSuccess(`환영합니다, ${userData.username}님!`);
-        return true;
-      }
-
-      return false;
+      saveUser(userData);
+      
+      showSuccess(`환영합니다, ${userData.username}님!`);
+      return true;
     } catch (error: any) {
       const message = error.response?.data?.message || 
                      error.response?.data?.detail || 
@@ -144,10 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       
-      await api.post('/api/v1/auth/register/', userData);
+      await api.post('/auth/register/', userData);
       
       // 회원가입 후 자동 로그인
-      const loginSuccess = await login(userData.username, userData.password);
+      const loginSuccess = await login(userData.email, userData.password);
       if (loginSuccess) {
         showSuccess('회원가입이 완료되었습니다!');
       }
@@ -170,13 +164,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const refreshToken = localStorage.getItem('refresh_token');
       if (refreshToken) {
         // 백엔드에 로그아웃 요청 (선택사항)
-        await api.post('/api/v1/auth/logout/', {
-          refresh: refreshToken
-        });
+        try {
+          await api.post('/auth/logout/', {
+            refresh: refreshToken
+          });
+        } catch (apiError: any) {
+          // 로그아웃 API가 구현되지 않았거나 실패해도 계속 진행
+          if (apiError.response?.status !== 404) {
+            console.error('Logout API failed:', apiError);
+          }
+        }
       }
     } catch (error) {
-      // 로그아웃 API 실패해도 클라이언트 데이터는 제거
-      console.error('Logout API failed:', error);
+      // 전체 로그아웃 프로세스 실패해도 클라이언트 데이터는 제거
+      console.error('Logout process failed:', error);
     } finally {
       clearAuth();
       showSuccess('로그아웃되었습니다.');

@@ -43,6 +43,10 @@ frontend/out/
 frontend/node_modules/
 frontend/.env*.local
 
+# Node.js dependencies (monorepo)
+node_modules/
+package-lock.json
+
 # Coverage reports
 htmlcov/
 .coverage

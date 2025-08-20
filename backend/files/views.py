@@ -45,8 +45,8 @@ class FileUploadURLView(APIView):
             # Generate S3 key
             s3_key = generate_upload_s3_key(user.id, filename)
             
-            # Reserve quota
-            upload_id = QuotaManager.reserve_quota(user, size_bytes)
+            # Reserve quota with s3_key and mime_type
+            upload_id = QuotaManager.reserve_quota(user, size_bytes, s3_key, mime_type)
             
             # Generate presigned URL
             s3_handler = S3Handler()
@@ -176,12 +176,53 @@ class UploadConfirmationView(APIView):
         upload_id = serializer.validated_data['upload_id']
         
         try:
+            # Get reservation data
+            from django.core.cache import cache
+            reservation_key = f"quota_reservation:{upload_id}"
+            reservation_data = cache.get(reservation_key)
+            
+            if not reservation_data:
+                return Response({
+                    'error': 'UPLOAD_RESERVATION_NOT_FOUND',
+                    'message': 'Upload reservation not found or expired',
+                    'code': 'E007'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
             # Confirm quota usage
             used_mb = QuotaManager.confirm_quota(user, upload_id)
             
+            # Create score with uploaded file
+            from scores.models import Score
+            
+            # Generate S3 key from reservation data
+            s3_key = reservation_data['s3_key']
+            
+            score = Score.objects.create(
+                user=user,
+                title=serializer.validated_data['title'],
+                composer=serializer.validated_data.get('composer', ''),
+                instrumentation=serializer.validated_data.get('instrument_parts', ''),
+                s3_key=s3_key,
+                size_bytes=reservation_data['size_bytes'],
+                mime=reservation_data.get('mime_type', 'application/pdf'),
+                tags=serializer.validated_data.get('tags', [])
+            )
+            
+            # Queue background tasks for PDF processing (asynchronously)
+            try:
+                from tasks.pdf_tasks import process_pdf_info, generate_thumbnail
+                process_pdf_info.delay(score.id)
+                generate_thumbnail.delay(score.id, page_number=1)
+            except Exception as e:
+                # Log but don't fail the upload
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to queue background tasks for score {score.id}: {e}")
+            
             return Response({
-                'message': 'Upload confirmed',
+                'message': 'Upload confirmed and score created',
                 'upload_id': upload_id,
+                'score_id': score.id,
                 'quota_used_mb': used_mb,
                 'remaining_quota_mb': user.available_quota_mb
             }, status=status.HTTP_200_OK)

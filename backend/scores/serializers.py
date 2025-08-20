@@ -74,7 +74,7 @@ class ScoreListSerializer(serializers.ModelSerializer):
         model = Score
         fields = [
             'id', 'title', 'composer', 'instrumentation', 
-            'size_mb', 'file_size', 'pages', 'page_count', 'tags', 
+            'size_bytes', 'size_mb', 'file_size', 'pages', 'page_count', 'tags', 
             'thumbnail_key', 'has_thumbnail', 'thumbnail_url',
             'created_at', 'updated_at'
         ]
@@ -157,13 +157,19 @@ class ScoreCreateSerializer(serializers.ModelSerializer):
         user.used_quota_mb += size_mb
         user.save(update_fields=['used_quota_mb'])
         
-        # Trigger background tasks for PDF processing
-        from tasks.pdf_tasks import process_pdf_info, generate_thumbnail
-        
-        # Start PDF info extraction
-        process_pdf_info.delay(score.id)
-        
-        # Generate cover thumbnail
-        generate_thumbnail.delay(score.id, page_number=1)
+        # Trigger background tasks for PDF processing (asynchronously)
+        try:
+            from tasks.pdf_tasks import process_pdf_info, generate_thumbnail
+            
+            # Start PDF info extraction asynchronously
+            process_pdf_info.delay(score.id)
+            
+            # Generate cover thumbnail asynchronously  
+            generate_thumbnail.delay(score.id, page_number=1)
+        except Exception as e:
+            # Log the error but don't fail the score creation
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to queue background tasks for score {score.id}: {e}")
         
         return score

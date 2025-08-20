@@ -1,14 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiClient } from '@/lib/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Button from '@/components/ui/Button';
-import Header from '@/components/layout/Header';
-import { Score } from '@/types/api';
+import { Layout } from '@/components/ui/Layout';
+import { useScores } from '@/hooks/useScores';
 import { formatFileSize, formatDate } from '@/lib/utils';
 import { 
   DocumentIcon,
@@ -21,28 +20,29 @@ import {
   PlusIcon
 } from '@heroicons/react/24/outline';
 
-type ViewMode = 'grid' | 'list';
-type SortField = 'title' | 'created_at' | 'updated_at' | 'file_size';
-type SortOrder = 'asc' | 'desc';
-
 export default function ScoresPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const [scores, setScores] = useState<Score[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   
-  // UI State
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortField, setSortField] = useState<SortField>('created_at');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const itemsPerPage = 12;
+  const {
+    scores,
+    totalCount,
+    totalPages,
+    isLoading,
+    error,
+    viewMode,
+    searchQuery,
+    sortField,
+    sortOrder,
+    currentPage,
+    setViewMode,
+    setSearchQuery,
+    setSortField,
+    setSortOrder,
+    setCurrentPage,
+    handleSearch,
+    refetch
+  } = useScores({ itemsPerPage: 12 });
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -50,58 +50,9 @@ export default function ScoresPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadScores();
-    }
-  }, [isAuthenticated, currentPage, sortField, sortOrder]);
-
-  const loadScores = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const ordering = sortOrder === 'desc' ? `-${sortField}` : sortField;
-      
-      const response = await apiClient.get<{
-        results: Score[];
-        count: number;
-        next: string | null;
-        previous: string | null;
-      }>('/scores/', {
-        params: {
-          ordering,
-          search: searchQuery || undefined,
-          page: currentPage,
-          page_size: itemsPerPage
-        }
-      });
-
-      setScores(response.data.results || []);
-      setTotalCount(response.data.count || 0);
-      setTotalPages(Math.ceil((response.data.count || 0) / itemsPerPage));
-    } catch (err: any) {
-      console.error('Failed to load scores:', err);
-      setError('악보 목록을 불러오는데 실패했습니다');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setCurrentPage(1);
-    loadScores();
-  };
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortOrder('desc');
-    }
-    setCurrentPage(1);
+    handleSearch();
   };
 
 
@@ -114,9 +65,7 @@ export default function ScoresPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <Layout>
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
@@ -127,8 +76,8 @@ export default function ScoresPage() {
             </p>
           </div>
           <Link href="/upload">
-            <Button variant="primary" size="medium">
-              <PlusIcon className="h-5 w-5 mr-2" />
+            <Button variant="primary" size="sm">
+              <PlusIcon className="h-4 w-4 mr-2" />
               악보 업로드
             </Button>
           </Link>
@@ -137,7 +86,7 @@ export default function ScoresPage() {
 
       {/* Search and Filters */}
       <div className="mb-6 space-y-4">
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <form onSubmit={handleSearchSubmit} className="flex gap-2">
           <div className="flex-1 relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
@@ -148,7 +97,7 @@ export default function ScoresPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <Button type="submit" variant="secondary" size="medium">
+          <Button type="submit" variant="secondary" size="sm">
             검색
           </Button>
         </form>
@@ -159,9 +108,9 @@ export default function ScoresPage() {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={`${sortField}-${sortOrder}`}
               onChange={(e) => {
-                const [field, order] = e.target.value.split('-') as [SortField, SortOrder];
-                setSortField(field);
-                setSortOrder(order);
+                const [field, order] = e.target.value.split('-');
+                setSortField(field as any);
+                setSortOrder(order as any);
                 setCurrentPage(1);
               }}
             >
@@ -169,8 +118,8 @@ export default function ScoresPage() {
               <option value="created_at-asc">오래된순</option>
               <option value="title-asc">제목 (가나다)</option>
               <option value="title-desc">제목 (역순)</option>
-              <option value="file_size-desc">크기 (큰 파일)</option>
-              <option value="file_size-asc">크기 (작은 파일)</option>
+              <option value="size_bytes-desc">크기 (큰 파일)</option>
+              <option value="size_bytes-asc">크기 (작은 파일)</option>
             </select>
           </div>
 
@@ -198,7 +147,7 @@ export default function ScoresPage() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-800">{error}</p>
           <button
-            onClick={loadScores}
+            onClick={refetch}
             className="mt-2 text-red-600 underline hover:text-red-800"
           >
             다시 시도
@@ -218,8 +167,8 @@ export default function ScoresPage() {
           {!searchQuery && (
             <div className="mt-6">
               <Link href="/upload">
-                <Button variant="primary" size="medium">
-                  <PlusIcon className="h-5 w-5 mr-2" />
+                <Button variant="primary" size="sm">
+                  <PlusIcon className="h-4 w-4 mr-2" />
                   악보 업로드하기
                 </Button>
               </Link>
@@ -326,7 +275,7 @@ export default function ScoresPage() {
         <div className="mt-6 flex items-center justify-between">
           <Button
             variant="secondary"
-            size="small"
+            size="xs"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(currentPage - 1)}
           >
@@ -339,7 +288,7 @@ export default function ScoresPage() {
           
           <Button
             variant="secondary"
-            size="small"
+            size="xs"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(currentPage + 1)}
           >
@@ -347,7 +296,6 @@ export default function ScoresPage() {
           </Button>
         </div>
       )}
-      </div>
-    </div>
+    </Layout>
   );
 }

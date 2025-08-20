@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { User, AuthTokens } from '@/types/api';
 import api from '@/lib/api';
 import { showError, showSuccess } from '@/lib/toast';
@@ -98,36 +99,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 로그인
-  const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      setIsLoading(true);
-      
-      const response = await api.post('/auth/login/', {
-        email,
-        password
-      });
-
-      const { user: userData, tokens } = response.data;
+  // 로그인 mutation
+  const loginMutation = useMutation({
+    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      const response = await api.post('/auth/login/', { email, password });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      const { user: userData, tokens } = data;
       const newTokens: AuthTokens = { access: tokens.access, refresh: tokens.refresh };
       
       saveTokens(newTokens);
       saveUser(userData);
       
       showSuccess(`환영합니다, ${userData.username}님!`);
-      return true;
-    } catch (error: any) {
+    },
+    onError: (error: any) => {
       const message = error.response?.data?.message || 
                      error.response?.data?.detail || 
                      '로그인에 실패했습니다.';
       showError(message);
+    }
+  });
+
+  // 로그인 래퍼 함수
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      await loginMutation.mutateAsync({ email, password });
+      return true;
+    } catch {
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // 회원가입
+  // 회원가입 mutation
+  const registerMutation = useMutation({
+    mutationFn: async (userData: {
+      username: string;
+      email: string;
+      password: string;
+      first_name?: string;
+      last_name?: string;
+    }) => {
+      const registerData = {
+        ...userData,
+        password_confirm: userData.password
+      };
+      const response = await api.post('/auth/register/', registerData);
+      return { userData, response: response.data };
+    },
+    onSuccess: async ({ userData }) => {
+      // 회원가입 후 자동 로그인
+      const loginSuccess = await login(userData.email, userData.password);
+      if (loginSuccess) {
+        showSuccess('회원가입이 완료되었습니다!');
+      }
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.message || 
+                     error.response?.data?.detail || 
+                     '회원가입에 실패했습니다.';
+      showError(message);
+    }
+  });
+
+  // 회원가입 래퍼 함수
   const register = async (userData: {
     username: string;
     email: string;
@@ -136,25 +172,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     last_name?: string;
   }): Promise<boolean> => {
     try {
-      setIsLoading(true);
-      
-      await api.post('/auth/register/', userData);
-      
-      // 회원가입 후 자동 로그인
-      const loginSuccess = await login(userData.email, userData.password);
-      if (loginSuccess) {
-        showSuccess('회원가입이 완료되었습니다!');
-      }
-      
-      return loginSuccess;
-    } catch (error: any) {
-      const message = error.response?.data?.message || 
-                     error.response?.data?.detail || 
-                     '회원가입에 실패했습니다.';
-      showError(message);
+      await registerMutation.mutateAsync(userData);
+      return true;
+    } catch {
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -249,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextType = {
     user,
     tokens,
-    isLoading,
+    isLoading: isLoading || loginMutation.isPending || registerMutation.isPending,
     isAuthenticated,
     login,
     register,

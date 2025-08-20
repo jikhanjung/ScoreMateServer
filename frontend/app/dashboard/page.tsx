@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiClient } from '@/lib/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import Header from '@/components/layout/Header';
-import { DashboardData, ScoreSummary } from '@/types/api';
+import { Layout } from '@/components/ui/Layout';
+import { useDashboardData } from '@/hooks/useDashboardData';
+import { ScoreSummary } from '@/types/api';
 import { formatFileSize, formatDate } from '@/lib/utils';
 import { 
   DocumentIcon, 
@@ -20,9 +20,7 @@ import {
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { dashboardData, isLoading, error, refetch } = useDashboardData();
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -30,27 +28,6 @@ export default function DashboardPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadDashboardData();
-    }
-  }, [isAuthenticated]);
-
-  const loadDashboardData = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Load dashboard data
-      const response = await apiClient.get<DashboardData>('/dashboard/');
-      setDashboardData(response.data);
-    } catch (err: any) {
-      console.error('Failed to load dashboard data:', err);
-      setError('대시보드 데이터를 불러오는데 실패했습니다');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
 
   if (authLoading || isLoading) {
@@ -67,7 +44,7 @@ export default function DashboardPage() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-800">{error}</p>
           <button
-            onClick={loadDashboardData}
+            onClick={refetch}
             className="mt-2 text-red-600 underline hover:text-red-800"
           >
             다시 시도
@@ -78,9 +55,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <Layout>
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">
@@ -251,7 +226,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-      </div>
-    </div>
+    </Layout>
   );
 }

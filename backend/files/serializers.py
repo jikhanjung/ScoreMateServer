@@ -93,8 +93,17 @@ class FileDownloadResponseSerializer(serializers.Serializer):
 
 
 class UploadConfirmationSerializer(serializers.Serializer):
-    """Serializer for confirming upload completion"""
+    """Serializer for confirming upload completion and creating score"""
     upload_id = serializers.UUIDField()
+    title = serializers.CharField(max_length=255)
+    composer = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    tags = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        allow_empty=True
+    )
+    duration_minutes = serializers.IntegerField(required=False, allow_null=True)
+    instrument_parts = serializers.CharField(max_length=255, required=False, allow_blank=True)
     
     def validate_upload_id(self, value):
         """Validate upload ID exists in reservations"""

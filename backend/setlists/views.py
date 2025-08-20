@@ -5,11 +5,12 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db import transaction
+from django.db import transaction, models
 from django.db.models import F
 from django.shortcuts import get_object_or_404
 
 from .models import Setlist, SetlistItem
+from scores.models import Score
 from .serializers import (
     SetlistSerializer, 
     SetlistListSerializer, 
@@ -76,6 +77,62 @@ class SetlistViewSet(viewsets.ModelViewSet):
                 return Response(return_serializer.data, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def add_items(self, request, pk=None):
+        """Add multiple items to the setlist"""
+        setlist = self.get_object()
+        
+        score_ids = request.data.get('score_ids', [])
+        if not score_ids or not isinstance(score_ids, list):
+            return Response(
+                {'error': 'score_ids must be a non-empty list'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            with transaction.atomic():
+                created_items = []
+                current_max_order = SetlistItem.objects.filter(
+                    setlist=setlist
+                ).aggregate(
+                    max_order=models.Max('order_index')
+                )['max_order'] or 0
+                
+                for i, score_id in enumerate(score_ids):
+                    # Validate score exists and belongs to user
+                    try:
+                        score = Score.objects.get(id=score_id, user=request.user)
+                    except Score.DoesNotExist:
+                        return Response(
+                            {'error': f'Score {score_id} not found'}, 
+                            status=status.HTTP_404_NOT_FOUND
+                        )
+                    
+                    # Check if score already in setlist
+                    if SetlistItem.objects.filter(setlist=setlist, score=score).exists():
+                        continue  # Skip duplicates
+                    
+                    # Create item
+                    item = SetlistItem.objects.create(
+                        setlist=setlist,
+                        score=score,
+                        order_index=current_max_order + i + 1
+                    )
+                    created_items.append(item)
+                
+                # Return created items
+                serializer = SetlistItemSerializer(created_items, many=True)
+                return Response({
+                    'created_count': len(created_items),
+                    'items': serializer.data
+                }, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to add items: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
     @action(detail=True, methods=['put', 'patch'], url_path='items/(?P<item_id>[^/.]+)')
     def update_item(self, request, pk=None, item_id=None):

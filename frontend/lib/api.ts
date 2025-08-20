@@ -1,5 +1,17 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import type {
+  Setlist,
+  SetlistListResponse,
+  SetlistDetailResponse,
+  SetlistCreateRequest,
+  SetlistUpdateRequest,
+  SetlistItem,
+  SetlistItemCreateRequest,
+  SetlistItemUpdateRequest,
+  SetlistItemReorderRequest,
+  SetlistDuplicateResponse
+} from '@/types/setlist';
 
 // API 기본 설정
 const api = axios.create({
@@ -61,6 +73,105 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Setlist API 메서드들
+export const setlistApi = {
+  // 세트리스트 목록 조회
+  getSetlists: async (): Promise<SetlistListResponse> => {
+    const response = await api.get<SetlistListResponse>('/setlists/');
+    return response.data;
+  },
+
+  // 세트리스트 상세 조회
+  getSetlist: async (id: string): Promise<SetlistDetailResponse> => {
+    const response = await api.get<SetlistDetailResponse>(`/setlists/${id}/`);
+    return response.data;
+  },
+
+  // 세트리스트 생성
+  createSetlist: async (data: SetlistCreateRequest): Promise<Setlist> => {
+    const response = await api.post<Setlist>('/setlists/', data);
+    return response.data;
+  },
+
+  // 세트리스트 수정
+  updateSetlist: async (id: string, data: SetlistUpdateRequest): Promise<Setlist> => {
+    const response = await api.put<Setlist>(`/setlists/${id}/`, data);
+    return response.data;
+  },
+
+  // 세트리스트 삭제
+  deleteSetlist: async (id: string): Promise<void> => {
+    await api.delete(`/setlists/${id}/`);
+  },
+
+  // 세트리스트 복제
+  duplicateSetlist: async (id: string): Promise<Setlist> => {
+    const response = await api.post<Setlist>(`/setlists/${id}/duplicate/`);
+    return response.data;
+  },
+
+  // 세트리스트 아이템 목록 조회
+  getSetlistItems: async (setlistId: string): Promise<SetlistItem[]> => {
+    const response = await api.get<SetlistItem[]>(`/setlists/${setlistId}/items/`);
+    return response.data;
+  },
+
+  // 세트리스트에 아이템 추가
+  addSetlistItem: async (setlistId: string, data: SetlistItemCreateRequest): Promise<SetlistItem> => {
+    const response = await api.post<SetlistItem>(`/setlists/${setlistId}/add_item/`, {
+      score_id: data.score_id,
+      notes: data.notes
+    });
+    return response.data;
+  },
+
+  // 세트리스트에 여러 아이템 추가
+  addMultipleSetlistItems: async (setlistId: string, scoreIds: string[]): Promise<{created_count: number, items: SetlistItem[]}> => {
+    const response = await api.post<{created_count: number, items: SetlistItem[]}>(`/setlists/${setlistId}/add_items/`, {
+      score_ids: scoreIds
+    });
+    return response.data;
+  },
+
+  // 세트리스트 아이템 수정
+  updateSetlistItem: async (
+    setlistId: string, 
+    itemId: string, 
+    data: SetlistItemUpdateRequest
+  ): Promise<SetlistItem> => {
+    const response = await api.put<SetlistItem>(
+      `/setlists/${setlistId}/items/${itemId}/`, 
+      data
+    );
+    return response.data;
+  },
+
+  // 세트리스트 아이템 삭제
+  removeSetlistItem: async (setlistId: string, itemId: string): Promise<void> => {
+    await api.delete(`/setlists/${setlistId}/items/${itemId}/`);
+  },
+
+  // 세트리스트 아이템 순서 변경
+  reorderSetlistItems: async (
+    setlistId: string, 
+    data: SetlistItemReorderRequest
+  ): Promise<SetlistDetailResponse> => {
+    // 백엔드 API 형식에 맞게 변환
+    const requestData = {
+      items: data.item_orders.map(item => ({
+        id: item.item_id,
+        order_index: item.order_index
+      }))
+    };
+    
+    const response = await api.post<SetlistDetailResponse>(
+      `/setlists/${setlistId}/reorder_items/`, 
+      requestData
+    );
+    return response.data;
+  }
+};
 
 export default api;
 export { api as apiClient };

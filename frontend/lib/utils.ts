@@ -6,8 +6,9 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // 파일 크기를 사람이 읽기 쉬운 형태로 변환
-export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
+export function formatFileSize(bytes: number | undefined | null): string {
+  if (!bytes || bytes === 0) return '0 B';
+  if (typeof bytes !== 'number' || isNaN(bytes)) return '크기 정보 없음';
   
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];

@@ -2,21 +2,65 @@ import { Page, expect } from '@playwright/test';
 
 // Test utilities for common e2e operations
 
+// Generate unique email for test isolation
+export function generateUniqueEmail(): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  return `test-${timestamp}-${random}@scoremate.com`;
+}
+
+// Setup authenticated user and return cookies
+export async function setupAuthenticatedUser(
+  page: Page, 
+  email: string = generateUniqueEmail(),
+  password: string = 'SecureTest123!@#'
+): Promise<any[]> {
+  // Try to register a new user
+  await page.goto('/auth/register');
+  
+  // Fill registration form
+  await page.fill('input[placeholder*="사용자명"]', 'Test User');
+  await page.fill('input[placeholder*="이메일"]', email);
+  await page.fill('input[placeholder*="이름"]', 'Test');
+  await page.fill('input[placeholder*="성"]', 'User');
+  await page.fill('input[type="password"]:not([placeholder*="확인"])', password);
+  await page.fill('input[placeholder*="비밀번호 확인"]', password);
+  
+  // Submit registration
+  await page.click('button[type="submit"]:has-text("회원가입")');
+  
+  try {
+    // Wait for successful registration and redirect
+    await page.waitForURL('/dashboard', { timeout: 10000 });
+  } catch {
+    // If registration fails, try to login (user might already exist)
+    await page.goto('/auth/login');
+    await page.fill('input[type="email"]', email);
+    await page.fill('input[type="password"]', password);
+    await page.click('button[type="submit"]:has-text("로그인")');
+    await page.waitForURL('/dashboard', { timeout: 10000 });
+  }
+  
+  // Get cookies for reuse in other tests
+  const cookies = await page.context().cookies();
+  return cookies;
+}
+
 export const TEST_USERS = {
   WORKFLOW: {
     email: 'workflow-test@scoremate.com',
     name: '워크플로우 테스터',
-    password: 'WorkflowTest2024!@#Complex'
+    password: 'WorkflowSecure2024!@#'
   },
   UPLOAD: {
     email: 'upload-test@scoremate.com',
     name: '업로드 테스터',
-    password: 'UploadTest2024!@#Complex'
+    password: 'UploadSecure2024!@#'
   },
   DASHBOARD: {
     email: 'dashboard-test@scoremate.com',
     name: '대시보드 테스터',
-    password: 'DashboardTest2024!@#Complex'
+    password: 'DashboardSecure2024!@#'
   }
 };
 

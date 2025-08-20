@@ -4,13 +4,15 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiClient } from '@/lib/api';
+import { apiClient, setlistApi } from '@/lib/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Button from '@/components/ui/Button';
-import Header from '@/components/layout/Header';
+import { Layout } from '@/components/ui/Layout';
 import toast from '@/lib/toast';
 import { Score } from '@/types/api';
 import { formatFileSize, formatDate } from '@/lib/utils';
+import { useSetlists } from '@/hooks/useSetlists';
+import { useSetlistItems } from '@/hooks/useSetlistItems';
 import { 
   DocumentIcon,
   CloudArrowDownIcon,
@@ -21,7 +23,8 @@ import {
   CalendarIcon,
   MusicalNoteIcon,
   DocumentTextIcon,
-  FolderPlusIcon
+  FolderPlusIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 
 export default function ScoreDetailPage() {
@@ -32,6 +35,7 @@ export default function ScoreDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showSetlistModal, setShowSetlistModal] = useState(false);
   const [editForm, setEditForm] = useState({
     title: '',
     composer: '',
@@ -43,6 +47,10 @@ export default function ScoreDetailPage() {
   });
 
   const scoreId = params.id as string;
+  
+  // Setlist hooks
+  const { setlists, isLoading: setlistsLoading } = useSetlists();
+  const { addItemMutation } = useSetlistItems('dummy'); // Will be updated when adding
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -133,6 +141,28 @@ export default function ScoreDetailPage() {
     }
   };
 
+  const handleAddToSetlist = async (setlistId: string) => {
+    if (!score) return;
+
+    try {
+      // Use the correct API from setlistApi
+      await setlistApi.addSetlistItem(setlistId, {
+        score_id: scoreId,
+        notes: ''
+      });
+      
+      toast.success('세트리스트에 추가되었습니다');
+      setShowSetlistModal(false);
+    } catch (err: any) {
+      console.error('Failed to add to setlist:', err);
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes('already exists')) {
+        toast.error('이미 세트리스트에 있는 악보입니다');
+      } else {
+        toast.error('세트리스트에 추가하는데 실패했습니다');
+      }
+    }
+  };
+
 
   if (authLoading || isLoading) {
     return (
@@ -147,9 +177,7 @@ export default function ScoreDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <Layout>
       {/* Header */}
       <div className="mb-6">
         <Link
@@ -195,8 +223,8 @@ export default function ScoreDetailPage() {
             {isEditing ? (
               <>
                 <Button
-                  variant="secondary"
-                  size="small"
+                  variant="outline"
+                  size="xs"
                   onClick={() => {
                     setIsEditing(false);
                     setEditForm({
@@ -214,7 +242,7 @@ export default function ScoreDetailPage() {
                 </Button>
                 <Button
                   variant="primary"
-                  size="small"
+                  size="xs"
                   onClick={handleUpdate}
                 >
                   저장
@@ -223,28 +251,29 @@ export default function ScoreDetailPage() {
             ) : (
               <>
                 <Button
-                  variant="secondary"
-                  size="small"
+                  variant="outline"
+                  size="xs"
                   onClick={() => setIsEditing(true)}
                 >
-                  <PencilIcon className="h-4 w-4 mr-1" />
+                  <PencilIcon className="h-3 w-3 mr-1" />
                   편집
                 </Button>
                 <Button
                   variant="primary"
-                  size="small"
+                  size="xs"
                   onClick={handleDownload}
                 >
-                  <CloudArrowDownIcon className="h-4 w-4 mr-1" />
+                  <CloudArrowDownIcon className="h-3 w-3 mr-1" />
                   다운로드
                 </Button>
                 <Button
-                  variant="danger"
-                  size="small"
+                  variant="outline"
+                  size="xs"
                   onClick={handleDelete}
                   loading={isDeleting}
+                  className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
                 >
-                  <TrashIcon className="h-4 w-4 mr-1" />
+                  <TrashIcon className="h-3 w-3 mr-1" />
                   삭제
                 </Button>
               </>
@@ -421,19 +450,95 @@ export default function ScoreDetailPage() {
             <h2 className="text-lg font-semibold mb-4">빠른 작업</h2>
             <div className="space-y-2">
               <Button
-                variant="secondary"
-                size="small"
+                variant="outline"
+                size="xs"
                 className="w-full justify-start"
-                onClick={() => toast.info('세트리스트 추가 기능은 준비 중입니다')}
+                onClick={() => setShowSetlistModal(true)}
               >
-                <FolderPlusIcon className="h-4 w-4 mr-2" />
+                <FolderPlusIcon className="h-3 w-3 mr-2" />
                 세트리스트에 추가
               </Button>
             </div>
           </div>
         </div>
       </div>
-      </div>
-    </div>
+
+      {/* Setlist Selection Modal */}
+      {showSetlistModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-96 overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  세트리스트 선택
+                </h3>
+                <button
+                  onClick={() => setShowSetlistModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+              <p className="mt-1 text-sm text-gray-600">
+                "{score?.title}"을(를) 추가할 세트리스트를 선택하세요
+              </p>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-64">
+              {setlistsLoading ? (
+                <div className="flex justify-center py-4">
+                  <LoadingSpinner size="medium" />
+                </div>
+              ) : setlists && setlists.length > 0 ? (
+                <div className="space-y-2">
+                  {setlists.map((setlist) => (
+                    <button
+                      key={setlist.id}
+                      onClick={() => handleAddToSetlist(setlist.id)}
+                      className="w-full text-left p-3 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium text-gray-900">
+                            {setlist.title}
+                          </h4>
+                          <p className="text-sm text-gray-500">
+                            {setlist.description || '설명 없음'}
+                          </p>
+                        </div>
+                        <span className="text-xs text-gray-400">
+                          {setlist.item_count || 0}곡
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <FolderPlusIcon className="mx-auto h-12 w-12 text-gray-300" />
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                    세트리스트가 없습니다
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    먼저 세트리스트를 만들어주세요
+                  </p>
+                  <div className="mt-4">
+                    <Link href="/setlists">
+                      <Button
+                        variant="primary"
+                        size="xs"
+                        onClick={() => setShowSetlistModal(false)}
+                      >
+                        세트리스트 만들기
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </Layout>
   );
 }

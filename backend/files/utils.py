@@ -128,7 +128,7 @@ class QuotaManager:
     """Manage user quota reservations and confirmations"""
     
     @staticmethod
-    def reserve_quota(user, size_bytes, upload_id=None):
+    def reserve_quota(user, size_bytes, s3_key=None, mime_type=None, upload_id=None):
         """
         Reserve quota for upload (step 1)
         Store reservation in Redis with TTL
@@ -145,6 +145,8 @@ class QuotaManager:
         reservation_data = {
             'user_id': user.id,
             'size_bytes': size_bytes,
+            's3_key': s3_key,
+            'mime_type': mime_type,
             'reserved_at': cache.now() if hasattr(cache, 'now') else None,
         }
         

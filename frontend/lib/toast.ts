@@ -73,4 +73,5 @@ const toastAPI = {
   dismissAll: dismissAllToasts,
 };
 
+export { toast };
 export default toastAPI;

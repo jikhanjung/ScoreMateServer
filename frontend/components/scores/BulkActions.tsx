@@ -11,7 +11,8 @@ import {
   TrashIcon,
   CheckIcon,
   QueueListIcon,
-  PlusIcon
+  PlusIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline';
 
 interface BulkActionsProps {
@@ -20,6 +21,12 @@ interface BulkActionsProps {
   onTagsAdd: (tags: string[]) => void;
   onTagsRemove: (tags: string[]) => void;
   onDelete: () => void;
+  onMetadataUpdate: (metadata: {
+    composer?: string;
+    genre?: string;
+    difficulty?: number;
+    description?: string;
+  }) => void;
   onClearSelection: () => void;
   isLoading?: boolean;
 }
@@ -30,6 +37,7 @@ export default function BulkActions({
   onTagsAdd,
   onTagsRemove,
   onDelete,
+  onMetadataUpdate,
   onClearSelection,
   isLoading = false
 }: BulkActionsProps) {
@@ -42,6 +50,15 @@ export default function BulkActions({
   const [isCreatingNewSetlist, setIsCreatingNewSetlist] = useState(false);
   const [newSetlistTitle, setNewSetlistTitle] = useState('');
   const [newSetlistDescription, setNewSetlistDescription] = useState('');
+  
+  // Metadata editing state
+  const [showMetadataModal, setShowMetadataModal] = useState(false);
+  const [metadataForm, setMetadataForm] = useState({
+    composer: '',
+    genre: '',
+    difficulty: '',
+    description: ''
+  });
 
   const { setlists, createSetlist } = useSetlists();
   const queryClient = useQueryClient();
@@ -67,6 +84,38 @@ export default function BulkActions({
   const openTagModal = (action: 'add' | 'remove') => {
     setTagAction(action);
     setShowTagModal(true);
+  };
+
+  const handleMetadataSubmit = () => {
+    const metadata: any = {};
+    
+    // Only include fields that have values
+    if (metadataForm.composer.trim()) {
+      metadata.composer = metadataForm.composer.trim();
+    }
+    if (metadataForm.genre.trim()) {
+      metadata.genre = metadataForm.genre.trim();
+    }
+    if (metadataForm.difficulty && metadataForm.difficulty !== '') {
+      metadata.difficulty = parseInt(metadataForm.difficulty);
+    }
+    if (metadataForm.description.trim()) {
+      metadata.description = metadataForm.description.trim();
+    }
+    
+    // Only submit if there's at least one field to update
+    if (Object.keys(metadata).length === 0) return;
+    
+    onMetadataUpdate(metadata);
+    
+    // Reset form
+    setMetadataForm({
+      composer: '',
+      genre: '',
+      difficulty: '',
+      description: ''
+    });
+    setShowMetadataModal(false);
   };
 
   const handleAddToSetlist = async () => {
@@ -180,6 +229,17 @@ export default function BulkActions({
             >
               <TagIcon className="h-3 w-3 mr-1" />
               태그 제거
+            </Button>
+            
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={() => setShowMetadataModal(true)}
+              disabled={isLoading}
+              className="bg-white/10 hover:bg-white/20 text-white border-white/20"
+            >
+              <PencilIcon className="h-3 w-3 mr-1" />
+              메타데이터 편집
             </Button>
             
             <Button
@@ -415,6 +475,137 @@ export default function BulkActions({
                   {isAddingToSetlist ? '생성 중...' : '생성 후 추가'}
                 </Button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metadata Modal */}
+      {showMetadataModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                메타데이터 일괄 편집
+              </h3>
+              <button
+                onClick={() => setShowMetadataModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <p className="text-sm text-gray-600 mb-4">
+              선택된 {selectedCount}개 악보의 메타데이터를 편집합니다. 빈 필드는 변경되지 않습니다.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="bulk-composer" className="block text-sm font-medium text-gray-700 mb-1">
+                  작곡가
+                </label>
+                <input
+                  id="bulk-composer"
+                  type="text"
+                  placeholder="작곡가명을 입력하세요"
+                  value={metadataForm.composer}
+                  onChange={(e) => setMetadataForm(prev => ({ ...prev, composer: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading}
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="bulk-genre" className="block text-sm font-medium text-gray-700 mb-1">
+                  장르
+                </label>
+                <select
+                  id="bulk-genre"
+                  value={metadataForm.genre}
+                  onChange={(e) => setMetadataForm(prev => ({ ...prev, genre: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading}
+                >
+                  <option value="">선택하지 않음</option>
+                  <option value="클래식">클래식</option>
+                  <option value="재즈">재즈</option>
+                  <option value="팝">팝</option>
+                  <option value="록">록</option>
+                  <option value="블루스">블루스</option>
+                  <option value="컨트리">컨트리</option>
+                  <option value="포크">포크</option>
+                  <option value="기타">기타</option>
+                </select>
+              </div>
+              
+              <div>
+                <label htmlFor="bulk-difficulty" className="block text-sm font-medium text-gray-700 mb-1">
+                  난이도
+                </label>
+                <select
+                  id="bulk-difficulty"
+                  value={metadataForm.difficulty}
+                  onChange={(e) => setMetadataForm(prev => ({ ...prev, difficulty: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading}
+                >
+                  <option value="">선택하지 않음</option>
+                  <option value="1">★☆☆☆☆ (매우 쉬움)</option>
+                  <option value="2">★★☆☆☆ (쉬움)</option>
+                  <option value="3">★★★☆☆ (보통)</option>
+                  <option value="4">★★★★☆ (어려움)</option>
+                  <option value="5">★★★★★ (매우 어려움)</option>
+                </select>
+              </div>
+              
+              <div>
+                <label htmlFor="bulk-description" className="block text-sm font-medium text-gray-700 mb-1">
+                  설명
+                </label>
+                <textarea
+                  id="bulk-description"
+                  placeholder="악보에 대한 설명을 입력하세요"
+                  value={metadataForm.description}
+                  onChange={(e) => setMetadataForm(prev => ({ ...prev, description: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-end gap-2 mt-6">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowMetadataModal(false);
+                  setMetadataForm({
+                    composer: '',
+                    genre: '',
+                    difficulty: '',
+                    description: ''
+                  });
+                }}
+                disabled={isLoading}
+              >
+                취소
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleMetadataSubmit}
+                disabled={isLoading || (
+                  !metadataForm.composer.trim() && 
+                  !metadataForm.genre.trim() && 
+                  !metadataForm.difficulty && 
+                  !metadataForm.description.trim()
+                )}
+              >
+                <CheckIcon className="h-4 w-4 mr-1" />
+                {isLoading ? '수정 중...' : '적용'}
+              </Button>
             </div>
           </div>
         </div>

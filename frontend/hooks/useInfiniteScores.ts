@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
-import { apiClient, scoreApi } from '@/lib/api';
+import { useState, useCallback, useMemo } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { apiClient } from '@/lib/api';
 import { Score, PaginatedResponse } from '@/types/api';
 import { extractErrorMessage } from '@/lib/utils';
 import { FilterParams } from '@/components/scores/AdvancedFilters';
@@ -8,15 +9,17 @@ type ViewMode = 'grid' | 'list';
 type SortField = 'title' | 'created_at' | 'updated_at' | 'size_bytes' | 'pages' | 'composer';
 type SortOrder = 'asc' | 'desc';
 
-interface UseScoresParams {
+interface UseInfiniteScoresParams {
   itemsPerPage?: number;
+  enabled?: boolean;
 }
 
-interface UseScoresReturn {
+interface UseInfiniteScoresReturn {
   // Data
   scores: Score[];
   totalCount: number;
-  totalPages: number;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
   
   // Loading states
   isLoading: boolean;
@@ -28,7 +31,6 @@ interface UseScoresReturn {
   searchQuery: string;
   sortField: SortField;
   sortOrder: SortOrder;
-  currentPage: number;
   filters: FilterParams;
   selectedScores: Set<string>;
   
@@ -37,12 +39,12 @@ interface UseScoresReturn {
   setSearchQuery: (query: string) => void;
   setSortField: (field: SortField) => void;
   setSortOrder: (order: SortOrder) => void;
-  setCurrentPage: (page: number) => void;
   setFilters: (filters: FilterParams) => void;
   handleSort: (field: SortField) => void;
   handleSearch: () => void;
   resetFilters: () => void;
   refetch: () => void;
+  fetchNextPage: () => void;
   
   // Selection actions
   toggleScoreSelection: (scoreId: string) => void;
@@ -61,74 +63,80 @@ interface UseScoresReturn {
   }) => Promise<void>;
 }
 
-export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScoresReturn {
-  // Data state
-  const [scores, setScores] = useState<Score[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  
-  // Loading state
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isBulkLoading, setIsBulkLoading] = useState(false);
-  
+export function useInfiniteScores({ itemsPerPage = 20, enabled = true }: UseInfiniteScoresParams = {}): UseInfiniteScoresReturn {
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState<FilterParams>({});
   const [selectedScores, setSelectedScores] = useState<Set<string>>(new Set());
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
 
-  const loadScores = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
+  // Build query parameters
+  const queryParams = useMemo(() => {
+    const ordering = sortOrder === 'desc' ? `-${sortField}` : sortField;
+    
+    const params: any = {
+      ordering,
+      search: searchQuery || undefined,
+      page_size: itemsPerPage
+    };
 
-      const ordering = sortOrder === 'desc' ? `-${sortField}` : sortField;
-      
-      // Build query parameters including filters
-      const params: any = {
-        ordering,
-        search: searchQuery || undefined,
-        page: currentPage,
-        page_size: itemsPerPage
-      };
+    // Add advanced filters
+    if (filters.title) params.title = filters.title;
+    if (filters.composer) params.composer = filters.composer;
+    if (filters.tags && filters.tags.length > 0) params.tags = filters.tags.join(',');
+    if (filters.size_mb_min !== undefined) params.size_mb_min = filters.size_mb_min;
+    if (filters.size_mb_max !== undefined) params.size_mb_max = filters.size_mb_max;
+    if (filters.pages_min !== undefined) params.pages_min = filters.pages_min;
+    if (filters.pages_max !== undefined) params.pages_max = filters.pages_max;
+    if (filters.created_after) params.created_after = filters.created_after;
+    if (filters.created_before) params.created_before = filters.created_before;
+    if (filters.has_tags !== undefined) params.has_tags = filters.has_tags;
+    if (filters.has_pages !== undefined) params.has_pages = filters.has_pages;
+    if (filters.has_thumbnail !== undefined) params.has_thumbnail = filters.has_thumbnail;
 
-      // Add advanced filters
-      if (filters.title) params.title = filters.title;
-      if (filters.composer) params.composer = filters.composer;
-      if (filters.tags && filters.tags.length > 0) params.tags = filters.tags.join(',');
-      if (filters.size_mb_min !== undefined) params.size_mb_min = filters.size_mb_min;
-      if (filters.size_mb_max !== undefined) params.size_mb_max = filters.size_mb_max;
-      if (filters.pages_min !== undefined) params.pages_min = filters.pages_min;
-      if (filters.pages_max !== undefined) params.pages_max = filters.pages_max;
-      if (filters.created_after) params.created_after = filters.created_after;
-      if (filters.created_before) params.created_before = filters.created_before;
-      if (filters.has_tags !== undefined) params.has_tags = filters.has_tags;
-      if (filters.has_pages !== undefined) params.has_pages = filters.has_pages;
-      if (filters.has_thumbnail !== undefined) params.has_thumbnail = filters.has_thumbnail;
-      
+    return params;
+  }, [sortField, sortOrder, searchQuery, itemsPerPage, filters]);
+
+  // Infinite query
+  const {
+    data,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: ['scores', 'infinite', queryParams],
+    queryFn: async ({ pageParam = 1 }) => {
       const response = await apiClient.get<PaginatedResponse<Score>>('/scores/', {
-        params
+        params: {
+          ...queryParams,
+          page: pageParam
+        }
       });
+      return response.data;
+    },
+    getNextPageParam: (lastPage, pages) => {
+      if (lastPage.next) {
+        return pages.length + 1;
+      }
+      return undefined;
+    },
+    enabled,
+    staleTime: 30000, // 30 seconds
+  });
 
-      setScores(response.data.results || []);
-      setTotalCount(response.data.count || 0);
-      setTotalPages(Math.ceil((response.data.count || 0) / itemsPerPage));
-    } catch (err: any) {
-      console.error('Failed to load scores:', err);
-      setError(extractErrorMessage(err) || '악보 목록을 불러오는데 실패했습니다');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPage, sortField, sortOrder, searchQuery, itemsPerPage, filters]);
+  // Flatten all scores from all pages
+  const scores = useMemo(() => {
+    return data?.pages?.flatMap(page => page.results) || [];
+  }, [data]);
 
-  // Load scores when dependencies change
-  useEffect(() => {
-    loadScores();
-  }, [loadScores]);
+  // Total count from first page
+  const totalCount = data?.pages?.[0]?.count || 0;
 
   const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
@@ -137,22 +145,18 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
       setSortField(field);
       setSortOrder('desc');
     }
-    setCurrentPage(1);
+    clearSelection();
   }, [sortField, sortOrder]);
 
   const handleSearch = useCallback(() => {
-    setCurrentPage(1);
-    loadScores();
-  }, [loadScores]);
+    clearSelection();
+    refetch();
+  }, [refetch]);
 
   const resetFilters = useCallback(() => {
     setFilters({});
-    setCurrentPage(1);
+    clearSelection();
   }, []);
-
-  const refetch = useCallback(() => {
-    loadScores();
-  }, [loadScores]);
 
   // Selection actions
   const toggleScoreSelection = useCallback((scoreId: string) => {
@@ -175,7 +179,7 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     setSelectedScores(new Set());
   }, []);
 
-  // Bulk actions
+  // Bulk actions (reusing logic from useScores)
   const bulkAddTags = useCallback(async (tags: string[]) => {
     if (selectedScores.size === 0) return;
     
@@ -186,16 +190,8 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
         add_tags: tags
       });
       
-      // Optimistic update
-      setScores(prev => prev.map(score => {
-        if (selectedScores.has(score.id)) {
-          const currentTags = score.tags || [];
-          const newTags = [...new Set([...currentTags, ...tags])];
-          return { ...score, tags: newTags };
-        }
-        return score;
-      }));
-      
+      // Refetch to get updated data
+      await refetch();
       clearSelection();
     } catch (err: any) {
       console.error('Failed to add tags:', err);
@@ -203,7 +199,7 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     } finally {
       setIsBulkLoading(false);
     }
-  }, [selectedScores, clearSelection]);
+  }, [selectedScores, clearSelection, refetch]);
 
   const bulkRemoveTags = useCallback(async (tags: string[]) => {
     if (selectedScores.size === 0) return;
@@ -215,16 +211,8 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
         remove_tags: tags
       });
       
-      // Optimistic update
-      setScores(prev => prev.map(score => {
-        if (selectedScores.has(score.id)) {
-          const currentTags = score.tags || [];
-          const newTags = currentTags.filter(tag => !tags.includes(tag));
-          return { ...score, tags: newTags };
-        }
-        return score;
-      }));
-      
+      // Refetch to get updated data
+      await refetch();
       clearSelection();
     } catch (err: any) {
       console.error('Failed to remove tags:', err);
@@ -232,7 +220,7 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     } finally {
       setIsBulkLoading(false);
     }
-  }, [selectedScores, clearSelection]);
+  }, [selectedScores, clearSelection, refetch]);
 
   const bulkDelete = useCallback(async () => {
     if (selectedScores.size === 0) return;
@@ -245,10 +233,8 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
       
       await Promise.all(deletePromises);
       
-      // Remove deleted scores from state
-      setScores(prev => prev.filter(score => !selectedScores.has(score.id)));
-      setTotalCount(prev => prev - selectedScores.size);
-      
+      // Refetch to get updated data
+      await refetch();
       clearSelection();
     } catch (err: any) {
       console.error('Failed to delete scores:', err);
@@ -256,7 +242,7 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     } finally {
       setIsBulkLoading(false);
     }
-  }, [selectedScores, clearSelection]);
+  }, [selectedScores, clearSelection, refetch]);
 
   const bulkUpdateMetadata = useCallback(async (metadata: {
     composer?: string;
@@ -268,27 +254,14 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     
     try {
       setIsBulkLoading(true);
-      await scoreApi.bulkUpdateMetadata({
+      // Note: This will need the backend API endpoint
+      await apiClient.post('/scores/bulk_metadata/', {
         score_ids: Array.from(selectedScores).map(id => parseInt(id)),
         metadata
       });
       
-      // Optimistic update
-      setScores(prev => prev.map(score => {
-        if (selectedScores.has(score.id)) {
-          return { 
-            ...score, 
-            ...metadata,
-            // Only update fields that have values
-            composer: metadata.composer !== undefined ? metadata.composer : score.composer,
-            genre: metadata.genre !== undefined ? metadata.genre : score.genre,
-            difficulty: metadata.difficulty !== undefined ? metadata.difficulty : score.difficulty,
-            notes: metadata.description !== undefined ? metadata.description : score.notes,
-          };
-        }
-        return score;
-      }));
-      
+      // Refetch to get updated data
+      await refetch();
       clearSelection();
     } catch (err: any) {
       console.error('Failed to update metadata:', err);
@@ -296,17 +269,18 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     } finally {
       setIsBulkLoading(false);
     }
-  }, [selectedScores, clearSelection]);
+  }, [selectedScores, clearSelection, refetch]);
 
   return {
     // Data
     scores,
     totalCount,
-    totalPages,
+    hasNextPage: hasNextPage || false,
+    isFetchingNextPage,
     
     // Loading states
-    isLoading,
-    error,
+    isLoading: isFetching && !isFetchingNextPage,
+    error: error ? extractErrorMessage(error) || '악보 목록을 불러오는데 실패했습니다' : null,
     isBulkLoading,
     
     // UI state
@@ -314,7 +288,6 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     searchQuery,
     sortField,
     sortOrder,
-    currentPage,
     filters,
     selectedScores,
     
@@ -323,12 +296,12 @@ export function useScores({ itemsPerPage = 12 }: UseScoresParams = {}): UseScore
     setSearchQuery,
     setSortField,
     setSortOrder,
-    setCurrentPage,
     setFilters,
     handleSort,
     handleSearch,
     resetFilters,
     refetch,
+    fetchNextPage,
     
     // Selection actions
     toggleScoreSelection,

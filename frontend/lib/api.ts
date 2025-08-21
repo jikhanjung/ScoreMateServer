@@ -208,5 +208,69 @@ export const fileApi = {
   }
 };
 
+// Score API
+export const scoreApi = {
+  // 악보 목록 조회
+  getScores: async (params?: {
+    page?: number;
+    search?: string;
+    genre?: string;
+    difficulty?: number;
+    tags?: string;
+    ordering?: string;
+  }): Promise<any> => {
+    const response = await api.get('/scores/', { params });
+    return response.data;
+  },
+
+  // 악보 상세 조회
+  getScore: async (id: string): Promise<any> => {
+    const response = await api.get(`/scores/${id}/`);
+    return response.data;
+  },
+
+  // 악보 메타데이터 수정
+  updateScore: async (id: number, data: Partial<{
+    title: string;
+    composer: string;
+    genre: string;
+    difficulty: number;
+    tags: string[];
+    description: string;
+  }>): Promise<any> => {
+    const response = await api.patch(`/scores/${id}/`, data);
+    return response.data;
+  },
+
+  // 벌크 태그 작업
+  bulkTag: async (data: {
+    score_ids: number[];
+    action: 'add' | 'remove';
+    tags: string[];
+  }): Promise<any> => {
+    const response = await api.post('/scores/bulk_tag/', data);
+    return response.data;
+  },
+
+  // 악보 삭제
+  deleteScore: async (id: number): Promise<void> => {
+    await api.delete(`/scores/${id}/`);
+  },
+
+  // 일괄 메타데이터 수정
+  bulkUpdateMetadata: async (data: {
+    score_ids: number[];
+    metadata: {
+      composer?: string;
+      genre?: string;
+      difficulty?: number;
+      description?: string;
+    };
+  }): Promise<any> => {
+    const response = await api.post('/scores/bulk_metadata/', data);
+    return response.data;
+  }
+};
+
 export default api;
 export { api as apiClient };

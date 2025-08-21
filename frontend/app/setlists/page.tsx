@@ -6,6 +6,7 @@ import { useSetlists } from '@/hooks/useSetlists';
 import Button from '@/components/ui/Button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Layout } from '@/components/ui/Layout';
+import { NoSetlistsEmpty } from '@/components/ui/EmptyState';
 
 interface CreateSetlistModalProps {
   isOpen: boolean;
@@ -240,33 +241,28 @@ export default function SetlistsPage() {
             <h1 className="text-3xl font-bold text-gray-900">세트리스트</h1>
             <p className="text-gray-600 mt-1">공연을 위한 악보 목록을 관리하세요</p>
           </div>
-          <Button
-            variant="primary"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2"
-          >
-            <span>+</span>
-            새 세트리스트
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Link href="/setlists/infinite">
+              <Button variant="outline" size="sm">
+                무한 스크롤 모드
+              </Button>
+            </Link>
+            <Button
+              variant="primary"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex items-center gap-2"
+            >
+              <span>+</span>
+              새 세트리스트
+            </Button>
+          </div>
         </div>
 
         {/* 세트리스트 목록 */}
         {setlists.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-gray-400 text-5xl mb-4">🎵</div>
-            <h3 className="text-xl font-medium text-gray-900 mb-2">
-              첫 번째 세트리스트를 만들어보세요
-            </h3>
-            <p className="text-gray-600 mb-6">
-              공연을 위한 악보들을 세트리스트로 정리하고 관리할 수 있습니다.
-            </p>
-            <Button
-              variant="primary"
-              onClick={() => setIsCreateModalOpen(true)}
-            >
-              새 세트리스트 만들기
-            </Button>
-          </div>
+          <NoSetlistsEmpty 
+            onAction={() => setIsCreateModalOpen(true)}
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {setlists.map((setlist) => (

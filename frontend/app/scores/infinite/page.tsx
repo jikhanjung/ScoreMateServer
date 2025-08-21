@@ -1,42 +1,38 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Button from '@/components/ui/Button';
 import { Layout } from '@/components/ui/Layout';
-import { useScores } from '@/hooks/useScores';
+import { useInfiniteScores } from '@/hooks/useInfiniteScores';
+import { useIntersectionObserver } from '@/hooks/useIntersectionObserver';
 import { formatFileSize, formatDate } from '@/lib/utils';
 import AdvancedFilters from '@/components/scores/AdvancedFilters';
 import BulkActions from '@/components/scores/BulkActions';
-import toast from '@/lib/toast';
 import { NoScoresEmpty, SearchNoResultsEmpty, ErrorState } from '@/components/ui/EmptyState';
 import { SkeletonGrid, SkeletonTable, ScoreCardSkeleton, ScoreTableRowSkeleton } from '@/components/ui/Skeleton';
-import { useKeyboardShortcuts, commonShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { KeyboardShortcutsModal } from '@/components/ui/KeyboardShortcutsModal';
+import toast from '@/lib/toast';
 import { 
   DocumentIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
   ViewColumnsIcon,
   Squares2X2Icon,
-  ArrowUpIcon,
-  ArrowDownIcon,
   PlusIcon
 } from '@heroicons/react/24/outline';
 
-export default function ScoresPage() {
+export default function InfiniteScoresPage() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   
   const {
     scores,
     totalCount,
-    totalPages,
+    hasNextPage,
+    isFetchingNextPage,
     isLoading,
     error,
     isBulkLoading,
@@ -44,18 +40,17 @@ export default function ScoresPage() {
     searchQuery,
     sortField,
     sortOrder,
-    currentPage,
     filters,
     selectedScores,
     setViewMode,
     setSearchQuery,
     setSortField,
     setSortOrder,
-    setCurrentPage,
     setFilters,
     handleSearch,
     resetFilters,
     refetch,
+    fetchNextPage,
     toggleScoreSelection,
     selectAllScores,
     clearSelection,
@@ -63,14 +58,12 @@ export default function ScoresPage() {
     bulkRemoveTags,
     bulkDelete,
     bulkUpdateMetadata
-  } = useScores({ itemsPerPage: 12 });
+  } = useInfiniteScores({ itemsPerPage: 20 });
 
-  // Check if any advanced filters are active
-  const hasActiveAdvancedFilters = Object.keys(filters).some(key => {
-    if (key === 'search') return false; // Exclude search from advanced filters
-    const value = filters[key as keyof typeof filters];
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== undefined && value !== null && value !== '';
+  // Infinite scroll observer
+  const { targetRef, isIntersecting } = useIntersectionObserver({
+    threshold: 0.1,
+    rootMargin: '200px'
   });
 
   useEffect(() => {
@@ -79,17 +72,31 @@ export default function ScoresPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
+  // Trigger infinite scroll
+  useEffect(() => {
+    if (isIntersecting && hasNextPage && !isFetchingNextPage && !isLoading) {
+      fetchNextPage();
+    }
+  }, [isIntersecting, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage]);
+
+  // Check if any advanced filters are active
+  const hasActiveAdvancedFilters = Object.keys(filters).some(key => {
+    if (key === 'search') return false;
+    const value = filters[key as keyof typeof filters];
+    if (Array.isArray(value)) return value.length > 0;
+    return value !== undefined && value !== null && value !== '';
+  });
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleSearch();
   };
 
   const handleIntegratedSearch = () => {
-    setCurrentPage(1);
     refetch();
   };
 
-  // Bulk action handlers with toast notifications
+  // Bulk action handlers
   const handleBulkAddTags = async (tags: string[]) => {
     try {
       await bulkAddTags(tags);
@@ -136,8 +143,6 @@ export default function ScoresPage() {
     }
   };
 
-
-
   if (authLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -152,24 +157,15 @@ export default function ScoresPage() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">내 악보</h1>
+            <h1 className="text-3xl font-bold text-gray-900">내 악보 (무한 스크롤)</h1>
             <p className="mt-1 text-sm text-gray-600">
-              총 {totalCount}개의 악보
+              총 {totalCount}개의 악보 {scores.length > 0 && `(${scores.length}개 로드됨)`}
             </p>
           </div>
           <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setShowShortcutsModal(true)}
-              className="text-gray-500 hover:text-gray-700 p-1"
-              title="키보드 단축키 (Shift+?)"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
-            <Link href="/scores/infinite">
+            <Link href="/scores">
               <Button variant="outline" size="sm">
-                무한 스크롤 모드
+                일반 페이지네이션
               </Button>
             </Link>
             <Link href="/upload">
@@ -201,9 +197,9 @@ export default function ScoresPage() {
           </Button>
           <Button 
             type="button" 
-            variant={showAdvancedFilters || hasActiveAdvancedFilters ? "primary" : "outline"} 
+            variant={hasActiveAdvancedFilters ? "primary" : "outline"} 
             size="sm"
-            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            onClick={() => {/* Toggle advanced filters */}}
             className="relative"
           >
             <FunnelIcon className="h-4 w-4 mr-1" />
@@ -214,17 +210,16 @@ export default function ScoresPage() {
           </Button>
         </form>
 
-        {/* Advanced Filters - collapsible */}
+        {/* Advanced Filters */}
         <AdvancedFilters 
           filters={filters}
           onFiltersChange={(newFilters) => {
             setFilters(newFilters);
-            setCurrentPage(1);
           }}
           onReset={resetFilters}
           onSearch={handleIntegratedSearch}
-          isVisible={showAdvancedFilters}
-          onToggle={() => setShowAdvancedFilters(!showAdvancedFilters)}
+          isVisible={hasActiveAdvancedFilters}
+          onToggle={() => {}}
         />
 
         <div className="flex items-center justify-between">
@@ -236,7 +231,6 @@ export default function ScoresPage() {
                 const [field, order] = e.target.value.split('-');
                 setSortField(field as any);
                 setSortOrder(order as any);
-                setCurrentPage(1);
               }}
             >
               <option value="created_at-desc">최신순</option>
@@ -287,18 +281,18 @@ export default function ScoresPage() {
       {error ? (
         <ErrorState 
           error={error}
-          onRetry={refetch}
+          onRetry={() => refetch()}
         />
       ) : isLoading ? (
         viewMode === 'grid' ? (
           <SkeletonGrid 
-            count={12}
+            count={20}
             columns={4}
             Component={ScoreCardSkeleton}
           />
         ) : (
           <SkeletonTable
-            rows={10}
+            rows={15}
             RowComponent={ScoreTableRowSkeleton}
             headers={['', '제목', '작곡가', '크기', '페이지', '업로드일']}
           />
@@ -323,165 +317,158 @@ export default function ScoresPage() {
           />
         )
       ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {scores.map((score) => (
-            <div key={score.id} className="relative group">
-              {/* Checkbox */}
-              <div className="absolute top-2 left-2 z-10">
-                <input
-                  type="checkbox"
-                  checked={selectedScores.has(score.id)}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    toggleScoreSelection(score.id);
-                  }}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-              </div>
-              
-              <Link
-                href={`/scores/${score.id}`}
-                className="block bg-white rounded-lg shadow hover:shadow-lg transition-shadow"
-              >
-                <div className="aspect-[3/4] bg-gray-100 rounded-t-lg overflow-hidden">
-                  {score.thumbnail_url ? (
-                    <img
-                      src={score.thumbnail_url}
-                      alt={score.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <DocumentIcon className="h-20 w-20 text-gray-300" />
-                    </div>
-                  )}
-                </div>
-                <div className="p-4">
-                  <h3 className="font-medium text-gray-900 truncate">
-                    {score.title}
-                  </h3>
-                  {score.composer && (
-                    <p className="text-sm text-gray-500 truncate">
-                      {score.composer}
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                    <span>{formatFileSize(score.size_bytes)}</span>
-                    <span>{score.page_count ? `${score.page_count}p` : '-'}</span>
-                    <span>{formatDate(score.created_at)}</span>
-                  </div>
-                </div>
-              </Link>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left">
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {scores.map((score) => (
+              <div key={score.id} className="relative group">
+                {/* Checkbox */}
+                <div className="absolute top-2 left-2 z-10">
                   <input
                     type="checkbox"
-                    checked={scores.length > 0 && selectedScores.size === scores.length}
-                    onChange={selectedScores.size === scores.length ? clearSelection : selectAllScores}
+                    checked={selectedScores.has(score.id)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      toggleScoreSelection(score.id);
+                    }}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  제목
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  작곡가
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  크기
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  페이지
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  업로드일
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {scores.map((score) => (
-                <tr key={score.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                </div>
+                
+                <Link
+                  href={`/scores/${score.id}`}
+                  className="block bg-white rounded-lg shadow hover:shadow-lg transition-shadow"
+                >
+                  <div className="aspect-[3/4] bg-gray-100 rounded-t-lg overflow-hidden">
+                    {score.thumbnail_url ? (
+                      <img
+                        src={score.thumbnail_url}
+                        alt={score.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <DocumentIcon className="h-20 w-20 text-gray-300" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="font-medium text-gray-900 truncate">
+                      {score.title}
+                    </h3>
+                    {score.composer && (
+                      <p className="text-sm text-gray-500 truncate">
+                        {score.composer}
+                      </p>
+                    )}
+                    <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                      <span>{formatFileSize(score.size_bytes)}</span>
+                      <span>{score.page_count ? `${score.page_count}p` : '-'}</span>
+                      <span>{formatDate(score.created_at)}</span>
+                    </div>
+                  </div>
+                </Link>
+              </div>
+            ))}
+          </div>
+          
+          {/* Infinite scroll trigger and loading */}
+          <div ref={targetRef} className="flex justify-center py-8">
+            {isFetchingNextPage && <LoadingSpinner size="md" text="더 많은 악보를 불러오는 중..." />}
+            {!hasNextPage && scores.length > 0 && (
+              <p className="text-gray-500 text-sm">모든 악보를 불러왔습니다.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left">
                     <input
                       type="checkbox"
-                      checked={selectedScores.has(score.id)}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        toggleScoreSelection(score.id);
-                      }}
+                      checked={scores.length > 0 && selectedScores.size === scores.length}
+                      onChange={selectedScores.size === scores.length ? clearSelection : selectAllScores}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <Link 
-                      href={`/scores/${score.id}`}
-                      className="flex items-center hover:text-blue-600"
-                    >
-                      <DocumentIcon className="h-5 w-5 text-gray-400 mr-3" />
-                      <span className="text-sm font-medium text-gray-900">
-                        {score.title}
-                      </span>
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
-                      {score.composer || '-'}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
-                      {formatFileSize(score.size_bytes)}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
-                      {score.page_count ? `${score.page_count}p` : '-'}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
-                      {formatDate(score.created_at)}
-                    </Link>
-                  </td>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    제목
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    작곡가
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    크기
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    페이지
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    업로드일
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-6 flex items-center justify-between">
-          <Button
-            variant="secondary"
-            size="xs"
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage(currentPage - 1)}
-          >
-            이전
-          </Button>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {scores.map((score) => (
+                  <tr key={score.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedScores.has(score.id)}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggleScoreSelection(score.id);
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Link 
+                        href={`/scores/${score.id}`}
+                        className="flex items-center hover:text-blue-600"
+                      >
+                        <DocumentIcon className="h-5 w-5 text-gray-400 mr-3" />
+                        <span className="text-sm font-medium text-gray-900">
+                          {score.title}
+                        </span>
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                        {score.composer || '-'}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                        {formatFileSize(score.size_bytes)}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                        {score.page_count ? `${score.page_count}p` : '-'}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                        {formatDate(score.created_at)}
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           
-          <span className="text-sm text-gray-700">
-            {currentPage} / {totalPages} 페이지
-          </span>
-          
-          <Button
-            variant="secondary"
-            size="xs"
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage(currentPage + 1)}
-          >
-            다음
-          </Button>
-        </div>
+          {/* Infinite scroll trigger for table view */}
+          <div ref={targetRef} className="flex justify-center py-8">
+            {isFetchingNextPage && <LoadingSpinner size="md" text="더 많은 악보를 불러오는 중..." />}
+            {!hasNextPage && scores.length > 0 && (
+              <p className="text-gray-500 text-sm">모든 악보를 불러왔습니다.</p>
+            )}
+          </div>
+        </>
       )}
 
       {/* Bulk Actions */}
@@ -495,27 +482,6 @@ export default function ScoresPage() {
         onClearSelection={clearSelection}
         isLoading={isBulkLoading}
       />
-
-      {/* 키보드 단축키 도움말 모달 */}
-      <KeyboardShortcutsModal
-        isOpen={showShortcutsModal}
-        onClose={() => setShowShortcutsModal(false)}
-        shortcuts={[
-          commonShortcuts.search(() => {}),
-          commonShortcuts.newItem(() => {}),
-          commonShortcuts.toggleView(() => {}),
-          commonShortcuts.gridView(() => {}),
-          commonShortcuts.listView(() => {}),
-          commonShortcuts.selectAll(() => {}),
-          commonShortcuts.clearSelection(() => {}),
-          commonShortcuts.refresh(() => {}),
-          { key: 'f', callback: () => {}, description: 'F: 고급 필터 토글' },
-          { key: 'i', callback: () => {}, description: 'I: 무한 스크롤 모드' },
-          { key: '?', shiftKey: true, callback: () => {}, description: '?: 이 도움말 보기' }
-        ]}
-        title="악보 목록 단축키"
-      />
-
     </Layout>
   );
 }

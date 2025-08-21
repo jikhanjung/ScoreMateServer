@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
-import { apiClient, setlistApi } from '@/lib/api';
+import { apiClient, setlistApi, fileApi } from '@/lib/api';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import Button from '@/components/ui/Button';
 import { Layout } from '@/components/ui/Layout';
+import SimplePdfViewer from '@/components/scores/SimplePdfViewer';
 import toast from '@/lib/toast';
 import { Score } from '@/types/api';
 import { formatFileSize, formatDate } from '@/lib/utils';
@@ -36,6 +37,8 @@ export default function ScoreDetailPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showSetlistModal, setShowSetlistModal] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     title: '',
     composer: '',
@@ -63,6 +66,13 @@ export default function ScoreDetailPage() {
     }
   }, [isAuthenticated, scoreId]);
 
+  // Auto-load PDF URL when score is loaded
+  useEffect(() => {
+    if (score && !pdfUrl && !pdfError) {
+      loadPdfUrl();
+    }
+  }, [score, pdfUrl, pdfError]);
+
   const loadScore = async () => {
     try {
       setIsLoading(true);
@@ -89,31 +99,26 @@ export default function ScoreDetailPage() {
     }
   };
 
+  const loadPdfUrl = async () => {
+    if (!score) return;
+    
+    try {
+      const response = await fileApi.getDownloadUrl(score.id, 'original');
+      setPdfUrl(response.download_url);
+      setPdfError(null);
+    } catch (err: any) {
+      console.error('Failed to load PDF URL:', err);
+      setPdfError('PDF 파일을 불러오는데 실패했습니다');
+    }
+  };
+
   const handleDownload = async () => {
     if (!score) return;
 
     try {
-      // Download file through authenticated API request
-      const response = await apiClient.get(`/files/direct-download/${score.id}/`, {
-        responseType: 'blob',
-      });
-      
-      // Create blob URL and trigger download
-      const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      
-      // Create a temporary link element and trigger download
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${score.title}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      
-      // Cleanup
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      toast.success('다운로드가 완료되었습니다');
+      const response = await fileApi.getDownloadUrl(score.id, 'original');
+      window.open(response.download_url, '_blank');
+      toast.success('다운로드가 시작됩니다');
     } catch (err: any) {
       console.error('Download failed:', err);
       toast.error('다운로드에 실패했습니다');
@@ -295,26 +300,36 @@ export default function ScoreDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* PDF Preview */}
-        <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">미리보기</h2>
-          <div className="aspect-[3/4] bg-gray-100 rounded-lg overflow-hidden">
-            {score.thumbnail_url ? (
-              <img
-                src={score.thumbnail_url}
-                alt={score.title}
-                className="w-full h-full object-contain"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <DocumentIcon className="h-32 w-32 text-gray-300" />
-                <p className="text-gray-500">미리보기 없음</p>
+        <div className="lg:col-span-2">
+          {pdfError ? (
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="text-center py-12">
+                <DocumentIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">PDF 로딩 실패</h3>
+                <p className="text-gray-500 mb-4">{pdfError}</p>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setPdfError(null);
+                    loadPdfUrl();
+                  }}
+                >
+                  다시 시도
+                </Button>
               </div>
-            )}
-          </div>
-          {score.page_count && (
-            <p className="mt-2 text-sm text-gray-500 text-center">
-              총 {score.page_count}페이지
-            </p>
+            </div>
+          ) : pdfUrl ? (
+            <SimplePdfViewer
+              pdfUrl={pdfUrl}
+              fileName={score.title}
+              onDownload={handleDownload}
+            />
+          ) : (
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="text-center py-12">
+                <LoadingSpinner size="lg" text="PDF 로딩 중..." />
+              </div>
+            </div>
           )}
         </div>
 

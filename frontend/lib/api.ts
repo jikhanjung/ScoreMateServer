@@ -173,5 +173,40 @@ export const setlistApi = {
   }
 };
 
+// Files API
+export const fileApi = {
+  // Get download URL for score file
+  getDownloadUrl: async (scoreId: string, fileType: 'pdf' | 'thumbnail' | 'page_thumbnail', page?: number): Promise<{download_url: string}> => {
+    const params: any = { file_type: fileType };
+    if (page) params.page = page;
+    const response = await api.get(`/files/download/${scoreId}/`, { params });
+    return response.data;
+  },
+  
+  // Get upload URL
+  getUploadUrl: async (filename: string, sizeBytes: number, mimeType: string): Promise<any> => {
+    const response = await api.post('/files/upload/', {
+      filename,
+      size_bytes: sizeBytes,
+      mime_type: mimeType
+    });
+    return response.data;
+  },
+  
+  // Confirm upload
+  confirmUpload: async (uploadId: string, metadata: any): Promise<any> => {
+    const response = await api.post('/files/upload/confirm/', {
+      upload_id: uploadId,
+      ...metadata
+    });
+    return response.data;
+  },
+  
+  // Cancel upload
+  cancelUpload: async (uploadId: string): Promise<void> => {
+    await api.post('/files/upload/cancel/', { upload_id: uploadId });
+  }
+};
+
 export default api;
 export { api as apiClient };

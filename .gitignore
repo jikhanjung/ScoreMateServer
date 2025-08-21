@@ -54,3 +54,12 @@ htmlcov/
 
 # Logs directory
 logs/
+
+# Playwright E2E test artifacts
+frontend/playwright-report/
+frontend/test-results/
+frontend/tests/screenshots/
+frontend/tests/videos/
+
+# Browser downloads from tests
+frontend/downloads/

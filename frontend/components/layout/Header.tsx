@@ -9,7 +9,8 @@ import {
   CloudArrowUpIcon,
   FolderIcon,
   UserIcon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  Cog6ToothIcon
 } from '@heroicons/react/24/outline';
 
 export default function Header() {
@@ -86,6 +87,14 @@ export default function Header() {
               </span>
             </div>
             
+            <Link
+              href="/settings"
+              className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
+            >
+              <Cog6ToothIcon className="h-4 w-4 mr-2" />
+              설정
+            </Link>
+            
             <button
               onClick={handleLogout}
               data-testid="logout-button"
@@ -131,6 +140,14 @@ export default function Header() {
           >
             <FolderIcon className="h-4 w-4 mr-2" />
             세트리스트
+          </Link>
+          
+          <Link
+            href="/settings"
+            className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
+          >
+            <Cog6ToothIcon className="h-4 w-4 mr-2" />
+            설정
           </Link>
         </div>
       </div>

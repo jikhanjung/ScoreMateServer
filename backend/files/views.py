@@ -134,6 +134,18 @@ class FileDownloadURLView(APIView):
             # Generate presigned URL
             s3_handler = S3Handler()
             
+            # Determine the download filename
+            download_filename = None
+            if file_type == 'original':
+                if score.original_filename:
+                    download_filename = score.original_filename
+                else:
+                    download_filename = f"{score.title}.pdf"
+            elif file_type == 'thumbnail':
+                download_filename = f"{score.title}_thumbnail.jpg"
+            elif file_type == 'page':
+                download_filename = f"{score.title}_page_{page}.jpg"
+            
             # Check if file exists (optional, can be expensive for many requests)
             # if not s3_handler.check_file_exists(s3_key):
             #     return Response({
@@ -142,7 +154,7 @@ class FileDownloadURLView(APIView):
             #         'code': 'E003'
             #     }, status=status.HTTP_404_NOT_FOUND)
             
-            presigned_data = s3_handler.generate_presigned_download_url(s3_key)
+            presigned_data = s3_handler.generate_presigned_download_url(s3_key, filename=download_filename)
             
             # Prepare response
             response_data = {
@@ -364,7 +376,7 @@ class FileDirectDownloadView(APIView):
         try:
             # Generate presigned URL for internal use
             s3_handler = S3Handler()
-            presigned_result = s3_handler.generate_presigned_download_url(s3_key, expiry=60, use_public_endpoint=False)
+            presigned_result = s3_handler.generate_presigned_download_url(s3_key, expiry=60, use_public_endpoint=False, filename=filename)
             presigned_url = presigned_result['url']
             
             # Stream the file from S3 through Django

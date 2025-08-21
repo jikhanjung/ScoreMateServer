@@ -116,10 +116,11 @@ export default function ScoresPage() {
   };
 
 
+
   if (authLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <LoadingSpinner size="large" />
+        <LoadingSpinner size="xl" />
       </div>
     );
   }
@@ -258,7 +259,7 @@ export default function ScoresPage() {
         </div>
       ) : isLoading ? (
         <div className="flex justify-center items-center py-12">
-          <LoadingSpinner size="large" />
+          <LoadingSpinner size="xl" />
         </div>
       ) : scores.length === 0 ? (
         <div className="text-center py-12">
@@ -375,40 +376,36 @@ export default function ScoresPage() {
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                   </td>
-                  <td 
-                    className="px-6 py-4 whitespace-nowrap cursor-pointer"
-                    onClick={() => router.push(`/scores/${score.id}`)}
-                  >
-                    <div className="flex items-center">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <Link 
+                      href={`/scores/${score.id}`}
+                      className="flex items-center hover:text-blue-600"
+                    >
                       <DocumentIcon className="h-5 w-5 text-gray-400 mr-3" />
                       <span className="text-sm font-medium text-gray-900">
                         {score.title}
                       </span>
-                    </div>
+                    </Link>
                   </td>
-                  <td 
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
-                    onClick={() => router.push(`/scores/${score.id}`)}
-                  >
-                    {score.composer || '-'}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                      {score.composer || '-'}
+                    </Link>
                   </td>
-                  <td 
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
-                    onClick={() => router.push(`/scores/${score.id}`)}
-                  >
-                    {formatFileSize(score.size_bytes)}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                      {formatFileSize(score.size_bytes)}
+                    </Link>
                   </td>
-                  <td 
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
-                    onClick={() => router.push(`/scores/${score.id}`)}
-                  >
-                    {score.page_count ? `${score.page_count}p` : '-'}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                      {score.page_count ? `${score.page_count}p` : '-'}
+                    </Link>
                   </td>
-                  <td 
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 cursor-pointer"
-                    onClick={() => router.push(`/scores/${score.id}`)}
-                  >
-                    {formatDate(score.created_at)}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <Link href={`/scores/${score.id}`} className="hover:text-blue-600">
+                      {formatDate(score.created_at)}
+                    </Link>
                   </td>
                 </tr>
               ))}
@@ -454,6 +451,7 @@ export default function ScoresPage() {
         onClearSelection={clearSelection}
         isLoading={isBulkLoading}
       />
+
     </Layout>
   );
 }

@@ -56,12 +56,22 @@ class S3Handler:
             logger.error(f"Failed to generate upload URL for {s3_key}: {e}")
             raise
     
-    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True):
+    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True, filename=None):
         """Generate presigned URL for file download"""
         if expiry is None:
             expiry = settings.PRESIGNED_URL_EXPIRY
         
         try:
+            # Prepare parameters for the presigned URL
+            params = {
+                'Bucket': self.bucket_name,
+                'Key': s3_key
+            }
+            
+            # Add Content-Disposition header to set download filename
+            if filename:
+                params['ResponseContentDisposition'] = f'attachment; filename="{filename}"'
+            
             # If we need public endpoint, create a separate client with public endpoint
             if (use_public_endpoint and 
                 hasattr(settings, 'STORAGE_PUBLIC_ENDPOINT') and 
@@ -77,19 +87,13 @@ class S3Handler:
                 
                 response = public_client.generate_presigned_url(
                     'get_object',
-                    Params={
-                        'Bucket': self.bucket_name,
-                        'Key': s3_key
-                    },
+                    Params=params,
                     ExpiresIn=expiry
                 )
             else:
                 response = self.s3_client.generate_presigned_url(
                     'get_object',
-                    Params={
-                        'Bucket': self.bucket_name,
-                        'Key': s3_key
-                    },
+                    Params=params,
                     ExpiresIn=expiry
                 )
             

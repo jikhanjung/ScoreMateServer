@@ -63,3 +63,4 @@ frontend/tests/videos/
 
 # Browser downloads from tests
 frontend/downloads/
+*.swp

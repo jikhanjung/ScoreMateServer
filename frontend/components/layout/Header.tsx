@@ -10,7 +10,8 @@ import {
   FolderIcon,
   UserIcon,
   ArrowRightOnRectangleIcon,
-  Cog6ToothIcon
+  Cog6ToothIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 
 export default function Header() {
@@ -80,6 +81,15 @@ export default function Header() {
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
+            {user?.is_staff && (
+              <Link
+                href="/admin/dashboard"
+                className="hidden md:flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
+              >
+                <ShieldCheckIcon className="h-4 w-4 mr-2" />
+                관리자
+              </Link>
+            )}
             <div className="flex items-center space-x-2">
               <UserIcon className="h-5 w-5 text-gray-400" />
               <span className="text-sm text-gray-700">
@@ -149,6 +159,15 @@ export default function Header() {
             <Cog6ToothIcon className="h-4 w-4 mr-2" />
             설정
           </Link>
+          {user?.is_staff && (
+            <Link
+              href="/admin/dashboard"
+              className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
+            >
+              <ShieldCheckIcon className="h-4 w-4 mr-2" />
+              관리자
+            </Link>
+          )}
         </div>
       </div>
     </header>

@@ -274,3 +274,95 @@ export const scoreApi = {
 
 export default api;
 export { api as apiClient };
+
+// Admin API
+export const adminApi = {
+  // Users
+  getUsers: async (params?: {
+    page?: number;
+    search?: string;
+    is_active?: boolean;
+    is_staff?: boolean;
+    ordering?: string;
+  }): Promise<{ count: number; next: string | null; previous: string | null; results: any[] }> => {
+    const response = await api.get('/admin/users/', { params: params as any });
+    return response.data;
+  },
+
+  getUser: async (id: string | number): Promise<any> => {
+    const response = await api.get(`/admin/users/${id}/`);
+    return response.data;
+  },
+
+  updateUser: async (id: string | number, data: Partial<{ is_active: boolean; is_staff: boolean; plan: string; total_quota_mb: number; used_quota_mb: number }>): Promise<any> => {
+    const response = await api.patch(`/admin/users/${id}/`, data);
+    return response.data;
+  },
+
+  resetUserPassword: async (id: string | number, newPassword: string): Promise<void> => {
+    await api.post(`/admin/users/${id}/reset_password/`, { new_password: newPassword });
+  },
+
+  // Tasks
+  getTasks: async (params?: {
+    page?: number;
+    search?: string;
+    status?: 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+    kind?: 'pdf_info' | 'thumbnail' | 'layout_hook';
+    user?: number;
+    ordering?: string;
+  }): Promise<{ count: number; next: string | null; previous: string | null; results: any[] }> => {
+    const response = await api.get('/admin/tasks/', { params: params as any });
+    return response.data;
+  },
+
+  retryTask: async (id: string | number): Promise<{ detail: string; task_id: number }> => {
+    const response = await api.post(`/admin/tasks/${id}/retry/`);
+    return response.data;
+  },
+  
+  // Scores (Admin)
+  getScores: async (params?: {
+    page?: number;
+    search?: string;
+    user?: number;
+    composer?: string;
+    ordering?: string;
+  }): Promise<{ count: number; next: string | null; previous: string | null; results: any[] }> => {
+    const response = await api.get('/admin/scores/', { params: params as any });
+    return response.data;
+  },
+  getScore: async (id: string | number): Promise<any> => {
+    const response = await api.get(`/admin/scores/${id}/`);
+    return response.data;
+  },
+  updateScore: async (id: string | number, data: Partial<{ title: string; composer: string; instrumentation: string; tags: string[]; note: string }>): Promise<any> => {
+    const response = await api.patch(`/admin/scores/${id}/`, data);
+    return response.data;
+  },
+  deleteScore: async (id: string | number): Promise<void> => {
+    await api.delete(`/admin/scores/${id}/`);
+  },
+
+  // Setlists (Admin)
+  getSetlists: async (params?: {
+    page?: number;
+    search?: string;
+    user?: number;
+    ordering?: string;
+  }): Promise<{ count: number; next: string | null; previous: string | null; results: any[] }> => {
+    const response = await api.get('/admin/setlists/', { params: params as any });
+    return response.data;
+  },
+  getSetlist: async (id: string | number): Promise<any> => {
+    const response = await api.get(`/admin/setlists/${id}/`);
+    return response.data;
+  },
+  updateSetlist: async (id: string | number, data: Partial<{ title: string; description: string }>): Promise<any> => {
+    const response = await api.patch(`/admin/setlists/${id}/`, data);
+    return response.data;
+  },
+  deleteSetlist: async (id: string | number): Promise<void> => {
+    await api.delete(`/admin/setlists/${id}/`);
+  },
+};

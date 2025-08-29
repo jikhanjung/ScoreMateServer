@@ -183,10 +183,11 @@ Observability:
 
 ## 10) Local Development
 
-- `docker compose up -d` → launches db/redis/minio + app
+- Start stack: `npm run dev:detached` (or `docker-compose up -d`).
 - Create a `.env` from `.env.example` (see below).
-- Run migrations: `python manage.py migrate`
-- Create superuser: `python manage.py createsuperuser`
+- Run migrations: `docker-compose exec web python manage.py migrate`.
+- Create superuser: `docker-compose exec web python manage.py createsuperuser`.
+- Verify services: API `http://localhost:8000`, Frontend `http://localhost:3000`, MinIO Console `http://localhost:9001`.
 - Use Django Admin for quick inspection.
 
 ### Key Env Vars
@@ -247,6 +248,8 @@ ConductorClient <---- P2P/LAN ----> PlayerClients
   API.md
   SCHEMA.md
 ```
+
+Note: In this monorepo, the actual code lives under `backend/` (Django apps: `scores/`, `setlists/`, `tasks/`, project config in `scoremateserver/`) and the Next.js client under `frontend/`. The proposal above maps conceptually to these folders.
 
 ---
 

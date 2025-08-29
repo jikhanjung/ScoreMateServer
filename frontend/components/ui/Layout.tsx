@@ -12,7 +12,8 @@ import {
   Upload, 
   Settings, 
   LogOut,
-  User
+  User,
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from './Button';
 import { cn } from '@/lib/utils';
@@ -105,6 +106,15 @@ export function Layout({ children, className }: LayoutProps) {
                       </Link>
                     );
                   })}
+                {user?.is_staff && (
+                  <Link
+                    href="/admin/dashboard"
+                    className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors"
+                  >
+                    <ShieldCheck className="h-4 w-4 mr-2" />
+                    관리자
+                  </Link>
+                )}
               </nav>
             )}
 
@@ -181,6 +191,15 @@ export function Layout({ children, className }: LayoutProps) {
                       </Link>
                     );
                   })}
+                {user?.is_staff && (
+                  <Link
+                    href="/admin/dashboard"
+                    className="flex flex-col items-center px-3 py-2 text-xs font-medium text-gray-700 hover:text-blue-600 transition-colors whitespace-nowrap"
+                  >
+                    <ShieldCheck className="h-4 w-4 mb-1" />
+                    관리자
+                  </Link>
+                )}
               </div>
             </div>
           </div>

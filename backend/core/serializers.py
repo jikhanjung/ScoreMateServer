@@ -92,16 +92,17 @@ class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for user profile (read-only)"""
     available_quota_mb = serializers.ReadOnlyField()
     quota_usage_percentage = serializers.ReadOnlyField()
+    is_staff = serializers.ReadOnlyField()
     
     class Meta:
         model = User
         fields = (
-            'id', 'email', 'username', 'plan', 
+            'id', 'email', 'username', 'plan', 'is_staff', 
             'total_quota_mb', 'used_quota_mb', 'available_quota_mb',
             'quota_usage_percentage', 'referral_code', 
             'date_joined', 'last_login'
         )
         read_only_fields = (
-            'id', 'email', 'total_quota_mb', 'used_quota_mb',
+            'id', 'email', 'is_staff', 'total_quota_mb', 'used_quota_mb',
             'referral_code', 'date_joined', 'last_login'
         )

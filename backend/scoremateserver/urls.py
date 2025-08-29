@@ -32,6 +32,7 @@ urlpatterns = [
     path('api/v1/', include('scores.urls')),
     path('api/v1/', include('setlists.urls')),
     path('api/v1/', include('files.urls')),
+    path('api/v1/admin/', include('scoremate_admin.urls')),
     
     # Default redirect to API
     path('', api_root, name='root'),

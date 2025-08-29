@@ -9,11 +9,17 @@ import { useQuery } from '@tanstack/react-query';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Button } from '@/components/ui/Button';
 import { Layout } from '@/components/ui/Layout';
-import SimplePdfViewer from '@/components/scores/SimplePdfViewer';
+import dynamic from 'next/dynamic';
 import { MetadataEditForm } from '@/components/metadata/MetadataEditForm';
 import { toast } from '@/lib/toast';
 import { formatFileSize, formatDate } from '@/lib/utils';
 import { MetadataFormSkeleton, PdfViewerSkeleton } from '@/components/ui/Skeleton';
+
+// 지연 로딩으로 초기 전환 비용을 줄임
+const SimplePdfViewer = dynamic(() => import('@/components/scores/SimplePdfViewer'), {
+  ssr: false,
+  loading: () => <PdfViewerSkeleton />,
+});
 import { useSetlists } from '@/hooks/useSetlists';
 import { 
   ArrowLeftIcon,

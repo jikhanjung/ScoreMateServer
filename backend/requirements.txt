@@ -1,4 +1,4 @@
-Django>=5.0,<5.1
+Django>=5.2,<5.3
 djangorestframework
 djangorestframework-simplejwt
 django-filter
@@ -12,6 +12,8 @@ pdfplumber
 PyMuPDF
 requests
 dj-database-url
+whitenoise
+gunicorn
 pytest
 pytest-django
 factory-boy

@@ -1,0 +1,38 @@
+# ScoreMate 배포 매니페스트 — 배포·데이터 계약 선언층 (devdocs guides/web · wiki/deploy-data-contract.md).
+# 프로젝트별 배포 지식을 기억이 아니라 이 파일에 고정한다. 오케스트레이터(또는 Claude Code)가
+# 이 매니페스트만 읽고 배포 · 검증할 수 있게 하는 것이 목표. 구현 사례 = fcmanager (같은 dolfinid, Django + SQLite 단일 서비스).
+
+contract_version = 1
+instance = "scoremate"
+image    = "honestjung/scoremateserver"       # Docker Hub. build.sh 가 :X.Y.Z + :latest push.
+platform = "linux/amd64"
+db_path  = "/srv/scoremate/db/db.sqlite3"     # 호스트 DB 전용 디렉터리 → 컨테이너 /app/hostdb (디렉터리 마운트, WAL 형제 동반)
+files_path = "/srv/scoremate/files"           # 악보 PDF · 썸네일(STORAGE_BACKEND=local) → 컨테이너 /app/files, 받기는 nginx X-Accel
+has_seed = false                              # 시스템 시드 없음 — 전부 운영 데이터(사용자 · 앙상블 · 악보). 안전망 = 백업.
+services = ["api"]                            # compose 단일 서비스(gunicorn). 작업은 요청 안에서(REDIS_URL 없음). 웹은 아직 없음.
+rollback_db = "keep"                          # 기본은 이미지만 전환. DB 복원은 명시적 --db=restore.
+
+# 헬스체크. /healthz = 버전 + DB + 행 수(user · score · ensemble) + 무결성 센티넬. smoke 가 소비, deploy.sh 가 자동 호출.
+health_url   = "/healthz"
+health_probe = "http://127.0.0.1:8016/healthz"   # X-Forwarded-Proto: https 헤더로 검증
+
+[verbs]
+preflight = "deploy/preflight.sh [<since-ref>]"               # 빌드 호스트: 위험 표면 diff + seed 냄새 lint + DEPLOY.md
+build     = "deploy/build.sh X.Y.Z"                           # 빌드 호스트: test + bump + build + 이미지 스모크 + push
+deploy    = "deploy/remote-prod.sh X.Y.Z"                     # = ssh dolfinid '/srv/scoremate/deploy-prod.sh X.Y.Z'
+                                                              #   추출 → pull → down → 스냅샷 → up → 바인딩 게이트 → smoke
+seed      = "(없음 — has_seed=false, 운영 데이터는 앱 안에서만 들어온다)"
+smoke     = "/srv/scoremate/smoke.sh X.Y.Z"                   # healthz 200 + 버전 일치 + user>0
+rollback  = "/srv/scoremate/rollback.sh <이전 X.Y.Z> [--db=keep|restore]"
+backup    = "/srv/scoremate/scripts/backup_db.py"             # 운영 cron 매시(검증 후 채택 · 실패 시 prune 안 함)
+bootstrap = "deploy/README.md §최초 설치 (이미지에서 docker cp)"
+
+[targets.prod]
+host     = "dolfinid"                          # GCP dolfinid-2, 여러 프로젝트 공용
+ssh      = "honestjung@cdgts.paleobytes.info"  # remote-prod.sh 에 고정
+domain   = "scoremate.noematica.kr"            # 호스트 nginx(TLS, Let's Encrypt webroot) → 127.0.0.1:8016
+root     = "/srv/scoremate"
+expose   = "127.0.0.1:8016"
+entry    = "/srv/scoremate/deploy-prod.sh"     # DEPLOY_SNAPSHOT=1
+backups  = "/srv/scoremate/backup"             # hourly(24) + pre_deploy(20)
+# nginx 설정 원본: deploy/host/scoremate.nginx.conf. 오프사이트: m710q system-operation/m710q/backup-scoremate.sh (매일)

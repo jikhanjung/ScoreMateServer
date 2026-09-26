@@ -1,0 +1,26 @@
+# 빌드 컨텍스트(저장소 루트) 기준 제외 목록. BuildKit 이 Dockerfile 옆의 이 파일을 우선 쓴다.
+# 이미지에는 backend/ 와 deploy/ 만 들어간다.
+.git
+.gitignore
+**/__pycache__/
+*.py[cod]
+**/.venv/
+**/venv/
+**/node_modules/
+
+# 웹(Next.js) — 이 이미지에 넣지 않는다 (Django 템플릿으로 대체 예정)
+frontend/
+nginx/
+devlog/
+logs/
+*.md
+
+# Django 런타임 산출물
+backend/data/
+backend/staticfiles/
+backend/media/
+backend/logs/
+backend/htmlcov/
+backend/.coverage
+backend/tests/
+backend/**/tests.py

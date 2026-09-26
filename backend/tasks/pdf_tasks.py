@@ -1,6 +1,7 @@
 """
 Celery tasks for PDF processing (info extraction, thumbnail generation)
 """
+import hashlib
 import os
 import tempfile
 import logging
@@ -11,7 +12,7 @@ from PIL import Image
 import fitz  # PyMuPDF for thumbnail generation
 
 from scores.models import Score
-from files.utils import S3Handler
+from files.utils import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -29,24 +30,14 @@ def process_pdf_info(self, score_id):
             logger.error(f"Score {score_id} has no S3 key")
             return {'success': False, 'error': 'No S3 key'}
         
-        s3_handler = S3Handler()
+        s3_handler = get_storage()
         
         # Download PDF to temporary file
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
             try:
-                # Generate download URL (use internal endpoint for Celery worker)
-                download_data = s3_handler.generate_presigned_download_url(
-                    score.s3_key, expiry=600, use_public_endpoint=False
-                )
-                
-                # Download file (in a real implementation, you'd use requests to download)
-                # For now, we'll simulate the process
-                
-                import requests
-                response = requests.get(download_data['url'], timeout=30)
-                response.raise_for_status()
-                
-                temp_file.write(response.content)
+                # 저장소에서 바로 읽는다 (S3 든 서버 디스크든)
+                content = s3_handler.read_bytes(score.s3_key)
+                temp_file.write(content)
                 temp_file.flush()
                 
                 # Extract PDF information
@@ -69,7 +60,10 @@ def process_pdf_info(self, score_id):
                     # PDF Author field commonly contains software names, user accounts, etc.
                     # Let users manually set composer information
                     
-                    score.save(update_fields=['pages', 'title'])
+                    # 파일 내용의 SHA-256 — TV 가 받은 파일이 맞는지 확인하는 데 쓴다 (동기화 API)
+                    score.content_hash = hashlib.sha256(content).hexdigest()
+
+                    score.save(update_fields=['pages', 'title', 'content_hash'])
                 
                 logger.info(f"Successfully extracted PDF info for score {score_id}: {page_count} pages")
                 
@@ -114,21 +108,12 @@ def generate_thumbnail(self, score_id, page_number=1):
             logger.error(f"Score {score_id} has no S3 key")
             return {'success': False, 'error': 'No S3 key'}
         
-        s3_handler = S3Handler()
+        s3_handler = get_storage()
         
         # Download PDF to temporary file
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_pdf:
             try:
-                # Download PDF (use internal endpoint for Celery worker)
-                download_data = s3_handler.generate_presigned_download_url(
-                    score.s3_key, expiry=600, use_public_endpoint=False
-                )
-                
-                import requests
-                response = requests.get(download_data['url'], timeout=30)
-                response.raise_for_status()
-                
-                temp_pdf.write(response.content)
+                temp_pdf.write(s3_handler.read_bytes(score.s3_key))
                 temp_pdf.flush()
                 
                 # Generate thumbnail using PyMuPDF
@@ -167,15 +152,8 @@ def generate_thumbnail(self, score_id, page_number=1):
                                 # Page thumbnail
                                 thumb_s3_key = score.generate_page_thumbnail_s3_key(page_number)
                             
-                            # Upload to S3
                             with open(thumb_file.name, 'rb') as thumb_data:
-                                s3_handler.s3_client.put_object(
-                                    Bucket=s3_handler.bucket_name,
-                                    Key=thumb_s3_key,
-                                    Body=thumb_data,
-                                    ContentType='image/jpeg',
-                                    CacheControl='max-age=86400'  # 24 hours
-                                )
+                                s3_handler.write_bytes(thumb_s3_key, thumb_data.read(), 'image/jpeg')
                             
                             # Update score with thumbnail key (for cover only)
                             if page_number == 1:

@@ -1,16 +1,21 @@
 """
 Views for files app (presigned URLs, file operations)
 """
-from django.http import HttpResponse, Http404, StreamingHttpResponse
+from urllib.parse import quote
+
+from django.conf import settings
+from django.http import (
+    FileResponse, Http404, HttpResponse, HttpResponseForbidden, HttpResponseRedirect, JsonResponse,
+)
+from django.utils.decorators import method_decorator
+from django.views import View
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 import logging
-import requests
-from urllib.parse import quote
 
 from scores.models import Score
 from .serializers import (
@@ -20,7 +25,7 @@ from .serializers import (
     FileDownloadResponseSerializer,
     UploadConfirmationSerializer
 )
-from .utils import S3Handler, QuotaManager, generate_upload_s3_key
+from .utils import get_storage, load_blob_token, LocalStorageHandler, QuotaManager, generate_upload_s3_key
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +55,7 @@ class FileUploadURLView(APIView):
             upload_id = QuotaManager.reserve_quota(user, size_bytes, s3_key, mime_type, filename)
             
             # Generate presigned URL
-            s3_handler = S3Handler()
+            s3_handler = get_storage()
             presigned_data = s3_handler.generate_presigned_upload_url(
                 s3_key, mime_type
             )
@@ -132,7 +137,7 @@ class FileDownloadURLView(APIView):
         
         try:
             # Generate presigned URL
-            s3_handler = S3Handler()
+            s3_handler = get_storage()
             
             # Determine the download filename
             download_filename = None
@@ -298,123 +303,96 @@ class UploadCancellationView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])  # Allow unauthenticated access for thumbnails
-def get_thumbnail(request, thumbnail_key):
-    """
-    Serve thumbnail image directly from S3
-    """
-    try:
-        s3_handler = S3Handler()
-        
-        # Generate presigned URL for internal access
-        result = s3_handler.generate_presigned_download_url(
-            thumbnail_key,
-            expiry=300,  # 5 minutes
-            use_public_endpoint=False  # Use internal endpoint
-        )
-        
-        # Fetch the image from S3
-        response = requests.get(result['url'], timeout=10)
-        response.raise_for_status()
-        
-        # Return the image with appropriate headers
-        http_response = HttpResponse(
-            response.content,
-            content_type=response.headers.get('content-type', 'image/jpeg')
-        )
-        http_response['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
-        
-        return http_response
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to fetch thumbnail {thumbnail_key}: {e}")
-        raise Http404("Thumbnail not found")
-    except Exception as e:
-        logger.error(f"Error serving thumbnail {thumbnail_key}: {e}")
-        raise Http404("Thumbnail not found")
-
-
 class FileDirectDownloadView(APIView):
-    """Direct download of files through Django proxy"""
+    """악보 파일로 보내는 짧은 링크 — 파일을 Django 로 흘리지 않고 서명 URL 로 302"""
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, score_id):
-        """Stream file directly through Django"""
-        user = request.user
+        score = get_object_or_404(Score.objects.readable_by(request.user), id=score_id)
         file_type = request.query_params.get('file_type', 'original')
-        
-        # 내 개인 악보이거나 내가 멤버인 앙상블의 악보
-        score = get_object_or_404(Score.objects.readable_by(user), id=score_id)
-        
-        # Determine S3 key based on file type
         if file_type == 'original':
             s3_key = score.s3_key
-            # Use original_filename if available, otherwise use title
-            if score.original_filename:
-                filename = score.original_filename
-            else:
-                filename = f"{score.title}.pdf"
-            content_type = score.mime or 'application/pdf'
+            filename = score.original_filename or f"{score.title}.pdf"
         elif file_type == 'thumbnail':
-            s3_key = score.thumbnail_key or score.generate_thumbnail_s3_key()
-            filename = f"{score.title}_thumbnail.jpg"
-            content_type = 'image/jpeg'
+            s3_key = score.thumbnail_key
+            filename = None
         else:
             return Response({
                 'error': 'INVALID_FILE_TYPE',
                 'message': f'Invalid file type: {file_type}',
                 'code': 'E004'
             }, status=status.HTTP_400_BAD_REQUEST)
-        
         if not s3_key:
-            return Response({
-                'error': 'FILE_NOT_FOUND',
-                'message': f'File not available: {file_type}',
-                'code': 'E003'
-            }, status=status.HTTP_404_NOT_FOUND)
-        
+            raise Http404('File not available')
+        url = get_storage().generate_presigned_download_url(s3_key, expiry=60, filename=filename)['url']
+        return HttpResponseRedirect(url)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class FileBlobView(View):
+    """local 저장소의 서명 토큰 URL — 토큰이 곧 권한이다 (JWT 없음)
+
+    GET: 토큰을 확인하고 nginx 에 X-Accel-Redirect 로 넘긴다 (FILES_X_ACCEL_PREFIX 가 없으면 직접 보낸다 — 개발용)
+    PUT: 업로드 예약 때 만든 키에만, 한 번만 쓴다 (이미 있으면 409)
+    """
+    CHUNK = 1024 * 1024
+
+    def dispatch(self, request, *args, **kwargs):
+        if settings.STORAGE_BACKEND != 'local':
+            raise Http404()
+        return super().dispatch(request, *args, **kwargs)
+
+    def _payload(self, token, op):
+        payload = load_blob_token(token)
+        if payload is None or payload.get('op') != op:
+            return None
+        return payload
+
+    def get(self, request, token):
+        payload = self._payload(token, 'get')
+        if payload is None:
+            return HttpResponseForbidden('Invalid or expired link')
+        storage = LocalStorageHandler()
+        key = payload['k']
+        path = storage.path_for(key)
+        if not path.is_file():
+            raise Http404('File not found')
+
+        content_type = storage.content_type_for(key)
+        filename = payload.get('fn')
+        if settings.FILES_X_ACCEL_PREFIX:
+            response = HttpResponse(content_type=content_type)
+            response['X-Accel-Redirect'] = settings.FILES_X_ACCEL_PREFIX + quote(key)
+        else:
+            response = FileResponse(open(path, 'rb'), content_type=content_type)
+        if filename:
+            response['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(filename)}"
+        # 링크마다 만료가 있으니 브라우저는 그 동안 캐시해도 된다 (공유 캐시는 안 된다)
+        response['Cache-Control'] = 'private, max-age=3600'
+        return response
+
+    def put(self, request, token):
+        payload = self._payload(token, 'put')
+        if payload is None:
+            return HttpResponseForbidden('Invalid or expired upload link')
+        storage = LocalStorageHandler()
+        key = payload['k']
+        if storage.path_for(key).exists():
+            return JsonResponse({'error': 'ALREADY_UPLOADED', 'message': 'This upload link was already used'},
+                                status=status.HTTP_409_CONFLICT)
+        declared = request.META.get('CONTENT_LENGTH')
+        if declared and declared.isdigit() and int(declared) > settings.MAX_UPLOAD_SIZE:
+            return JsonResponse({'error': 'FILE_TOO_LARGE'}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+        def chunks():
+            while True:
+                chunk = request.read(self.CHUNK)
+                if not chunk:
+                    break
+                yield chunk
         try:
-            # Generate presigned URL for internal use
-            s3_handler = S3Handler()
-            presigned_result = s3_handler.generate_presigned_download_url(s3_key, expiry=60, use_public_endpoint=False, filename=filename)
-            presigned_url = presigned_result['url']
-            
-            # Stream the file from S3 through Django
-            response = requests.get(presigned_url, stream=True, timeout=30)
-            response.raise_for_status()
-            
-            # Create streaming response
-            def file_generator():
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        yield chunk
-            
-            # Prepare response with appropriate headers
-            django_response = StreamingHttpResponse(
-                file_generator(),
-                content_type=content_type
-            )
-            
-            # Set download headers
-            django_response['Content-Disposition'] = f'attachment; filename="{quote(filename)}"'
-            if 'content-length' in response.headers:
-                django_response['Content-Length'] = response.headers['content-length']
-            
-            logger.info(f"Direct download initiated for user {user.id}, score {score.id}, type {file_type}")
-            return django_response
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch file {s3_key}: {e}")
-            return Response({
-                'error': 'FILE_DOWNLOAD_FAILED',
-                'message': 'Failed to retrieve file from storage',
-                'code': 'E005'
-            }, status=status.HTTP_502_BAD_GATEWAY)
-        except Exception as e:
-            logger.error(f"Error downloading file {s3_key}: {e}")
-            return Response({
-                'error': 'DOWNLOAD_ERROR',
-                'message': 'Internal server error during download',
-                'code': 'E500'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            written = storage.write_stream(key, chunks(), max_bytes=settings.MAX_UPLOAD_SIZE)
+        except ValueError:
+            return JsonResponse({'error': 'FILE_TOO_LARGE'}, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        logger.info(f"Stored upload {key} ({written} bytes)")
+        return JsonResponse({'key': key, 'size_bytes': written}, status=status.HTTP_201_CREATED)

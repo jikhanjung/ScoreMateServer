@@ -4,7 +4,7 @@ Celery tasks for file operations (deletion, cleanup)
 import logging
 from celery import shared_task
 
-from files.utils import S3Handler
+from files.utils import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ def delete_score_files(self, original_s3_key, thumbnail_s3_key=None, score_id=No
     Delete all files related to a score from S3
     """
     try:
-        s3_handler = S3Handler()
+        s3_handler = get_storage()
         deleted_files = []
         failed_files = []
         
@@ -96,7 +96,7 @@ def delete_single_file(self, s3_key):
     Delete a single file from S3
     """
     try:
-        s3_handler = S3Handler()
+        s3_handler = get_storage()
         s3_handler.delete_file(s3_key)
         
         logger.info(f"Successfully deleted file: {s3_key}")

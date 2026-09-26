@@ -3,6 +3,8 @@ URL configuration for scoremateserver project.
 """
 from django.contrib import admin
 from django.urls import path, include
+
+from core.views_health import healthz
 from django.http import JsonResponse
 
 
@@ -24,6 +26,7 @@ def api_root(request):
 
 
 urlpatterns = [
+    path('healthz', healthz, name='healthz'),
     # Admin
     path('admin/', admin.site.urls),
     

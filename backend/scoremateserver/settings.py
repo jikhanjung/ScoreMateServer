@@ -26,13 +26,37 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-4*j867jb0*b1&b7fx6wb6+7%d8nwb5sjcgq9q5ziqhls*2vpqe')
+from .version import VERSION  # noqa: E402
+
+def env_bool(name, default=False):
+    return os.environ.get(name, str(default)).lower() in ('1', 'true', 'yes', 'on')
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
+DEBUG = env_bool('DJANGO_DEBUG')
 
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+_DEV_SECRET_KEY = 'django-insecure-4*j867jb0*b1&b7fx6wb6+7%d8nwb5sjcgq9q5ziqhls*2vpqe'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', _DEV_SECRET_KEY)
+# 운영(REQUIRE_SECRET_KEY=true)에서는 개발용 키 · 짧은 키로 뜨지 않는다 — JWT 서명 키이기도 하다
+if env_bool('REQUIRE_SECRET_KEY') and (SECRET_KEY == _DEV_SECRET_KEY or len(SECRET_KEY) < 50):
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured('DJANGO_SECRET_KEY must be set to a random value of 50+ characters')
+
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+
+# 앞단 nginx 가 TLS 를 끝내고 X-Forwarded-Proto 를 넘긴다. 리다이렉트는 nginx 담당이라 Django 는 하지 않는다
+if env_bool('TRUST_PROXY_HEADERS'):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = False
+SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT')
+SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE')
+CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE')
+SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', 0))
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# 개발 웹(Next.js dev 서버)용 CORS 출처. 운영은 같은 출처라 필요 없다 — 비우면 CORS 헤더를 내지 않는다
+CORS_ALLOWED_ORIGIN = os.environ.get('CORS_ALLOWED_ORIGIN', 'http://localhost:3000' if DEBUG else '')
 
 
 # Application definition
@@ -62,6 +86,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # /static/ (admin) — 컨테이너가 직접 낸다
     'core.middleware.CorsMiddleware',  # Add CORS middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -108,6 +133,13 @@ DATABASES = {
         conn_max_age=0 if not os.environ.get('DATABASE_URL') else 600,
     )
 }
+if DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
+    # gunicorn 스레드 여럿이 쓴다 — 잠금은 기다리고, WAL 로 읽기가 쓰기를 막지 않게 (DB 는 디렉터리 마운트라 -wal 이 호스트에 남는다)
+    DATABASES['default']['OPTIONS'] = {
+        'timeout': 20,
+        'transaction_mode': 'IMMEDIATE',
+        'init_command': 'PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;',
+    }
 
 
 # Password validation
@@ -145,7 +177,12 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles' # Added for collecting static files
+STATIC_ROOT = Path(os.environ.get('STATIC_ROOT', BASE_DIR / 'staticfiles'))
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+                    if not DEBUG else 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+}
 
 # Media files (user uploaded files)
 MEDIA_URL = '/media/'
@@ -238,6 +275,17 @@ STORAGE_ACCESS_KEY = os.environ.get('STORAGE_ACCESS_KEY')
 STORAGE_SECRET_KEY = os.environ.get('STORAGE_SECRET_KEY')
 STORAGE_USE_SSL = os.environ.get('STORAGE_USE_SSL', 'False').lower() == 'true'
 
+# 저장소 백엔드: 's3'(MinIO/S3 presigned URL) | 'local'(FILES_ROOT 디스크 + 서명 토큰 URL, 운영 dolfinid)
+STORAGE_BACKEND = os.environ.get('STORAGE_BACKEND', 's3')
+FILES_ROOT = Path(os.environ.get('FILES_ROOT', DATA_DIR / 'files'))
+# 토큰 URL 경로와 (필요하면) 절대 주소 앞부분. 비우면 같은 출처의 상대 주소
+FILES_BLOB_PATH = '/api/v1/files/blob/'
+FILES_PUBLIC_BASE = os.environ.get('FILES_PUBLIC_BASE', '').rstrip('/')
+# 설정하면 받기를 nginx 에 넘긴다: X-Accel-Redirect: <prefix><key> (nginx 의 internal location)
+FILES_X_ACCEL_PREFIX = os.environ.get('FILES_X_ACCEL_PREFIX', '')
+# 목록 응답의 썸네일 URL 유효 시간
+THUMBNAIL_URL_EXPIRY = int(os.environ.get('THUMBNAIL_URL_EXPIRY', 6 * 3600))
+
 # File Upload settings
 MAX_UPLOAD_SIZE = int(os.environ.get('MAX_UPLOAD_MB', 100)) * 1024 * 1024  # Convert to bytes
 ALLOWED_MIME_TYPES = os.environ.get('ALLOWED_MIME', 'application/pdf').split(',')
@@ -265,7 +313,9 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Seoul'
 
-# Logging configuration
+# Logging configuration — 기본은 콘솔(컨테이너 로그). LOG_DIR 을 주면 파일에도 쓴다 (운영 컨테이너는 루트가 읽기 전용)
+LOG_DIR = os.environ.get('LOG_DIR')
+_log_handlers = ['console']
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -278,69 +328,27 @@ LOGGING = {
             'format': '{levelname} {message}',
             'style': '{',
         },
-        'json': {
-            'format': '{"level": "%(levelname)s", "time": "%(asctime)s", "module": "%(module)s", "message": "%(message)s"}',
-        },
     },
     'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR.parent / 'logs' / 'scoremate.log',
-            'formatter': 'verbose',
-        },
         'console': {
             'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
-        'error_file': {
-            'level': 'ERROR',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR.parent / 'logs' / 'error.log',
-            'formatter': 'verbose',
-        },
     },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': 'INFO',
-    },
+    'root': {'handlers': _log_handlers, 'level': 'INFO'},
     'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'core': {
-            'handlers': ['console', 'file', 'error_file'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
-        },
-        'scores': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
-        },
-        'setlists': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
-        },
-        'files': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
-        },
-        'tasks': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'propagate': False,
+        'django': {'handlers': _log_handlers, 'level': 'INFO', 'propagate': False},
+        **{
+            name: {'handlers': _log_handlers, 'level': 'DEBUG' if DEBUG else 'INFO', 'propagate': False}
+            for name in ('core', 'scores', 'setlists', 'files', 'tasks', 'ensembles')
         },
     },
 }
-
-# Create logs directory if it doesn't exist
-import os
-log_dir = BASE_DIR.parent / 'logs'
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
+if LOG_DIR:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    LOGGING['handlers']['file'] = {
+        'level': 'INFO', 'class': 'logging.FileHandler',
+        'filename': os.path.join(LOG_DIR, 'scoremate.log'), 'formatter': 'verbose',
+    }
+    _log_handlers.append('file')

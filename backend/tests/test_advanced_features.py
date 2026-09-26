@@ -193,8 +193,9 @@ class ScoreFilteringTest(APITestCase):
         old_score.created_at = timezone.now() - timedelta(days=1)
         old_score.save()
         
-        # Filter by created_after (today)
-        today = timezone.now().date()
+        # Filter by created_after (today) — 날짜는 TIME_ZONE(Asia/Seoul) 기준으로 해석되므로 localdate
+        # (timezone.now().date() 는 UTC 날짜라 KST 00~09시에 어제가 되어 테스트가 시각에 따라 실패했다)
+        today = timezone.localdate()
         response = self.client.get(f'/api/v1/scores/?created_after={today}')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         results = response.data['results']

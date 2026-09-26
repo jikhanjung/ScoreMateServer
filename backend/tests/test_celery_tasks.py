@@ -28,21 +28,11 @@ class CeleryTaskTest(TestCase):
         """Clean up"""
         cache.clear()
     
-    @patch('requests.get')
     @patch('pdfplumber.open')
-    @patch('tasks.pdf_tasks.S3Handler.generate_presigned_download_url')
-    def test_process_pdf_info_success(self, mock_s3_url, mock_pdf, mock_requests):
+    @patch('files.utils.S3Handler.read_bytes')
+    def test_process_pdf_info_success(self, mock_read, mock_pdf):
         """Test successful PDF info extraction"""
-        # Mock S3 download URL
-        mock_s3_url.return_value = {
-            'url': 'https://example.com/download/test.pdf'
-        }
-        
-        # Mock requests download
-        mock_response = MagicMock()
-        mock_response.content = b'fake pdf content'
-        mock_response.raise_for_status.return_value = None
-        mock_requests.return_value = mock_response
+        mock_read.return_value = b'fake pdf content'
         
         # Mock PDF processing
         mock_pdf_doc = MagicMock()
@@ -62,18 +52,15 @@ class CeleryTaskTest(TestCase):
         # Verify score was updated
         self.score.refresh_from_db()
         self.assertEqual(self.score.pages, 5)
+        # 파일 내용의 SHA-256 (TV 동기화에서 받은 파일 확인용)
+        import hashlib
+        self.assertEqual(self.score.content_hash, hashlib.sha256(b'fake pdf content').hexdigest())
+        mock_read.assert_called_once_with(self.score.s3_key)
     
-    @patch('requests.get')
-    @patch('tasks.pdf_tasks.S3Handler.generate_presigned_download_url')  
-    def test_process_pdf_info_download_failure(self, mock_s3_url, mock_requests):
+    @patch('files.utils.S3Handler.read_bytes')
+    def test_process_pdf_info_download_failure(self, mock_read):
         """Test PDF info extraction with download failure"""
-        # Mock S3 download URL
-        mock_s3_url.return_value = {
-            'url': 'https://example.com/download/test.pdf'
-        }
-        
-        # Mock requests failure
-        mock_requests.side_effect = Exception("Download failed")
+        mock_read.side_effect = Exception("Download failed")
         
         # Mock the task's retry method to simulate max retries exceeded
         with patch.object(process_pdf_info, 'retry') as mock_retry:
@@ -120,8 +107,8 @@ class CeleryTaskTest(TestCase):
             # The task should handle errors gracefully
             self.assertIsInstance(e, Exception)
     
-    @patch('tasks.file_tasks.S3Handler.delete_file')
-    @patch('tasks.file_tasks.S3Handler.check_file_exists')
+    @patch('files.utils.S3Handler.delete_file')
+    @patch('files.utils.S3Handler.check_file_exists')
     def test_delete_score_files_success(self, mock_exists, mock_delete):
         """Test successful score files deletion"""
         # Mock file existence check
@@ -147,7 +134,7 @@ class CeleryTaskTest(TestCase):
         # Original + cover thumbnail + 3 page thumbnails = 5 calls minimum
         self.assertGreaterEqual(mock_delete.call_count, 2)
     
-    @patch('tasks.file_tasks.S3Handler.delete_file')
+    @patch('files.utils.S3Handler.delete_file')
     def test_delete_single_file_success(self, mock_delete):
         """Test successful single file deletion"""
         s3_key = "test/file.pdf"
@@ -162,7 +149,7 @@ class CeleryTaskTest(TestCase):
         # Verify delete was called
         mock_delete.assert_called_once_with(s3_key)
     
-    @patch('tasks.file_tasks.S3Handler.delete_file')
+    @patch('files.utils.S3Handler.delete_file')
     def test_delete_single_file_failure(self, mock_delete):
         """Test single file deletion failure"""
         s3_key = "test/file.pdf"

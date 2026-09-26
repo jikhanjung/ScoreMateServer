@@ -5,6 +5,7 @@ import json
 import time
 import logging
 from django.utils.deprecation import MiddlewareMixin
+from django.conf import settings
 from django.http import JsonResponse
 from rest_framework import status
 
@@ -18,8 +19,10 @@ class CorsMiddleware(MiddlewareMixin):
     
     def process_response(self, request, response):
         """Add CORS headers to all responses"""
-        # Allow requests from localhost:3000 (frontend)
-        response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+        # 개발 웹(localhost:3000) 용. 운영은 같은 출처라 CORS_ALLOWED_ORIGIN 이 비어 있다
+        if not settings.CORS_ALLOWED_ORIGIN:
+            return response
+        response['Access-Control-Allow-Origin'] = settings.CORS_ALLOWED_ORIGIN
         response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
         response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Accept'
         response['Access-Control-Allow-Credentials'] = 'true'
@@ -29,9 +32,9 @@ class CorsMiddleware(MiddlewareMixin):
     
     def process_request(self, request):
         """Handle preflight OPTIONS requests"""
-        if request.method == 'OPTIONS':
+        if request.method == 'OPTIONS' and settings.CORS_ALLOWED_ORIGIN:
             response = JsonResponse({'status': 'ok'})
-            response['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+            response['Access-Control-Allow-Origin'] = settings.CORS_ALLOWED_ORIGIN
             response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
             response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Accept'
             response['Access-Control-Allow-Credentials'] = 'true'

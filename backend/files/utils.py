@@ -1,10 +1,25 @@
 """
-Utility functions for file operations (S3 presigned URLs)
+Utility functions for file operations
+
+저장소 백엔드 두 가지 (settings.STORAGE_BACKEND):
+- 's3'    : S3/MinIO presigned URL (개발용 docker-compose, 테스트는 moto)
+- 'local' : 서버 디스크(FILES_ROOT). 서명한 토큰 URL 로 올리고 받는다 — 받기는 Django 가 토큰만
+            확인하고 전송은 nginx X-Accel-Redirect 가 한다 (devlog 054 §6, dolfinid 배포)
+어느 쪽이든 get_storage() 로 얻고 같은 메서드를 쓴다.
 """
+import math
+import mimetypes
+import os
+import tempfile
+import time
 import uuid
+from pathlib import Path
+from urllib.parse import quote
+
 import boto3
 from botocore.exceptions import ClientError
 from django.conf import settings
+from django.core import signing
 from django.core.cache import cache
 import logging
 
@@ -126,6 +141,119 @@ class S3Handler:
         except ClientError as e:
             logger.error(f"Failed to delete {s3_key}: {e}")
             raise
+
+    def read_bytes(self, s3_key):
+        """서버 안에서 파일 내용을 읽는다 (PDF 처리 작업용)"""
+        return self.s3_client.get_object(Bucket=self.bucket_name, Key=s3_key)['Body'].read()
+
+    def write_bytes(self, s3_key, data, content_type='application/octet-stream'):
+        """서버 안에서 파일을 쓴다 (썸네일)"""
+        self.s3_client.put_object(
+            Bucket=self.bucket_name, Key=s3_key, Body=data,
+            ContentType=content_type, CacheControl='max-age=86400',
+        )
+
+
+BLOB_SIGNING_SALT = 'scoremate.files.blob'
+
+
+def sign_blob_token(payload, expiry):
+    """파일 하나에 대한 권한을 담은 토큰. 만료 시각을 올림해 같은 파일의 URL 이 한동안 같게 한다
+    (목록을 다시 불러와도 썸네일이 브라우저 캐시에서 나온다)"""
+    step = max(60, min(3600, expiry // 4))
+    expires_at = int(math.ceil((time.time() + expiry) / step) * step)
+    return signing.dumps({**payload, 'x': expires_at}, salt=BLOB_SIGNING_SALT, compress=True)
+
+
+def load_blob_token(token):
+    """서명과 만료를 확인한 payload, 아니면 None"""
+    try:
+        payload = signing.loads(token, salt=BLOB_SIGNING_SALT)
+    except signing.BadSignature:
+        return None
+    if not isinstance(payload, dict) or payload.get('x', 0) < time.time():
+        return None
+    return payload
+
+
+class LocalStorageHandler:
+    """서버 디스크 저장소 — S3Handler 와 같은 메서드
+
+    키는 S3 와 같은 모양({user_id}/uploads/…, {user_id}/scores/…)이고 FILES_ROOT 아래의 상대 경로다.
+    """
+
+    def __init__(self):
+        self.root = Path(settings.FILES_ROOT)
+
+    def path_for(self, key):
+        path = (self.root / key).resolve()
+        root = self.root.resolve()
+        if not key or path == root or root not in path.parents:
+            raise ValueError(f'Invalid storage key: {key!r}')
+        return path
+
+    def _url(self, token):
+        return f"{settings.FILES_PUBLIC_BASE}{settings.FILES_BLOB_PATH}{token}/"
+
+    def generate_presigned_upload_url(self, s3_key, content_type, expiry=None):
+        expiry = expiry or settings.PRESIGNED_URL_EXPIRY
+        self.path_for(s3_key)  # 키 검증
+        token = sign_blob_token({'op': 'put', 'k': s3_key, 'ct': content_type}, expiry)
+        return {'url': self._url(token), 'headers': {'Content-Type': content_type}, 'method': 'PUT'}
+
+    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True, filename=None):
+        expiry = expiry or settings.PRESIGNED_URL_EXPIRY
+        self.path_for(s3_key)
+        payload = {'op': 'get', 'k': s3_key}
+        if filename:
+            payload['fn'] = filename
+        return {'url': self._url(sign_blob_token(payload, expiry)), 'method': 'GET', 'expires_in': expiry}
+
+    def check_file_exists(self, s3_key):
+        return self.path_for(s3_key).is_file()
+
+    def delete_file(self, s3_key):
+        path = self.path_for(s3_key)
+        path.unlink(missing_ok=True)
+        logger.info(f"Successfully deleted {s3_key}")
+        return True
+
+    def read_bytes(self, s3_key):
+        return self.path_for(s3_key).read_bytes()
+
+    def write_bytes(self, s3_key, data, content_type='application/octet-stream'):
+        self.write_stream(s3_key, [data])
+
+    def write_stream(self, s3_key, chunks, max_bytes=None):
+        """임시 파일에 쓰고 같은 디렉터리에서 rename — 반쯤 쓴 파일이 보이지 않게. 쓴 바이트 수를 돌려준다"""
+        path = self.path_for(s3_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix='.upload-')
+        written = 0
+        try:
+            with os.fdopen(fd, 'wb') as out:
+                for chunk in chunks:
+                    written += len(chunk)
+                    if max_bytes is not None and written > max_bytes:
+                        raise ValueError('File exceeds the maximum upload size')
+                    out.write(chunk)
+            os.chmod(tmp, 0o664)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        return written
+
+    @staticmethod
+    def content_type_for(s3_key):
+        return mimetypes.guess_type(s3_key)[0] or 'application/octet-stream'
+
+
+def get_storage():
+    """설정에 맞는 저장소 (STORAGE_BACKEND = 's3' | 'local')"""
+    if settings.STORAGE_BACKEND == 'local':
+        return LocalStorageHandler()
+    return S3Handler()
 
 
 class QuotaManager:

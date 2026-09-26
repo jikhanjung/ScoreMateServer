@@ -388,10 +388,12 @@ class ErrorLoggingTest(TestCase):
         self.assertIn('handlers', logging_config)
         handlers = logging_config['handlers']
         
-        # Should have console and file handlers
+        # 콘솔(컨테이너 로그)은 늘 있다. 파일은 LOG_DIR 을 줄 때만 (운영 컨테이너 루트는 읽기 전용)
         self.assertIn('console', handlers)
-        self.assertIn('file', handlers)
-        self.assertIn('error_file', handlers)
+        if settings.LOG_DIR:
+            self.assertIn('file', handlers)
+        else:
+            self.assertNotIn('file', handlers)
         
         # Check loggers configuration
         self.assertIn('loggers', logging_config)
@@ -400,7 +402,7 @@ class ErrorLoggingTest(TestCase):
         # Should have core logger configured
         self.assertIn('core', loggers)
         core_logger = loggers['core']
-        self.assertIn('error_file', core_logger['handlers'])
+        self.assertIn('console', core_logger['handlers'])
     
     @patch('core.exceptions.logger')
     def test_exception_handler_logging(self, mock_logger):

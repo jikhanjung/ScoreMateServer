@@ -1,10 +1,22 @@
 """
 Serializers for scores app
 """
+from django.conf import settings
 from rest_framework import serializers
 
 from ensembles.models import Ensemble, Membership
+from files.utils import get_storage
 from .models import Score
+
+
+def thumbnail_url(score):
+    if not score.thumbnail_key:
+        return None
+    try:
+        return get_storage().generate_presigned_download_url(
+            score.thumbnail_key, expiry=settings.THUMBNAIL_URL_EXPIRY)['url']
+    except Exception:
+        return None
 
 
 def validate_target_ensemble(request, ensemble):
@@ -99,16 +111,8 @@ class ScoreSerializer(EnsembleFieldsMixin, serializers.ModelSerializer):
         return bool(obj.thumbnail_key)
     
     def get_thumbnail_url(self, obj):
-        """Generate thumbnail download URL via frontend proxy"""
-        if not obj.thumbnail_key:
-            return None
-        
-        try:
-            # Return simple proxy URL with thumbnail key
-            proxy_url = f"/api/thumbnail-proxy?key={obj.thumbnail_key}"
-            return proxy_url
-        except Exception:
-            return None
+        """썸네일의 서명 URL — 이 응답을 받은 사람만 한동안 쓸 수 있다 (예전의 인증 없는 썸네일 경로를 대신한다)"""
+        return thumbnail_url(obj)
     
 
 
@@ -142,16 +146,8 @@ class ScoreListSerializer(EnsembleFieldsMixin, serializers.ModelSerializer):
         return bool(obj.thumbnail_key)
     
     def get_thumbnail_url(self, obj):
-        """Generate thumbnail download URL via frontend proxy"""
-        if not obj.thumbnail_key:
-            return None
-        
-        try:
-            # Return simple proxy URL with thumbnail key
-            proxy_url = f"/api/thumbnail-proxy?key={obj.thumbnail_key}"
-            return proxy_url
-        except Exception:
-            return None
+        """썸네일의 서명 URL — 이 응답을 받은 사람만 한동안 쓸 수 있다 (예전의 인증 없는 썸네일 경로를 대신한다)"""
+        return thumbnail_url(obj)
 
 
 class ScoreCreateSerializer(serializers.ModelSerializer):

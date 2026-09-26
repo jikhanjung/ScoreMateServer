@@ -1,0 +1,49 @@
+# 운영(dolfinid) 전용 compose — /srv/scoremate/docker-compose.yml (배포 때 이미지에서 꺼내진다).
+#   - 이미지는 빌드하지 않고 pull. 버전은 .env 의 IMAGE_TAG (deploy.sh 가 그 키만 갱신).
+#   - 비밀값(DJANGO_SECRET_KEY · 관리자 비밀번호)도 .env — 호스트가 관리, git 비추적, chmod 600.
+#   - 127.0.0.1 에만 연다. 공개 리스너는 호스트 nginx 하나(scoremate.nginx.conf).
+name: scoremate
+services:
+  api:
+    image: honestjung/scoremateserver:${IMAGE_TAG:?Set IMAGE_TAG in .env}
+    container_name: scoremate
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8016}:8000"
+    environment:
+      # 아래는 env_file 보다 우선한다 — 배포 게이트([6/7])가 이 경로를 검증한다
+      DATA_DIR: /app/hostdb                  # SQLite = /app/hostdb/db.sqlite3
+      STORAGE_BACKEND: local
+      FILES_ROOT: /app/files
+      FILES_X_ACCEL_PREFIX: /_protected/     # 받기는 nginx 가 /srv/scoremate/files 에서 직접 보낸다
+      DJANGO_DEBUG: "false"
+      REQUIRE_SECRET_KEY: "true"             # 개발용 · 짧은 SECRET_KEY 면 뜨지 않는다
+      TRUST_PROXY_HEADERS: "true"
+      SESSION_COOKIE_SECURE: "true"
+      CSRF_COOKIE_SECURE: "true"
+      SECURE_HSTS_SECONDS: "${SECURE_HSTS_SECONDS:-86400}"
+      DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-scoremate.noematica.kr,localhost,127.0.0.1}"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-https://scoremate.noematica.kr}"
+    volumes:
+      # WAL 을 위해 파일이 아닌 *디렉터리* 를 마운트 — -wal/-shm 이 호스트에 남아야 호스트 백업이 최신 커밋을 본다.
+      # DB 전용 디렉터리만 마운트(.env · backup 은 컨테이너에 보이지 않게).
+      - /srv/scoremate/db:/app/hostdb
+      - /srv/scoremate/files:/app/files
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=256m             # PDF 처리 임시 파일 · gunicorn heartbeat
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN                                # entrypoint 가 DB 형제 파일 소유를 맞춘다
+      - SETUID                               # gosu 권한 드롭
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

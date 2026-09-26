@@ -9,7 +9,7 @@ from .views import (
     FileDirectDownloadView,
     UploadConfirmationView,
     UploadCancellationView,
-    get_thumbnail
+    FileBlobView,
 )
 
 app_name = 'files'
@@ -20,13 +20,13 @@ urlpatterns = [
     path('files/download-url/', FileDownloadURLView.as_view(), name='download_url'),
     path('files/download/<int:score_id>/', FileDownloadURLView.as_view(), name='download_score'),
     
-    # Direct file download (proxy)
+    # 악보 파일로 가는 짧은 링크 (서명 URL 로 302)
     path('files/direct-download/<int:score_id>/', FileDirectDownloadView.as_view(), name='direct_download'),
     
     # Upload management
     path('files/upload-confirm/', UploadConfirmationView.as_view(), name='upload_confirm'),
     path('files/upload-cancel/', UploadCancellationView.as_view(), name='upload_cancel'),
     
-    # Thumbnail serving
-    path('files/thumbnail/<path:thumbnail_key>', get_thumbnail, name='thumbnail'),
+    # local 저장소: 서명 토큰 URL 로 올리고 받기
+    path('files/blob/<str:token>/', FileBlobView.as_view(), name='blob'),
 ]

@@ -64,3 +64,6 @@ frontend/tests/videos/
 # Browser downloads from tests
 frontend/downloads/
 *.swp
+
+# Dropbox 가 NTFS 대체 데이터 스트림을 파일로 남긴 것 — Windows 에서 클론이 실패한다
+*:com.dropbox.attrs

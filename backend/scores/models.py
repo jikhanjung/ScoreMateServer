@@ -1,6 +1,5 @@
 from django.db import models
 from django.conf import settings
-from django.contrib.postgres.fields import ArrayField
 import hashlib
 
 
@@ -24,11 +23,11 @@ class Score(models.Model):
     size_bytes = models.BigIntegerField()
     mime = models.CharField(max_length=100, default='application/pdf')
     thumbnail_key = models.CharField(max_length=500, blank=True)
-    tags = ArrayField(
-        models.CharField(max_length=50),
+    # 문자열 목록. SQLite 로 옮기며 Postgres 전용 ArrayField 대신 JSONField (054)
+    tags = models.JSONField(
         blank=True,
         default=list,
-        help_text="Tags for categorizing scores"
+        help_text="Tags for categorizing scores (list of strings)"
     )
     note = models.TextField(blank=True)
     content_hash = models.CharField(

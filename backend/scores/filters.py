@@ -3,7 +3,9 @@ Custom filters for scores app
 """
 import django_filters
 from django.db import models
-from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+import json
+
+from django.db.models.functions import Cast
 from rest_framework.filters import OrderingFilter
 from .models import Score
 
@@ -57,9 +59,11 @@ class ScoreFilter(django_filters.FilterSet):
         if not tags:
             return queryset
         
-        # Use PostgreSQL array contains for efficient tag filtering
+        # tags 는 JSON 목록이다. JSONField 의 contains 는 SQLite 가 지원하지 않으므로, 저장된 JSON 텍스트에서
+        # 따옴표까지 포함한 태그 문자열("tag", 저장 때와 같은 이스케이프)을 찾는다 — 다른 태그의 일부와 섞이지 않는다
+        queryset = queryset.annotate(tags_text=Cast('tags', models.TextField()))
         for tag in tags:
-            queryset = queryset.filter(tags__contains=[tag])
+            queryset = queryset.filter(tags_text__contains=json.dumps(tag))
         
         return queryset
     
@@ -110,21 +114,17 @@ class ScoreFilter(django_filters.FilterSet):
         return queryset
     
     def filter_search(self, queryset, name, value):
-        """Full-text search using PostgreSQL search features"""
+        """제목 · 작곡가 · 편성에서 찾는다 (단어마다 어느 필드에든 들어 있으면)"""
         if not value:
             return queryset
-        
-        # Use PostgreSQL full-text search for better performance
-        search_vector = SearchVector('title', weight='A') + \
-                       SearchVector('composer', weight='B') + \
-                       SearchVector('instrumentation', weight='C')
-        
-        search_query = SearchQuery(value)
-        
-        return queryset.annotate(
-            search=search_vector,
-            rank=SearchRank(search_vector, search_query)
-        ).filter(search=search_query).order_by('-rank', '-updated_at')
+        # SQLite 로 옮기며 Postgres 전문 검색 대신 부분 일치. 앙상블 악보함 규모에서는 충분하다 (054)
+        for word in value.split():
+            queryset = queryset.filter(
+                models.Q(title__icontains=word) |
+                models.Q(composer__icontains=word) |
+                models.Q(instrumentation__icontains=word)
+            )
+        return queryset.order_by('-updated_at')
 
 
 class ScoreOrderingFilter(OrderingFilter):

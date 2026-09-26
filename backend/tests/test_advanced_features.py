@@ -6,7 +6,6 @@ from django.db.models import Q
 from rest_framework.test import APITestCase, APIClient
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.postgres.search import SearchVector
 
 from core.models import User
 from scores.models import Score

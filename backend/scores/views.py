@@ -8,7 +8,6 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import F, Count, Sum, Avg, Q
 from django.db import transaction
-from django.contrib.postgres.aggregates import ArrayAgg
 
 from .models import Score
 from .serializers import (
@@ -136,9 +135,8 @@ class ScoreViewSet(viewsets.ModelViewSet):
         ).order_by('-count')[:10]
         
         # Tag statistics (all unique tags)
-        all_tags = queryset.exclude(Q(tags__isnull=True) | Q(tags=[])).aggregate(
-            unique_tags=ArrayAgg('tags', distinct=True)
-        )
+        # 악보마다의 태그 목록 (SQLite 로 옮기며 ArrayAgg 대신 파이썬에서 모은다 — 054)
+        all_tags = {'unique_tags': list(queryset.exclude(Q(tags__isnull=True) | Q(tags=[])).values_list('tags', flat=True))}
         
         # Flatten and count tags
         tag_counts = {}

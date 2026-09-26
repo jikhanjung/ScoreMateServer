@@ -98,10 +98,13 @@ WSGI_APPLICATION = 'scoremateserver.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+# 기본은 SQLite (dolfinid 배포 관례, 054). DATA_DIR 에 DB 파일을 둔다 — 운영에서는 bind mount.
+# DATABASE_URL 을 주면 그것을 쓴다 (예: postgres://…)
+DATA_DIR = Path(os.environ.get('DATA_DIR', BASE_DIR / 'data'))
 DATABASES = {
     'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL', 'postgres://scoremate:pass@db:5432/scoremate'),
-        conn_max_age=600
+        default=os.environ.get('DATABASE_URL', f"sqlite:///{DATA_DIR / 'db.sqlite3'}"),
+        conn_max_age=0 if not os.environ.get('DATABASE_URL') else 600,
     )
 }
 

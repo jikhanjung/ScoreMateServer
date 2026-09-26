@@ -5,7 +5,7 @@ set -e
 umask 002
 
 HOSTDB=/app/hostdb
-FILES=/app/files
+FILES=/app/hostfiles
 
 # --- 비-root 실행(권한 드롭) ---
 # DB 는 $HOSTDB 디렉터리 바인드(-wal/-shm 형제 파일을 호스트와 공유). 서비스 프로세스는 그 디렉터리 소유 uid 로

@@ -92,7 +92,7 @@ echo "=== [6/7] Verify DB · 파일 저장소 바인딩 (호스트 마운트, �
 # 경로가 어긋나면 컨테이너가 이미지 내부 빈 DB · 빈 파일 디렉터리로 폴백해 빈 사이트로 뜬다
 # (실데이터는 $ROOT/db · $ROOT/files 에 안전). 경로 + 쓰기 프로브로 확인한다.
 EXPECT_DB=/app/hostdb/db.sqlite3
-EXPECT_FILES=/app/files
+EXPECT_FILES=/app/hostfiles
 PROBE_UID=$(stat -c %u "$ROOT/db" 2>/dev/null || echo 0)
 BINDING=$(docker compose exec -T -u "${PROBE_UID}" api python manage.py shell -c "
 import os, tempfile

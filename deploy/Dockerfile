@@ -18,7 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_DEBUG=false \
     STATIC_ROOT=/app/staticfiles \
     DATA_DIR=/app/hostdb \
-    FILES_ROOT=/app/files
+    FILES_ROOT=/app/hostfiles
 
 WORKDIR /app
 
@@ -38,7 +38,7 @@ COPY deploy/host/ /app/deploy/host/
 
 # 정적 파일은 빌드 때 모은다 — 실행 컨테이너는 루트가 읽기 전용이다
 RUN DJANGO_SECRET_KEY=build-only-not-a-runtime-secret python manage.py collectstatic --noinput \
-    && mkdir -p /app/hostdb /app/files
+    && mkdir -p /app/hostdb /app/hostfiles
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

@@ -35,7 +35,7 @@ backend/scripts/backup_db.py   운영 hourly 백업 (이미지에 실려 /srv/sc
 |---|---|---|
 | `.env` (600) | IMAGE_TAG · HOST_PORT · SECRET_KEY · 관리자 | env_file |
 | `db/` | `db.sqlite3` (+ `-wal` `-shm`), 손상 센티넬 `INTEGRITY_FAIL` | `/app/hostdb` |
-| `files/` | 악보 PDF · 썸네일 (`{user_id}/uploads/…`, `{user_id}/scores/…`) | `/app/files` |
+| `files/` | 악보 PDF · 썸네일 (`{user_id}/uploads/…`, `{user_id}/scores/…`) | `/app/hostfiles` |
 | `backup/` | hourly `scoremate_YYYYMMDD_HH.sqlite3`(24) · `pre_deploy/`(20) · nginx tar · `backup.log` | — |
 | `maintenance/`, `acme/` | 점검 페이지 · Let's Encrypt webroot | — |
 | `scripts/backup_db.py`, `*.sh`, `docker-compose.yml`, `scoremate.nginx.conf` | 이미지에서 추출 | — |

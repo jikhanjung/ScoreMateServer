@@ -16,7 +16,7 @@ services:
       # 아래는 env_file 보다 우선한다 — 배포 게이트([6/7])가 이 경로를 검증한다
       DATA_DIR: /app/hostdb                  # SQLite = /app/hostdb/db.sqlite3
       STORAGE_BACKEND: local
-      FILES_ROOT: /app/files
+      FILES_ROOT: /app/hostfiles
       FILES_X_ACCEL_PREFIX: /_protected/     # 받기는 nginx 가 /srv/scoremate/files 에서 직접 보낸다
       DJANGO_DEBUG: "false"
       REQUIRE_SECRET_KEY: "true"             # 개발용 · 짧은 SECRET_KEY 면 뜨지 않는다
@@ -30,7 +30,7 @@ services:
       # WAL 을 위해 파일이 아닌 *디렉터리* 를 마운트 — -wal/-shm 이 호스트에 남아야 호스트 백업이 최신 커밋을 본다.
       # DB 전용 디렉터리만 마운트(.env · backup 은 컨테이너에 보이지 않게).
       - /srv/scoremate/db:/app/hostdb
-      - /srv/scoremate/files:/app/files
+      - /srv/scoremate/files:/app/hostfiles
     read_only: true
     tmpfs:
       - /tmp:rw,nosuid,size=256m             # PDF 처리 임시 파일 · gunicorn heartbeat

@@ -54,7 +54,7 @@ cleanup() { [ -n "$CID" ] && docker rm -f "$CID" >/dev/null 2>&1; rm -rf "$SMOKE
 trap cleanup EXIT
 CID=$(docker run -d --read-only --tmpfs /tmp:rw,nosuid,size=64m \
     --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
-    -v "$SMOKE_DIR/db:/app/hostdb" -v "$SMOKE_DIR/files:/app/files" \
+    -v "$SMOKE_DIR/db:/app/hostdb" -v "$SMOKE_DIR/files:/app/hostfiles" \
     -e STORAGE_BACKEND=local -e FILES_X_ACCEL_PREFIX=/_protected/ -e REQUIRE_SECRET_KEY=true \
     -e DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \
     -e DJANGO_SUPERUSER_EMAIL=smoke@example.com -e DJANGO_SUPERUSER_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(16))')" \

@@ -7,7 +7,7 @@ instance = "scoremate"
 image    = "honestjung/scoremateserver"       # Docker Hub. build.sh 가 :X.Y.Z + :latest push.
 platform = "linux/amd64"
 db_path  = "/srv/scoremate/db/db.sqlite3"     # 호스트 DB 전용 디렉터리 → 컨테이너 /app/hostdb (디렉터리 마운트, WAL 형제 동반)
-files_path = "/srv/scoremate/files"           # 악보 PDF · 썸네일(STORAGE_BACKEND=local) → 컨테이너 /app/files, 받기는 nginx X-Accel
+files_path = "/srv/scoremate/files"           # 악보 PDF · 썸네일(STORAGE_BACKEND=local) → 컨테이너 /app/hostfiles, 받기는 nginx X-Accel
 has_seed = false                              # 시스템 시드 없음 — 전부 운영 데이터(사용자 · 앙상블 · 악보). 안전망 = 백업.
 services = ["api"]                            # compose 단일 서비스(gunicorn). 작업은 요청 안에서(REDIS_URL 없음). 웹은 아직 없음.
 rollback_db = "keep"                          # 기본은 이미지만 전환. DB 복원은 명시적 --db=restore.

@@ -16,4 +16,5 @@ pytest
 pytest-django
 factory-boy
 pytest-cov
+moto[s3]
 reportlab

@@ -189,6 +189,8 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.FormParser',
     ],
     'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
+    # 클라이언트(웹 · TV)는 JSON 을 보낸다. 테스트도 같게 (multipart 면 목록 값이 하나만 남는다)
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
 }
 
 # Simple JWT settings

@@ -236,7 +236,8 @@ class HelperFunctionsTest(TestCase):
         """Test successful model validation"""
         user = User(
             username='testuser',
-            email='test@example.com'
+            email='test@example.com',
+            password='pbkdf2_sha256$dummy'
         )
         
         # Should not raise exception for valid model
@@ -255,7 +256,8 @@ class HelperFunctionsTest(TestCase):
         
         error = cm.exception
         self.assertIn('validation failed', str(error).lower())
-        self.assertIn('details', str(error.details))
+        self.assertEqual(error.details['email'], ['This field cannot be blank.'])
+        self.assertIn('password', error.details)
 
 
 class APIErrorResponseTest(APITestCase):

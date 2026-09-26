@@ -252,12 +252,9 @@ def handle_model_validation(model_instance):
     try:
         model_instance.full_clean()
     except DjangoValidationError as e:
-        error_dict = e.error_dict if hasattr(e, 'error_dict') else {}
-        formatted_errors = {}
-        
-        for field, errors in error_dict.items():
-            formatted_errors[field] = [str(error) for error in errors]
-        
+        # {field: ["message", …]} — str(ValidationError) 은 "['message']" 처럼 목록 표현이 된다
+        formatted_errors = e.message_dict if hasattr(e, 'error_dict') else {'__all__': e.messages}
+
         raise ValidationError(
             message="Model validation failed",
             details=formatted_errors

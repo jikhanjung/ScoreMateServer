@@ -38,8 +38,9 @@ class SetlistCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Setlist
         fields = [
-            'user', 'title', 'description'
+            'id', 'user', 'title', 'description'
         ]
+        read_only_fields = ['id']
     
     def validate_title(self, value):
         """Ensure title is not empty after stripping whitespace"""

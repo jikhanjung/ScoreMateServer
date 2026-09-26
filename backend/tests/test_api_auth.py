@@ -60,7 +60,7 @@ class AuthAPITest(TestCase):
         response = self.client.post(self.register_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('password_confirm', response.data)
+        self.assertIn('password_confirm', response.data['error']['details'])
     
     def test_user_registration_duplicate_email(self):
         """Test registration with existing email"""
@@ -77,7 +77,7 @@ class AuthAPITest(TestCase):
         response = self.client.post(self.register_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('email', response.data)
+        self.assertIn('email', response.data['error']['details'])
     
     def test_user_login_success(self):
         """Test successful user login"""

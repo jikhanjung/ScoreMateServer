@@ -93,7 +93,7 @@ class FileAPITest(TestCase):
         response = self.client.post(self.upload_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('mime_type', response.data)
+        self.assertIn('mime_type', response.data['error']['details'])
     
     def test_upload_url_file_too_large(self):
         """Test upload URL generation with file too large"""
@@ -106,7 +106,7 @@ class FileAPITest(TestCase):
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         # Check for size validation error (can be in size_bytes or non_field_errors)
-        self.assertTrue('size_bytes' in response.data or 'non_field_errors' in response.data)
+        self.assertIn('size_bytes', response.data['error']['details'])
     
     @patch('files.utils.S3Handler.generate_presigned_upload_url')
     def test_upload_confirmation(self, mock_s3):
@@ -131,7 +131,7 @@ class FileAPITest(TestCase):
         initial_quota = self.user.used_quota_mb
         
         # Confirm upload
-        confirm_data = {'upload_id': upload_id}
+        confirm_data = {'upload_id': upload_id, 'title': 'Test Score'}
         confirm_response = self.client.post(self.confirm_url, confirm_data)
         
         self.assertEqual(confirm_response.status_code, status.HTTP_200_OK)
@@ -213,7 +213,7 @@ class FileAPITest(TestCase):
         self.assertEqual(response.data['expires_in'], 300)
         
         # Verify S3 handler was called with correct key
-        mock_s3.assert_called_once_with(score.s3_key)
+        mock_s3.assert_called_once_with(score.s3_key, filename=score.original_filename or f'{score.title}.pdf')
     
     @patch('files.utils.S3Handler.generate_presigned_download_url')
     def test_download_url_thumbnail_file(self, mock_s3):
@@ -292,7 +292,7 @@ class FileAPITest(TestCase):
         response = self.client.get(self.download_url, params)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('page', response.data)
+        self.assertIn('page', response.data['error']['details'])
     
     def test_download_url_invalid_file_type(self):
         """Test download URL with invalid file type"""
@@ -306,7 +306,7 @@ class FileAPITest(TestCase):
         response = self.client.get(self.download_url, params)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('file_type', response.data)
+        self.assertIn('file_type', response.data['error']['details'])
     
     def test_unauthenticated_access_forbidden(self):
         """Test that unauthenticated requests are forbidden"""

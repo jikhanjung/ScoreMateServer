@@ -187,7 +187,7 @@ class ScoreAPITest(TestCase):
         response = self.client.post(self.list_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('s3_key', response.data)
+        self.assertIn('s3_key', response.data['error']['details'])
     
     def test_score_create_quota_exceeded(self):
         """Test creating score when quota is exceeded"""
@@ -206,7 +206,7 @@ class ScoreAPITest(TestCase):
         response = self.client.post(self.list_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('size_bytes', response.data)
+        self.assertIn('size_bytes', response.data['error']['details'])
     
     def test_score_update_own(self):
         """Test updating own score"""

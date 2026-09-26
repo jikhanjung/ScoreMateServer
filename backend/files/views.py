@@ -217,10 +217,9 @@ class UploadConfirmationView(APIView):
             s3_key = reservation_data['s3_key']
             
             # Extract original filename from s3_key or use the title
-            original_filename = ""
-            if 'original_filename' in reservation_data:
-                original_filename = reservation_data['original_filename']
-            elif '/' in s3_key:
+            # filename 은 upload-url 에서 선택이라 예약에 None 으로 들어 있을 수 있다
+            original_filename = reservation_data.get('original_filename') or ""
+            if not original_filename and '/' in s3_key:
                 # Extract filename from s3_key path
                 s3_filename = s3_key.split('/')[-1]
                 if s3_filename and s3_filename != 'original.pdf':

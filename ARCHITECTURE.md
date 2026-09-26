@@ -1,202 +1,198 @@
+# ScoreMateServer — ARCHITECTURE.md
 
-# ScoreMateServer — ARCHITECTURE.md (MVP)
-
-_Last updated: 2025-08-19 (Asia/Seoul)_
+_Last updated: 2026-09-26 (Asia/Seoul). Plan of record: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`._
 
 ## 0) Purpose & Scope
-ScoreMateServer is the **server-side** for ScoreMate. It **excludes page‑turn sync** (handled client‑to‑client). The server focuses on:
-- **Accounts & Auth** (email/password; OAuth later)
-- **File storage** for sheet‑music PDFs (S3/MinIO)
-- **Library & Setlists** (CRUD, tags, metadata)
-- **Background processing** (page count, thumbnails; optional layout/bars hook)
-- **Plans/Quota/Referral** (storage limits & bonus capacity)
-- **Admin/Observability** (logs, quotas, task monitoring)
+ScoreMateServer is the **server-side** for ScoreMate. Since 2026-09 its purpose is **sharing scores inside an ensemble**:
+a leader uploads scores and parts, and they are delivered automatically to members' Google TVs (MrgqPdfViewer client).
 
-> Synchronization of “viewing/turning pages” is **not a server feature**.
+The server covers:
+- **Accounts & Auth** (email/password JWT; Google login later)
+- **File storage** for sheet-music PDFs (S3/MinIO today → VM disk on deploy)
+- **Library & Setlists** (CRUD, tags, metadata)
+- **Ensembles** (members, roles, invites) — _planned S1_
+- **Score versions** (frequent revisions) — _planned S2_
+- **TV device linking** (RFC 8628 code + QR) — _planned S3_
+- **Incremental sync API** for TVs — _planned S4_
+- **Processing** (page count, thumbnails)
+- **Plans/Quota/Referral**, **Admin**
+
+> Real-time rehearsal sync (beat / bar / page turns) is **not a server feature** — TVs sync with each other on the LAN.
+
+History: the 2025-08 MVP was a private personal library with "no server-side sharing". That principle is replaced below.
 
 ---
 
 ## 1) System Principles
-- **Private by default**: Only the uploader can read their files.
-- **Thin and composable**: AI tasks are via async workers; model servers are pluggable.
-- **Cost-aware**: S3-compatible object storage + Dockerized stack.
-- **Legally cautious**: No server-side sharing; optional opt‑in for model training.
-- **Predictable latency**: Background jobs are idempotent; no WS fan-out required.
+- **Scoped access**: personal scores are visible only to their owner; ensemble scores only to that ensemble's members. **No public links or public libraries** (arrangements are copyrighted works).
+- **Server out of the real-time path**: no WebSocket rooms, no page-turn fan-out.
+- **Small footprint**: one container, SQLite, local disk — sized for small ensembles on a shared VM.
+- **Portable code**: must run on SQLite; Postgres remains possible via `DATABASE_URL`, but no Postgres-only features.
+- **Files never pass through Django**: presigned URLs, or nginx `X-Accel-Redirect` after a Django permission check.
+- **Idempotent processing**: tasks are safe to retry and can run in-request.
 
 ---
 
 ## 2) High-Level Architecture
 
+### Target (S5, dolfinid)
 ```
-+--------------------------+
-|        Clients           |
-|  (Android/iOS/TV/Web)    |
-+------------+-------------+
-             | REST (JWT)
-             v
-+--------------------------+       +------------------+
-|        Django API        |<----->|   Redis (cache)  |
-|  DRF, Auth, Quota, CRUD  |       +------------------+
-|  Presigned URL issuance  |                 ^
-+-------------+------------+                 |
-              |                              |
-              | Celery/RQ tasks              |
-              v                              |
-+--------------------------+       +------------------+
-|    Worker(s) (Celery)    |------>|  PostgreSQL DB   |
-|  PDF_INFO / THUMBNAIL    |       +------------------+
-|  LAYOUT_HOOK (optional)  |
-+-------------+------------+
-              |
-              v
-+--------------------------+
-|    S3/MinIO Object Store |
-+--------------------------+
-
-[Reverse proxy: Nginx in front of Django for HTTP TLS/limits]
+ Google TV (MrgqPdfViewer)      Phone / PC browser
+   device JWT                     user JWT, /activate
+          \                         /
+           v                       v
+ +-----------------------------------------------+
+ | VM nginx (TLS, scoremate.noematica.kr)        |
+ |  - static Next.js export                      |
+ |  - /api → 127.0.0.1:8016                      |
+ |  - X-Accel-Redirect → /srv/scoremate/files    |
+ +----------------------+------------------------+
+                        v
+ +-----------------------------------------------+
+ | scoremateserver container (Gunicorn, Django)  |
+ |  auth · ensembles · scores/versions · devices |
+ |  sync API · in-request PDF processing         |
+ +----------+-----------------------+------------+
+            v                       v
+   /srv/scoremate/data/db.sqlite3   /srv/scoremate/files/
 ```
 
-**Out of scope**: WebSocket rooms, ensemble sync, page-turn broadcasting.
+### Today (development)
+- Django API with SQLite by default (`DATA_DIR/db.sqlite3`), Postgres if `DATABASE_URL` is set.
+- Celery task code: runs eagerly in the request when `REDIS_URL` is unset; broker + worker when set.
+- MinIO/S3 through boto3 presigned URLs.
+- `docker-compose.yml` still offers the full legacy stack (Postgres, Redis, worker, MinIO, frontend, nginx).
 
 ---
 
-## 3) Data Model (initial)
+## 3) Data Model
 
-### Core
-- **User**(id, email, password_hash, plan, total_quota_mb, used_quota_mb, referral_code, created_at)
-- **Score**(id, user_id, title, composer, instrumentation, pages, s3_key, size_bytes, mime, thumbnail_key, tags[], note, content_hash, created_at, updated_at)
-- **Setlist**(id, user_id, title, description, created_at)
-- **SetlistItem**(id, setlist_id, score_id, order_index)
+### Existing
+- **User**(email, plan, total_quota_mb, used_quota_mb, referral_code, …)
+- **Score**(user, title, original_filename, composer, instrumentation, pages, s3_key, size_bytes, mime, thumbnail_key, tags (JSON list), note, content_hash, created_at, updated_at)
+- **Setlist**(user, title, description) / **SetlistItem**(setlist, score, order_index, notes)
+- **Task**(user, score, kind, status, try_count, celery_task_id, log, result_json, error_message, …)
+- **ReferralLog**, **BillingLog**, **AccessLog**
 
-### Operations / Jobs / Billing
-- **Task**(id, user_id, score_id, kind[`pdf_info|thumbnail|layout_hook`], status[`PENDING|RUNNING|SUCCEEDED|FAILED`], try_count, log, created_at, updated_at)
-- **ReferralLog**(id, user_id, referred_user_id, bonus_mb, created_at)
-- **BillingLog**(id, user_id, kind[`plan_change|payment|refund|referral_bonus`], amount, meta_json, created_at)
-- **AccessLog**(id, user_id, action, target_type, target_id, meta_json, created_at)
-
-DB: **PostgreSQL**. Tags can be a simple text array or a normalized table if needed later.
-
----
-
-## 4) API Surface (MVP)
-
-### Auth
-- `POST /auth/register` → create user
-- `POST /auth/login` → JWT access/refresh
-- `POST /auth/logout` → (optional) blacklist refresh
-
-### Scores (Library)
-- `GET /scores?query=&tag=&page=` → list/search
-- `POST /scores` → create metadata or start upload (see Files below)
-- `GET /scores/{id}` → metadata (title, composer, pages, thumbnail URLs)
-- `PATCH /scores/{id}` → update metadata/tags/note
-- `DELETE /scores/{id}` → delete (DB + object)
-
-### Files (Presigned)
-- `POST /files/upload-url` → presigned PUT; validate size/MIME; returns `url`, `headers`, `content_hash_token`  
-- `GET /files/download-url?score_id=&page=` → presigned GET (short TTL)
-
-### Setlists
-- `GET /setlists`
-- `POST /setlists`
-- `PATCH /setlists/{id}`
-- `POST /setlists/{id}/items` (add/update order)
-- `DELETE /setlists/{id}`
-
-### Tasks
-- `POST /tasks/refresh-thumbnails?score_id=`
-- `POST /tasks/run-layout?score_id=` (optional; async hook)
-- `GET /tasks/{task_id}` → status / log
-
-### Billing / Quota / Referral
-- `GET /billing/plan`
-- `GET /billing/usage`
-- `POST /billing/redeem-referral`
-- `GET /billing/history`
-
-> **No sync/session APIs** in server (handled entirely on clients).
-
----
-
-## 5) Object Storage Layout
-
+### Planned additions
 ```
-/{user_id}/scores/{score_id}/original.pdf
-/{user_id}/scores/{score_id}/thumbs/page-0001.jpg
-/{user_id}/scores/{score_id}/thumbs/cover.jpg
+Ensemble            name, created_by, created_at                                         (S1)
+Membership          ensemble, user, role(owner|leader|member), part, joined_at; unique(ensemble,user)
+Invite              ensemble, code, created_by, expires_at, max_uses, uses
+Score (+)           ensemble (null = personal), part_name                                  (S1)
+                    current_version, deleted_at (soft delete for sync)                     (S2/S4)
+ScoreVersion        score, number, s3_key, size_bytes, pages, content_hash, uploaded_by, note  (S2)
+Setlist (+)         ensemble (null = personal)
+Device              uuid, user, name, model, app_version, last_seen_at, revoked_at          (S3)
+DeviceAuthorization device_code (hashed), user_code ("BCDF-GHJK"), status, user, expires_at, interval
 ```
-- Access via short‑lived presigned URLs only.
-- `content_hash` detects duplicate uploads (optional hard‑linking at object layer).
+
+### Permissions
+| | Read | Write (upload, new version, delete) |
+|---|---|---|
+| Personal score | owner | owner |
+| Ensemble score | ensemble members | ensemble owner / leader |
+
+Quota is charged to the uploader (no ensemble quota for now).
 
 ---
 
-## 6) Background Jobs
+## 4) API Surface (`/api/v1/`)
 
-- **PDF_INFO**: Read page count, page sizes, basic metadata; persist to Score.
-- **THUMBNAIL**: Generate `cover.jpg` (and optional per‑page thumbs later).
-- **LAYOUT_HOOK (optional)**: Call external service for layout/bars detection; store JSON result (non‑blocking).
+### Existing
+- Auth: `auth/register/`, `auth/login/`, `auth/token/refresh/`, `auth/token/verify/`, `user/profile/`, `dashboard/`
+- Scores: `scores/` (list/search/filter, CRUD, bulk operations, tag stats)
+- Files: `files/upload-url/`, `files/upload-confirm/`, `files/upload-cancel/`, `files/download-url/`, `files/thumbnail/<key>`
+- Setlists: `setlists/` (CRUD, items, ordering)
+- Admin: `admin/…`
 
-**Idempotency**: Jobs keyed by `(score_id, kind)`; safe to retry.  
-**Failure policy**: exponential backoff; `try_count` cap; `log` retained for admin.
-
----
-
-## 7) Security & Privacy
-
-- **Private by default**: no public links, short‑TTL presigned URLs only.
-- **No server sharing**: no session/room sharing endpoints.
-- **Input validation**: MIME allowlist; file size caps; upload rate limiting.
-- **PII minimization**: store only necessary profile fields.
-- **Auditability**: `AccessLog` for significant actions (download, delete, quota change).
-- **Data subject requests**: deletion/export flows (admin).
-
-Optional:
-- Virus scanning on upload (ClamAV sidecar) when moving to wider beta.
+### Planned
+- `ensembles/` — create, members/roles, invite links, join by code (S1)
+- Score versions — upload new version with a note, list versions (S2)
+- `device/code`, `device/token` (RFC 8628) + web page `/activate`; "my devices" with revoke (S3)
+- `sync/scores?cursor=` → `{cursor, scores:[…current version…], deleted:[ids]}`; `scores/{id}/download` → redirect; device heartbeat (S4)
 
 ---
 
-## 8) Plans / Quota / Referral (baseline)
-
-- Plans: **Solo** (free/low quota), **Pro** (paid/higher quota).
-- Quota counters updated on upload/delete; warning thresholds (80%, 95%).
-- Referral bonus: per successful signup → extra MB recorded in `ReferralLog` and added to `total_quota_mb`.
-
-Payments/IAP:
-- Keep **server interface** for receipts, but full integration can wait until M1.
-
----
-
-## 9) Deployment (Docker Compose)
-
-Services:
-- **web**: Django + DRF (ASGI not required because no WS)
-- **worker**: Celery (or RQ) for jobs
-- **db**: Postgres
-- **cache**: Redis (celery broker, cache)
-- **storage**: MinIO (dev) / AWS S3 (prod)
-- **proxy**: Nginx (TLS, upload size, gzip)
-
-Observability:
-- Sentry (errors), Prometheus/Grafana (metrics), structured JSON logs.
+## 5) TV Device Linking (S3, RFC 8628)
+```
+TV  POST device/code {name, model} → device_code, user_code, verification_uri(_complete), interval
+TV  shows code + QR
+Phone  /activate (login) → confirm code → Device created
+TV  POST device/token {device_code} every interval
+      → authorization_pending | slow_down | {access, refresh, device_id}
+```
+- Device refresh tokens are long-lived (~180 days) with a `device_id` claim; revoking a device rejects its refresh.
+- `device_code` stored hashed; `user_code` lookups rate-limited; codes expire after 10 minutes.
 
 ---
 
-## 10) Local Development
+## 6) Sync (S4)
+- Scope: my personal scores + scores of ensembles I belong to.
+- Cursor = last seen (`updated_at`, id), monotonic; a new version or metadata change bumps `updated_at`.
+- First sync without cursor returns everything. Leaving an ensemble reports its scores in `deleted`.
+- TVs download files directly (presigned / X-Accel), never through Django.
 
-- Start stack: `npm run dev:detached` (or `docker-compose up -d`).
-- Create a `.env` from `.env.example` (see below).
-- Run migrations: `docker-compose exec web python manage.py migrate`.
-- Create superuser: `docker-compose exec web python manage.py createsuperuser`.
-- Verify services: API `http://localhost:8000`, Frontend `http://localhost:3000`, MinIO Console `http://localhost:9001`.
-- Use Django Admin for quick inspection.
+---
+
+## 7) Storage Layout
+```
+{user_id}/scores/{score_id}/original.pdf
+{user_id}/scores/{score_id}/thumbs/cover.jpg
+```
+Versions (S2) will get their own keys per version. On deploy the same layout lives under `/srv/scoremate/files/` (`STORAGE_BACKEND=local`, S5).
+
+---
+
+## 8) Processing
+- **PDF_INFO**: page count and basic metadata → Score (version).
+- **THUMBNAIL**: `cover.jpg`.
+- PyMuPDF makes both fast (hundreds of ms), so they run in-request by default. Failures do not fail the upload (`CELERY_TASK_EAGER_PROPAGATES=False`); results are recorded in `Task`.
+- Set `REDIS_URL` and run a worker if processing becomes heavy.
+
+---
+
+## 9) Security & Privacy
+- Every score query is scoped to owner or ensemble membership; non-members get 404.
+- No public links; short-TTL download URLs.
+- MIME allowlist, size caps, upload / login / device-code rate limiting.
+- Device tokens revocable per device.
+- `AccessLog` for significant actions; minimal PII.
+
+---
+
+## 10) Deployment
+
+### Target: dolfinid (GCP VM shared by several projects)
+- Image `honestjung/scoremateserver:vX.Y.Z` (linux/amd64) built on the build host; VM runs `/srv/scoremate/` compose bound to `127.0.0.1:8016`.
+- VM nginx site `scoremate.noematica.kr` with Let's Encrypt (webroot `/srv/scoremate/acme`).
+- SQLite + files bind-mounted; verified backup before deploy; migrate inside the container; roll back `.env` on failure (`deploy.sh`).
+- Read-only container, `cap_drop: ALL`, log size limits; Gunicorn ~2 workers × 4 threads.
+- `deploy/` follows the hanyang3d convention (`deploy.toml`).
+
+### Legacy / development
+`docker-compose.yml` (and `docker-compose.prod.yml`, to be replaced in S5): web, worker, Postgres, Redis, MinIO, frontend, nginx.
+
+---
+
+## 11) Local Development
+```bash
+cd backend
+pip install -r requirements.txt
+python manage.py migrate        # SQLite in backend/data/
+python manage.py runserver
+python -m pytest tests/
+```
+Or the full stack: `cp .env.example .env && docker-compose up -d` (API :8000, frontend :3000, MinIO console :9001).
 
 ### Key Env Vars
 ```
 DJANGO_SECRET_KEY=
 DJANGO_DEBUG=true
 DJANGO_ALLOWED_HOSTS=*
-DATABASE_URL=postgres://scoremate:pass@db:5432/scoremate
-REDIS_URL=redis://cache:6379/0
+DATA_DIR=                 # SQLite location (default backend/data)
+DATABASE_URL=             # optional (Postgres)
+REDIS_URL=                # optional (Celery broker + worker)
 STORAGE_ENDPOINT=http://minio:9000
 STORAGE_BUCKET=scores
 STORAGE_ACCESS_KEY=
@@ -210,67 +206,37 @@ REFERRAL_BONUS_MB=50
 
 ---
 
-## 11) Sequences (ASCII)
-
-### A) Upload Flow
+## 12) Directory Layout
 ```
-Client --(JWT)--> Django: POST /files/upload-url (size,mime)
-Django --verify--> Quota/MIME
-Django --presign--> S3 (PUT)
-Django --<-- return {url, headers}
-Client --PUT--> S3 (binary)
-Client --POST--> /scores {metadata, content_hash}
-Worker(PDF_INFO/THUMBNAIL) -> updates Score(pages, thumbnail_key)
+backend/
+  scoremateserver/  # settings, urls, celery
+  core/             # auth, users, quota, referral
+  scores/           # Score (+ versions, S2)
+  setlists/
+  files/            # upload/download URL issuance
+  tasks/            # pdf_info, thumbnail
+  scoremate_admin/  # admin API
+  tests/
+frontend/           # Next.js (App Router), Playwright E2E
+devlog/             # plans and reports
 ```
-
-### B) Client-Only Sync (for clarity, server uninvolved)
-```
-ConductorClient <---- P2P/LAN ----> PlayerClients
-(Clock sync, page turn schedule, announce, tempo)
-```
-
----
-
-## 12) Directory Layout (proposal)
-
-```
-/app
-  /core        # settings, auth, quota, referral
-  /scores      # models/serializers/views (metadata, tags)
-  /setlists
-  /files       # presigned URL issuance
-  /tasks       # celery tasks (pdf_info, thumbnail, layout_hook)
-  /admin       # admin customizations
-/infra
-  docker-compose.yml
-  nginx/
-/docs
-  API.md
-  SCHEMA.md
-```
-
-Note: In this monorepo, the actual code lives under `backend/` (Django apps: `scores/`, `setlists/`, `tasks/`, project config in `scoremateserver/`) and the Next.js client under `frontend/`. The proposal above maps conceptually to these folders.
 
 ---
 
 ## 13) Roadmap
-
-**MVP**
-1) Auth/JWT & Quota counters  
-2) Presigned upload; PDF_INFO + THUMBNAIL jobs  
-3) Scores/Setlists CRUD & thumbnails in listing  
-4) Admin: tasks, quotas, file index  
-5) Usage warnings (email or webhook)
-
-**M1**
-- Referral redemption & automatic bonus application  
-- Optional layout/bars hook with persisted JSON  
-- Hardened download URLs (short TTL, scope)  
-- Monthly activity/export report (admin)
+| Stage | Content |
+|---|---|
+| S0 ✅ | Repo cleanup, SQLite default, Celery optional |
+| S1 | Ensembles, membership, invites, permissions |
+| S2 | Score versions + data migration |
+| S3 | TV device linking |
+| S4 | Sync API, soft delete, download redirect |
+| S5 | dolfinid deployment (single container, local storage, static web) |
+| S6 | Google login, setlist sync, shared score analysis |
 
 ---
 
-## 14) Notes & Non‑Goals
-- No WebSocket rooms; no fan‑out for page turns.
-- No public libraries or cross‑user sharing in server.
-- No AI models embedded in API container; use workers or external services.
+## 14) Non-Goals
+- No WebSocket rooms or server-side page-turn broadcasting.
+- No public libraries or public share links.
+- No AI models embedded in the API container.

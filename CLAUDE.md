@@ -3,270 +3,180 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-**ScoreMateServer** - Django REST API backend for ScoreMate sheet music management system
-- **Stack**: Python 3.9, Django 5.2.5, Django REST Framework, PostgreSQL, Redis, Celery, MinIO/S3
-- **Architecture**: Multi-container Docker Compose setup with separate web, worker, database, cache, and storage services
-- **Purpose**: Manage user accounts, PDF sheet music storage, library metadata, setlists, background processing (thumbnails, PDF info), and quota management
+**ScoreMateServer** - Django REST API backend for ScoreMate sheet music management, being extended (2026-09) into **ensemble score sharing** for Google TV clients (MrgqPdfViewer)
+- **Stack**: Python 3.12, Django 5.0, Django REST Framework, SQLite (default) / PostgreSQL (optional), Celery (optional), MinIO/S3 → local disk (planned)
+- **Purpose**: User accounts, PDF sheet music storage, library metadata, setlists, page count / thumbnail processing, quota management — and next: ensembles, score versions, TV device linking, incremental sync API
+- **Current plan**: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md` (stages S0–S6). Read it before starting new feature work.
+
+### Direction change (2026-09)
+- The 2025-08 MVP was a **private personal library** ("no server-side sharing").
+- The new goal: a leader uploads scores / parts to an **ensemble**; they are delivered to members' TVs. Revisions are frequent → **versions**. TVs link via **code + QR** (RFC 8628 device flow).
+- New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
+- Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
+
+### Status (2026-09-26)
+| Stage | Content | Status |
+|---|---|---|
+| S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
+| S1 | Ensemble · Membership · Invite, `Score.ensemble`, permissions | next |
+| S2 | ScoreVersion + data migration, new-version upload | |
+| S3 | Device · DeviceAuthorization · `/activate` (RFC 8628) | |
+| S4 | Sync API (cursor, soft delete, download redirect) | |
+| S5 | Deploy on dolfinid (single container, local file storage, static web) | |
+| S6 | (2nd) Google login, setlist sync | |
 
 ## Development Commands
 
-### Initial Setup
+### Backend without Docker (default: SQLite, no Redis/worker)
 ```bash
-# Copy environment variables
-cp .env.example .env
-
-# Start all services
-docker-compose up -d
-
-# Run migrations
-docker-compose exec web python manage.py migrate
-
-# Create superuser for admin access
-docker-compose exec web python manage.py createsuperuser
-
-# Collect static files (for production)
-docker-compose exec web python manage.py collectstatic --noinput
-```
-
-### Common Development Tasks
-```bash
-# Run development server (if not using docker-compose)
+cd backend
+pip install -r requirements.txt
+python manage.py migrate            # creates backend/data/db.sqlite3 (DATA_DIR)
+python manage.py createsuperuser
 python manage.py runserver
 
-# Make and apply migrations
-python manage.py makemigrations
-python manage.py migrate
-
-# Run tests (recommended: use pytest with coverage)
-docker-compose exec web python -m pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
-
-# Alternative: Django test runner
-python manage.py test
-
-# Access Django shell
-python manage.py shell
-
-# Start Celery worker (for background tasks)
-celery -A scoremateserver worker -l info
-
-# Monitor Celery tasks
-celery -A scoremateserver flower
+# Tests
+python -m pytest tests/ -v --tb=short
+python -m pytest tests/ --cov=. --cov-report=term-missing
 ```
+- No `DATABASE_URL` → SQLite at `$DATA_DIR/db.sqlite3` (`DATA_DIR` defaults to `backend/data`).
+- No `REDIS_URL` → Celery tasks run **eagerly inside the request** (`CELERY_TASK_ALWAYS_EAGER`); task failures do not fail the upload.
+- File storage still needs an S3-compatible endpoint (MinIO) until S5 adds `STORAGE_BACKEND=local`.
 
-### Docker Commands
+### Docker Compose (full legacy stack: Postgres, Redis, worker, MinIO, frontend)
 ```bash
-# View logs
-docker-compose logs -f web
-docker-compose logs -f worker
-
-# Restart services
-docker-compose restart web worker
-
-# Access service shells
-docker-compose exec web bash
-docker-compose exec db psql -U scoremate -d scoremate
-
-# Rebuild after requirements change
-docker-compose build web worker
+cp .env.example .env
 docker-compose up -d
+docker-compose exec web python manage.py migrate
+docker-compose exec web python manage.py createsuperuser
+docker-compose exec web python -m pytest tests/ -v --tb=short
+docker-compose logs -f web worker
 ```
+Note: `scores/migrations/0001_initial.py` was edited in place for the SQLite switch (`tags` ArrayField → JSONField). An existing local Postgres DB must be recreated.
 
 ## High-Level Architecture
 
-### Service Layout
-- **Django API** (`/app`): REST endpoints, JWT auth, presigned URL generation
-- **Celery Workers**: Background tasks for PDF processing, thumbnail generation
-- **PostgreSQL**: Main database for users, scores, setlists, tasks
-- **Redis**: Celery broker and caching layer
-- **MinIO/S3**: Object storage for PDF files and thumbnails
-- **Nginx**: Reverse proxy for TLS, rate limiting, static files
+### Current service layout
+- **Django API** (`backend/`): REST endpoints, JWT auth, presigned URL generation
+- **DB**: SQLite by default; PostgreSQL via `DATABASE_URL` (no Postgres-only features may be used)
+- **Background tasks**: Celery task code (`tasks/`); eager in-process without `REDIS_URL`, broker + worker with it
+- **Object storage**: MinIO/S3 via boto3 presigned URLs
+- **Web client**: Next.js (`frontend/`)
+
+### Target deployment (S5, dolfinid GCP VM shared with other projects)
+- **One container** (Gunicorn) bound to `127.0.0.1:8016`; the VM's nginx proxies `scoremate.noematica.kr` (Let's Encrypt)
+- SQLite file + score files on VM disk under `/srv/scoremate/` (bind mount), backed up before each deploy
+- Downloads: Django checks permission, nginx sends the file via **`X-Accel-Redirect`**
+- Web: `next build` static export served by nginx
+- Image `honestjung/scoremateserver:vX.Y.Z` (linux/amd64); `deploy/` follows the hanyang3d convention (`deploy.toml`, `deploy.sh`)
 
 ### Key Design Decisions
-1. **Presigned URLs**: All file uploads/downloads use S3 presigned URLs - server never streams files directly
-2. **Background Processing**: PDF info extraction and thumbnail generation run as Celery tasks
-3. **Private by Default**: No public sharing; all resources require authentication
-4. **Quota Management**: Track `used_quota_mb` on file operations; enforce limits
-5. **No Realtime Sync**: Page-turn synchronization is client-side only (no WebSocket)
+1. **Access scope**: personal scores → owner only; ensemble scores → members read, owner/leader write. No public links.
+2. **Server stays out of real-time sync**: page-turn / beat sync is LAN client-to-client (no WebSocket).
+3. **Portable DB**: code must run on SQLite (no `ArrayField`, `ArrayAgg`, Postgres full-text search). `backend/tests/test_sqlite_portability.py` guards this.
+4. **Lightweight processing**: page count / thumbnails are fast (PyMuPDF) and may run in-request.
+5. **Quota**: counted against the uploader (no ensemble quota for now); always update `used_quota_mb` on file operations.
+6. **Files never stream through Django**: presigned URLs now, `X-Accel-Redirect` with local storage later.
 
 ### Data Flow Patterns
 ```
-Upload: Client → Django (presigned URL) → Direct to S3 → Celery task (process)
-Download: Client → Django (presigned URL) → Direct from S3
-Background: Upload trigger → Celery task → Update database → Store results in S3
+Upload:   Client → Django (presigned URL) → direct to storage → process (eager or Celery)
+Download: Client → Django (permission check) → presigned URL / X-Accel-Redirect
+TV sync (S4):  TV → GET /api/v1/sync/scores?cursor=… → changed + deleted → download each
 ```
 
 ## Development Process
 
 ### Phase-based Development
-ScoreMateServer follows a structured phase-based development approach:
-
-1. **Phase Planning**: Create detailed implementation plan and timeline
-2. **Phase Implementation**: Code development with regular commits  
-3. **Phase Testing**: Comprehensive testing with factory_boy and pytest
-4. **Phase Review**: Code review and documentation update
-5. **Phase Completion**: Final evaluation and next phase preparation
+1. **Planning**: detailed plan in devlog
+2. **Implementation**: regular commits
+3. **Testing**: factory_boy + pytest
+4. **Review**: code review and documentation update
+5. **Completion**: report and next stage preparation
 
 ### Documentation Standards
+All progress is documented in `devlog/` as `YYYYMMDD_###_<title_in_korean>.md` with a sequence number continuing from the highest existing one (check the directory first).
 
-#### devlog/ Directory Structure
-All development progress is documented in `devlog/` with consistent naming:
-```
-devlog/
-├── YYYYMMDD_###_<title_in_korean>.md
-├── 20250819_001_프로젝트_초기_설정.md
-├── 20250819_008_phase1_테스트_구현_완료.md
-├── 20250819_009_factory_boy_마이그레이션_완료.md
-└── ...
-```
-
-#### Document Types per Phase
-- **Planning Document**: Implementation plan and architecture decisions
-- **Progress Reports**: Regular development updates and issue resolutions  
-- **Testing Report**: Test implementation, coverage analysis, bug fixes
-- **Completion Report**: Phase summary, achievements, next steps
-
-### Testing Requirements
-- **每 Phase End**: Complete test suite implementation before proceeding
-- **Test Coverage**: Target >90% coverage on business logic
-- **Test Documentation**: Document test implementation process
-- **Bug Resolution**: Fix all discovered issues during testing phase
+- **Planning Document**: implementation plan and architecture decisions
+- **Progress Reports**: development updates and issue resolutions
+- **Testing Report**: tests, coverage, bug fixes
+- **Completion Report**: summary, achievements, next steps
 
 ### Quality Gates
-Before moving to the next phase:
+Before moving to the next stage:
 1. ✅ All implemented features fully tested
-2. ✅ Code coverage meets target (>90%)
+2. ✅ Coverage >90% on business logic
 3. ✅ All tests passing
-4. ✅ Documentation updated (CLAUDE.md, devlog/)
-5. ✅ Phase completion report written
+4. ✅ Documentation updated (CLAUDE.md, ARCHITECTURE.md, devlog/)
+5. ✅ Completion report written
 
 ## Directory Structure
 ```
-/scoremateserver/   # Django project settings
-  settings.py       # Main configuration (uses env vars)
-  urls.py          # Root URL configuration
-  celery.py        # Celery configuration (if exists)
-
-/core/             # Authentication, users, quota, referrals
-/scores/           # Score model, metadata, tags, CRUD operations  
-/setlists/         # Setlist and SetlistItem models
-/files/            # Presigned URL generation for S3
-/tasks/            # Celery task definitions (pdf_info, thumbnail)
-/admin/            # Django admin customizations
-
-/nginx/            # Nginx configuration
-/devlog/           # Development logs and notes
+backend/
+  scoremateserver/   # settings (env vars), urls, celery
+  core/              # auth, users, quota, referrals
+  scores/            # Score model, metadata, tags, CRUD
+  setlists/          # Setlist and SetlistItem
+  files/             # presigned URL generation
+  tasks/             # task definitions (pdf_info, thumbnail)
+  scoremate_admin/   # admin API
+  tests/             # pytest suite (centralized)
+frontend/            # Next.js app, Playwright E2E
+nginx/               # legacy proxy config (compose)
+devlog/              # development logs and plans
 ```
 
 ## API Endpoint Structure
-All API endpoints should follow RESTful conventions and use Django REST Framework ViewSets where appropriate.
+RESTful, DRF ViewSets where appropriate.
 
 ### Authentication
-- JWT-based using `djangorestframework-simplejwt`
-- All endpoints except auth require `Bearer` token
-- Token lifetime: 60 min access, 1 day refresh
+- JWT via `djangorestframework-simplejwt`; all endpoints except auth require `Bearer` token
+- Token lifetime: 60 min access, 1 day refresh (device tokens in S3 will get a long refresh + `device_id` claim)
 
 ### Main Endpoints
-- `/auth/` - Registration, login, logout
-- `/scores/` - Score CRUD, search, tagging
-- `/setlists/` - Setlist management
-- `/files/` - Presigned URL generation
-- `/tasks/` - Background task monitoring
-- `/billing/` - Quota, usage, referrals
-
-## Dependencies and Requirements
-
-### Production Requirements
-```
-Django>=5.0,<5.1
-djangorestframework
-djangorestframework-simplejwt
-celery
-redis
-psycopg2-binary
-boto3
-python-dotenv
-Pillow
-pdfplumber
-dj-database-url
-```
-
-### Testing Requirements  
-```
-pytest
-pytest-django
-pytest-cov
-factory-boy
-```
-
-### Development Tools
-- **Docker**: All services containerized with docker-compose
-- **PostgreSQL**: Primary database
-- **Redis**: Celery broker and cache
-- **MinIO**: S3-compatible object storage for development
+All under `/api/v1/`:
+- `auth/register/`, `auth/login/`, `auth/token/refresh/`, `auth/token/verify/`, `user/profile/`, `dashboard/`
+- `scores/` - score CRUD, search, tagging, bulk operations
+- `setlists/` - setlist management
+- `files/` - `upload-url/`, `upload-confirm/`, `upload-cancel/`, `download-url/`, `thumbnail/…`
+- `admin/` - admin API (`scoremate_admin`)
+- Planned: `ensembles/` (S1), score versions (S2), `device/` + web `/activate` (S3), `sync/` (S4)
 
 ## Environment Configuration
-Key environment variables (see `.env.example`):
-- `DATABASE_URL`: PostgreSQL connection string
-- `REDIS_URL`: Redis connection for Celery
+See `.env.example`:
+- `DATA_DIR`: directory for the SQLite file (default `backend/data`)
+- `DATABASE_URL`: optional; e.g. Postgres for the compose stack
+- `REDIS_URL`: optional; when set, tasks go through the broker to a worker
 - `STORAGE_*`: MinIO/S3 configuration
-- `JWT_SIGNING_KEY`: Secret for JWT tokens
-- `MAX_UPLOAD_MB`: Upload size limit
-- `ALLOWED_MIME`: Allowed file types (default: application/pdf)
+- `JWT_SIGNING_KEY`, `MAX_UPLOAD_MB`, `ALLOWED_MIME` (default `application/pdf`)
 
 ## Testing Strategy
+- **pytest + pytest-django**, centralized in `backend/tests/`, **factory_boy** factories in `tests/factories.py`
+- Tests run on SQLite by default (same as production)
+- Mock S3 operations; tasks run eagerly without `REDIS_URL`
+- Use `@pytest.mark.django_db` for database access
 
-### Framework and Structure
-- **Primary**: pytest with pytest-django for Django integration
-- **Test Location**: Centralized `tests/` directory (not individual app `tests.py`)
-- **Data Generation**: factory_boy for flexible test data creation
-- **Coverage Target**: Maintain >90% code coverage on core business logic
-
-### Test Organization
-```
-tests/
-├── conftest.py          # pytest fixtures and Django setup
-├── factories.py         # factory_boy factories for all models
-├── test_core_models.py  # User, quota, referral logic tests
-├── test_scores_models.py # Score S3 keys, metadata tests
-├── test_setlists_models.py # Setlist ordering, statistics tests
-└── test_api_*.py        # API endpoint tests (Phase 2+)
-```
-
-### Test Data with Factory_boy
 ```python
-# Use factories instead of manual object creation
 user = UserFactory(email="test@example.com", plan="pro")
 score = ScoreFactory(user=user, title="Test Score")
 setlist = SetlistFactory(user=user)
 item = SetlistItemFactory(setlist=setlist, score=score)
 ```
 
-### Best Practices
-- Mock S3 operations in tests using `moto` or similar
-- Test Celery tasks synchronously with `CELERY_ALWAYS_EAGER=True`
-- Each phase should have comprehensive tests before proceeding
-- Use `@pytest.mark.django_db` for database access in tests
-
 ## Important Constraints
-1. **No WebSocket/Realtime**: All synchronization happens client-side
-2. **No Public Sharing**: Server doesn't provide public access to scores
-3. **Idempotent Tasks**: Background jobs must be safely retryable
-4. **Quota Enforcement**: Always update `used_quota_mb` on file operations
-5. **Presigned URLs Only**: Never stream files through Django
+1. **No WebSocket/Realtime**: synchronization happens client-to-client
+2. **No public sharing**: scores are visible to their owner, or to members of their ensemble — nobody else
+3. **SQLite-compatible code only**: no Postgres-specific fields, aggregates or search
+4. **Idempotent tasks**: background jobs must be safely retryable, and must work eagerly in-request
+5. **Quota enforcement**: always update `used_quota_mb` on file operations
+6. **Files are not streamed through Django**
 
 ## Code Conventions
-- Follow PEP 8 style guide
-- Use type hints for function signatures where beneficial
-- Prefer Django REST Framework serializers for validation
-- Use ViewSets for standard CRUD operations
-- Keep business logic in models or separate service modules
-- Write docstrings for public methods and complex logic
-
-## Migration and Database Notes
-- Always create migrations for model changes: `python manage.py makemigrations`
-- Review migrations before applying: `python manage.py showmigrations`
-- Use `db_index=True` on frequently queried fields
-- Tags stored as PostgreSQL array field or normalized table
+- PEP 8; type hints where beneficial
+- DRF serializers for validation, ViewSets for CRUD
+- Business logic in models or service modules
+- Docstrings for public methods and complex logic
+- Always create and review migrations; `db_index=True` on frequently queried fields
 
 ## Background Task Patterns
 ```python
@@ -274,16 +184,15 @@ item = SetlistItemFactory(setlist=setlist, score=score)
 @shared_task(bind=True, max_retries=3)
 def process_pdf(self, score_id):
     try:
-        # Task logic here
-        pass
+        ...
     except Exception as exc:
         raise self.retry(exc=exc, countdown=60)
 ```
 
 ## Security Considerations
-- All user uploads are private by default
-- Use presigned URLs with short TTL (5-15 minutes)
+- Every score query must be scoped: own scores, or scores of ensembles the user belongs to
+- Presigned URLs with short TTL (5-15 minutes)
 - Validate MIME types and file sizes before upload
-- Never expose S3 credentials to clients
-- Rate limit API endpoints in production
+- Never expose storage credentials to clients
+- Rate limit login and device-code lookups; store device codes hashed (S3)
 - Sanitize user input in metadata fields

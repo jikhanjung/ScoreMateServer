@@ -1,9 +1,12 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `backend/`: Django 5 REST API and Celery worker. Apps live under `scores/`, `setlists/`, `tasks/`, with project config in `scoremateserver/`. Tests are in `backend/tests/` (pytest).
+- `backend/`: Django 5 REST API. Apps live under `core/`, `scores/`, `setlists/`, `files/`, `tasks/`, `scoremate_admin/`, with project config in `scoremateserver/`. Tests are in `backend/tests/` (pytest).
+- DB is SQLite by default (`DATA_DIR/db.sqlite3`); `DATABASE_URL` switches to Postgres. Code must stay SQLite-compatible (no `ArrayField`, `ArrayAgg`, Postgres full-text search).
+- Celery is optional: without `REDIS_URL` tasks run eagerly inside the request.
+- Direction (2026-09): ensemble score sharing to Google TV clients. Plan: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`.
 - `frontend/`: Next.js app (TypeScript, App Router). Key folders: `app/`, `components/`, `hooks/`, `tests/e2e/` (Playwright).
-- Root: `docker-compose.yml` (local stack: Postgres, Redis, MinIO, web, worker, frontend), `.env*` for configuration, `ARCHITECTURE.md` for a deeper overview, `nginx/` for optional proxy.
+- Root: `docker-compose.yml` (full legacy dev stack: Postgres, Redis, MinIO, web, worker, frontend), `.env*` for configuration, `ARCHITECTURE.md` for a deeper overview, `nginx/` for optional proxy.
 
 ## Build, Test, and Development Commands
 - Start full dev stack: `npm run dev` (or detached: `npm run dev:detached`).
@@ -20,7 +23,7 @@
 - Filenames: backend tests `test_*.py`; Playwright specs `*.spec.ts` in `frontend/tests/e2e/`.
 
 ## Testing Guidelines
-- Backend: `pytest` with config in `backend/pytest.ini`. Run via `npm run test:backend`; add coverage checks with `npm run test:backend:coverage`. Write focused unit tests per app and API tests under `backend/tests/`.
+- Backend: `pytest` with config in `backend/pytest.ini`. Run via `npm run test:backend` (or `cd backend && python -m pytest tests/` without Docker); add coverage checks with `npm run test:backend:coverage`. Write focused unit tests per app and API tests under `backend/tests/`.
 - Frontend: Playwright E2E in `frontend/tests/e2e/`. Run headless `npm run test:frontend` or `npm run test:headed`; open report with `npm --workspace frontend run test:report`.
 - Aim to add/adjust tests for every feature/bugfix and keep deterministic seeds/fixtures.
 
@@ -29,6 +32,6 @@
 - PRs: Include summary, linked issues (e.g., `Closes #123`), screenshots/GIFs for UI, reproduction/verification steps, and notes on env/config changes. Keep PRs focused and passing lint/tests.
 
 ## Security & Configuration Tips
-- Copy `.env.example` to `.env` for local dev; never commit secrets. Key vars: DB/Redis URLs, MinIO creds, `JWT_SIGNING_KEY`, `NEXT_PUBLIC_API_URL`.
+- Copy `.env.example` to `.env` for local dev; never commit secrets. Key vars: `DATA_DIR`, optional `DATABASE_URL` / `REDIS_URL`, MinIO creds, `JWT_SIGNING_KEY`, `NEXT_PUBLIC_API_URL`.
 - Use `docker-compose logs -f` to verify services (web 8000, frontend 3000, MinIO 9000/9001) before test runs.
 

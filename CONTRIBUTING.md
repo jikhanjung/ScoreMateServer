@@ -6,6 +6,7 @@ Thank you for helping improve ScoreMateServer! This guide outlines how to set up
 - Prereqs: Docker (and Docker Compose), Node 18+, npm.
 - Env: copy `.env.example` to `.env` and fill values (DB/Redis/MinIO/JWT). Never commit secrets.
 - Run stack: `npm run dev` (or detached: `npm run dev:detached`).
+- Backend only, no Docker: `cd backend && pip install -r requirements.txt && python manage.py migrate && python manage.py runserver` (SQLite, tasks run in-request).
 - Verify: API `http://localhost:8000`, Frontend `http://localhost:3000`, MinIO `http://localhost:9001`.
 
 ## Branching & Commits
@@ -14,7 +15,7 @@ Thank you for helping improve ScoreMateServer! This guide outlines how to set up
 
 ## Coding Standards
 - Follow Repository Guidelines in `AGENTS.md` (project layout, commands, style, tests).
-- Backend: Python (Django, DRF, Celery), ruff for lint. 4-space indent, `snake_case` functions, `PascalCase` classes.
+- Backend: Python (Django, DRF; Celery optional), ruff for lint. Keep code SQLite-compatible. 4-space indent, `snake_case` functions, `PascalCase` classes.
 - Frontend: Next.js (TypeScript). `next lint`, `PascalCase` components, hooks start with `use`.
 
 ## Tests & Lint

@@ -40,9 +40,13 @@ fi
 echo ""
 echo "=== [3/7] Stop old container ==="
 # rollback keep 가드용: 배포 전(새 이미지의 migrate 실행 전) 적용된 migration 수를 기록.
+# exec 는 DB 소유 uid 로 — 컨테이너 root 는 cap_drop 으로 DAC_OVERRIDE 가 없어 DB 를 읽기 전용으로 연다
+# (그러면 WAL init_command 가 실패해 이 값이 조용히 비고 rollback keep 가드가 무력해진다 — 0.1.0 에서 발견).
+DB_UID=$(stat -c %u "$ROOT/db" 2>/dev/null || echo 0)
 PRE_MIG=""
-if [ "${DEPLOY_SNAPSHOT:-1}" = "1" ]; then
-    PRE_MIG=$(docker compose exec -T api python manage.py showmigrations --plan 2>/dev/null | grep -c '\[X\]' || echo "")
+if [ "${DEPLOY_SNAPSHOT:-1}" = "1" ] && docker compose ps -q api 2>/dev/null | grep -q .; then
+    PRE_MIG=$(docker compose exec -T -u "$DB_UID" api python manage.py showmigrations --plan 2>/dev/null | grep -c '\[X\]' || true)
+    [ "$PRE_MIG" = "0" ] && PRE_MIG=""    # 0 = 조회 실패(적용된 migration 이 0 인 운영은 없다)
 fi
 docker compose down
 mkdir -p "$ROOT/db" "$ROOT/files"    # 신규 호스트도 마운트 대상 디렉터리는 있어야 한다
@@ -74,7 +78,7 @@ echo "=== [5/7] Start new container (전 서비스) + wait for backend (/healthz
 docker compose up -d
 UP=0
 for i in $(seq 1 60); do
-    if curl -fsS -o /dev/null -m 2 -H "X-Forwarded-Proto: https" "http://127.0.0.1:${HOST_PORT}/healthz"; then
+    if curl -fsS -o /dev/null -m 2 -H "X-Forwarded-Proto: https" "http://127.0.0.1:${HOST_PORT}/healthz" 2>/dev/null; then
         echo "  backend up after ${i}s"; UP=1
         break
     fi

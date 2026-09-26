@@ -22,6 +22,7 @@ deploy/
     deploy.sh              pull → .env IMAGE_TAG → down → 스냅샷(+.mig) → up → healthz 대기 → DB·파일 게이트 → smoke
     smoke.sh               [동사] /healthz 200 + 버전 일치 + user>0
     rollback.sh            [동사] --db=keep(기본, 이미지만) | --db=restore(스냅샷 무결성 검사 후 복원)
+    prune.sh               오래된 이 서비스 이미지만 정리 (KEEP=3, DRY_RUN=1)
     docker-compose.yml     운영 compose (pull 전용, 127.0.0.1:8016, 읽기 전용 루트, cap_drop)
     scoremate.nginx.conf   호스트 nginx 사이트 원본 (TLS · 점검 페이지 · X-Accel internal location)
     maintenance.html       컨테이너 교체 중 nginx 가 503 으로 보여 줄 페이지

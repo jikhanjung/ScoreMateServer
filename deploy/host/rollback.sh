@@ -69,7 +69,9 @@ PY
 
 # --- keep 가드 ---
 if [ "$DB_MODE" = keep ]; then
-    CUR_MIG=$(docker compose exec -T api python manage.py showmigrations --plan 2>/dev/null | grep -c '\[X\]' || echo "")
+    # DB 소유 uid 로 — 컨테이너 root 는 DB 를 읽기 전용으로 연다(deploy.sh [3/7] 주석)
+    CUR_MIG=$(docker compose exec -T -u "$(stat -c %u "$ROOT/db")" api python manage.py showmigrations --plan 2>/dev/null | grep -c '\[X\]' || true)
+    [ "$CUR_MIG" = "0" ] && CUR_MIG=
     PRE_MIG=""
     [ -n "$SNAP" ] && [ -f "${SNAP}.mig" ] && PRE_MIG=$(cat "${SNAP}.mig" 2>/dev/null || echo "")
     if [ -n "$CUR_MIG" ] && [ -n "$PRE_MIG" ] && [ "$CUR_MIG" -gt "$PRE_MIG" ]; then

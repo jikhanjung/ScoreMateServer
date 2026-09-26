@@ -65,8 +65,17 @@ class LocalStorageHandlerTest(LocalStorageTestBase):
         self.assertEqual(storage.read_bytes('1/scores/9/thumbs/cover.jpg'), b'jpeg')
         storage.delete_file('1/scores/9/thumbs/cover.jpg')
         self.assertFalse(storage.check_file_exists('1/scores/9/thumbs/cover.jpg'))
-        # 쓰다 만 임시 파일이 남지 않는다
-        self.assertEqual(list((self.files_root / '1/scores/9/thumbs').iterdir()), [])
+        # 비게 된 디렉터리도 지워진다 — 저장소 루트는 남는다
+        self.assertFalse((self.files_root / '1').exists())
+        self.assertTrue(self.files_root.is_dir())
+
+    def test_delete_keeps_non_empty_dirs(self):
+        storage = LocalStorageHandler()
+        storage.write_bytes('1/scores/9/original.pdf', b'pdf')
+        storage.write_bytes('1/scores/9/thumbs/cover.jpg', b'jpeg')
+        storage.delete_file('1/scores/9/thumbs/cover.jpg')
+        self.assertFalse((self.files_root / '1/scores/9/thumbs').exists())
+        self.assertTrue((self.files_root / '1/scores/9/original.pdf').is_file())
 
     def test_write_stream_limit_leaves_nothing(self):
         storage = LocalStorageHandler()

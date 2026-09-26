@@ -215,6 +215,15 @@ class LocalStorageHandler:
     def delete_file(self, s3_key):
         path = self.path_for(s3_key)
         path.unlink(missing_ok=True)
+        # 비게 된 상위 디렉터리도 지운다 (FILES_ROOT 는 남긴다) — 악보마다 디렉터리가 쌓이지 않게
+        root = self.root.resolve()
+        parent = path.parent
+        while parent != root and root in parent.parents:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
         logger.info(f"Successfully deleted {s3_key}")
         return True
 

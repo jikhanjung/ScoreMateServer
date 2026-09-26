@@ -43,7 +43,7 @@ safe_extract_sh() {
 }
 
 # 운영 스크립트 — bash -n 검증 후 교체.
-for f in deploy.sh smoke.sh rollback.sh; do safe_extract_sh "$f"; done
+for f in deploy.sh smoke.sh rollback.sh prune.sh; do safe_extract_sh "$f"; done
 # 비스크립트(구문 검사 대상 아님) — 그대로 추출.
 docker cp "${CID}:/app/deploy/host/docker-compose.yml" "${ROOT}/docker-compose.yml" 2>/dev/null \
     && echo "  extracted docker-compose.yml" || echo "  (이미지에 docker-compose.yml 없음 — 구버전, 건너뜀)"

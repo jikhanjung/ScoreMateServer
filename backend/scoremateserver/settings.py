@@ -244,8 +244,18 @@ MAX_UPLOAD_MB = int(os.environ.get('MAX_UPLOAD_MB', 200))
 REFERRAL_BONUS_MB = int(os.environ.get('REFERRAL_BONUS_MB', 50))
 
 # Celery settings (basic setup, more advanced config will be in tasks app)
-CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+# REDIS_URL 이 없으면 워커 · Redis 없이 **요청 안에서 바로 실행**한다 (dolfinid 에 컨테이너 하나로 올리기 위해, 054).
+# 페이지 수 · 썸네일은 PyMuPDF 로 수백 ms 라 충분하다. 작업이 무거워지면 REDIS_URL 을 주고 워커를 띄우면 원래대로.
+REDIS_URL = os.environ.get('REDIS_URL')
+if REDIS_URL:
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+else:
+    CELERY_BROKER_URL = 'memory://'
+    CELERY_RESULT_BACKEND = None
+    CELERY_TASK_ALWAYS_EAGER = True
+    # 작업이 실패해도 업로드 요청 자체는 성공시킨다 (작업 결과는 Task 레코드 · 로그에 남는다)
+    CELERY_TASK_EAGER_PROPAGATES = False
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'

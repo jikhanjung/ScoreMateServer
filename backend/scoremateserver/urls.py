@@ -13,6 +13,7 @@ def api_root(request):
         'endpoints': {
             'auth': '/api/v1/auth/',
             'scores': '/api/v1/scores/',
+            'ensembles': '/api/v1/ensembles/',
             'setlists': '/api/v1/setlists/',
             'files': '/api/v1/files/',
             'user': '/api/v1/user/',
@@ -30,6 +31,7 @@ urlpatterns = [
     path('api/v1/', api_root, name='api_root'),
     path('api/v1/', include('core.urls')),
     path('api/v1/', include('scores.urls')),
+    path('api/v1/', include('ensembles.urls')),
     path('api/v1/', include('setlists.urls')),
     path('api/v1/', include('files.urls')),
     path('api/v1/admin/', include('scoremate_admin.urls')),

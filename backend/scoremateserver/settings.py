@@ -52,6 +52,7 @@ INSTALLED_APPS = [
 
     # Local apps
     'core',
+    'ensembles',
     'scores',
     'setlists',
     'files',
@@ -178,7 +179,8 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
-        'user': '1000/hour'
+        'user': '1000/hour',
+        'invite': '30/hour',  # 초대 코드 미리 보기 · 가입 — 코드 맞히기 방지
     },
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',

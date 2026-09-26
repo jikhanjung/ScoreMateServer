@@ -10,7 +10,7 @@ The server covers:
 - **Accounts & Auth** (email/password JWT; Google login later)
 - **File storage** for sheet-music PDFs (S3/MinIO today → VM disk on deploy)
 - **Library & Setlists** (CRUD, tags, metadata)
-- **Ensembles** (members, roles, invites) — _planned S1_
+- **Ensembles** (members, roles, invites) — S1 ✅ (server)
 - **Score versions** (frequent revisions) — _planned S2_
 - **TV device linking** (RFC 8628 code + QR) — _planned S3_
 - **Incremental sync API** for TVs — _planned S4_
@@ -74,13 +74,17 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
 - **Task**(user, score, kind, status, try_count, celery_task_id, log, result_json, error_message, …)
 - **ReferralLog**, **BillingLog**, **AccessLog**
 
+### Added in S1 (`ensembles` app)
+```
+Ensemble            name, description, created_by, created_at, updated_at
+Membership          ensemble, user, role(owner|leader|member), part, joined_at; unique(ensemble,user)
+Invite              ensemble, code, created_by, expires_at, max_uses, uses, revoked_at
+Score (+)           ensemble (null = personal, SET_NULL on ensemble delete), part_name
+```
+
 ### Planned additions
 ```
-Ensemble            name, created_by, created_at                                         (S1)
-Membership          ensemble, user, role(owner|leader|member), part, joined_at; unique(ensemble,user)
-Invite              ensemble, code, created_by, expires_at, max_uses, uses
-Score (+)           ensemble (null = personal), part_name                                  (S1)
-                    current_version, deleted_at (soft delete for sync)                     (S2/S4)
+Score (+)           current_version, deleted_at (soft delete for sync)                     (S2/S4)
 ScoreVersion        score, number, s3_key, size_bytes, pages, content_hash, uploaded_by, note  (S2)
 Setlist (+)         ensemble (null = personal)
 Device              uuid, user, name, model, app_version, last_seen_at, revoked_at          (S3)
@@ -95,6 +99,8 @@ DeviceAuthorization device_code (hashed), user_code ("BCDF-GHJK"), status, user,
 
 Quota is charged to the uploader (no ensemble quota for now).
 
+Implemented as `Score.objects.readable_by(user)` / `writable_by(user)`; every score lookup (viewset, bulk actions, downloads) goes through one of them. Non-members get 404, members attempting writes get 403. Role changes: owner only; at least one owner must remain.
+
 ---
 
 ## 4) API Surface (`/api/v1/`)
@@ -105,9 +111,10 @@ Quota is charged to the uploader (no ensemble quota for now).
 - Files: `files/upload-url/`, `files/upload-confirm/`, `files/upload-cancel/`, `files/download-url/`, `files/thumbnail/<key>`
 - Setlists: `setlists/` (CRUD, items, ordering)
 - Admin: `admin/…`
+- Ensembles (S1): `ensembles/`, `ensembles/{id}/members/{user_id}/`, `ensembles/{id}/invites/[{invite_id}/]`, `ensembles/invite/{code}/` (preview), `ensembles/join/`
+- Scores accept/return `ensemble`, `part_name`; filter `?ensemble=<id>|personal`
 
 ### Planned
-- `ensembles/` — create, members/roles, invite links, join by code (S1)
 - Score versions — upload new version with a note, list versions (S2)
 - `device/code`, `device/token` (RFC 8628) + web page `/activate`; "my devices" with revoke (S3)
 - `sync/scores?cursor=` → `{cursor, scores:[…current version…], deleted:[ids]}`; `scores/{id}/download` → redirect; device heartbeat (S4)
@@ -211,6 +218,7 @@ REFERRAL_BONUS_MB=50
 backend/
   scoremateserver/  # settings, urls, celery
   core/             # auth, users, quota, referral
+  ensembles/        # ensembles, memberships, invites
   scores/           # Score (+ versions, S2)
   setlists/
   files/            # upload/download URL issuance
@@ -227,7 +235,7 @@ devlog/             # plans and reports
 | Stage | Content |
 |---|---|
 | S0 ✅ | Repo cleanup, SQLite default, Celery optional |
-| S1 | Ensembles, membership, invites, permissions |
+| S1 ✅ | Ensembles, membership, invites, permissions (web screens pending) |
 | S2 | Score versions + data migration |
 | S3 | TV device linking |
 | S4 | Sync API, soft delete, download redirect |

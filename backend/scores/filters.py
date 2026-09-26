@@ -45,6 +45,10 @@ class ScoreFilter(django_filters.FilterSet):
     
     # Full-text search
     search = django_filters.CharFilter(method='filter_search', help_text="Full-text search across title, composer, and instrumentation")
+
+    # 앙상블: ?ensemble=<id> 그 앙상블의 악보, ?ensemble=personal 개인 악보만
+    ensemble = django_filters.CharFilter(method='filter_ensemble', help_text="Ensemble id, or 'personal'")
+    part_name = django_filters.CharFilter(lookup_expr='icontains', help_text="Filter by part name")
     
     class Meta:
         model = Score
@@ -67,6 +71,17 @@ class ScoreFilter(django_filters.FilterSet):
         
         return queryset
     
+    def filter_ensemble(self, queryset, name, value):
+        """접근 범위는 뷰의 queryset 이 이미 정했다 — 여기서는 좁히기만 한다"""
+        value = (value or '').strip()
+        if not value:
+            return queryset
+        if value == 'personal':
+            return queryset.filter(ensemble__isnull=True)
+        if value.isdigit():
+            return queryset.filter(ensemble_id=int(value))
+        return queryset.none()
+
     def filter_has_tags(self, queryset, name, value):
         """Filter scores that have any tags"""
         if value is True:

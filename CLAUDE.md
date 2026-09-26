@@ -14,12 +14,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-26)
+### Status (2026-09-26) — 194 backend tests passing
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
-| S1 | Ensemble · Membership · Invite, `Score.ensemble`, permissions | next |
-| S2 | ScoreVersion + data migration, new-version upload | |
+| S1 | Ensemble · Membership · Invite, `Score.ensemble`, permissions (server; web screens pending) | ✅ devlog 055 |
+| S2 | ScoreVersion + data migration, new-version upload | next |
 | S3 | Device · DeviceAuthorization · `/activate` (RFC 8628) | |
 | S4 | Sync API (cursor, soft delete, download redirect) | |
 | S5 | Deploy on dolfinid (single container, local file storage, static web) | |
@@ -115,7 +115,8 @@ Before moving to the next stage:
 backend/
   scoremateserver/   # settings (env vars), urls, celery
   core/              # auth, users, quota, referrals
-  scores/            # Score model, metadata, tags, CRUD
+  ensembles/         # Ensemble, Membership, Invite; ensemble/member/invite API
+  scores/            # Score model (+ ensemble, part_name), readable_by/writable_by, CRUD
   setlists/          # Setlist and SetlistItem
   files/             # presigned URL generation
   tasks/             # task definitions (pdf_info, thumbnail)
@@ -140,7 +141,8 @@ All under `/api/v1/`:
 - `setlists/` - setlist management
 - `files/` - `upload-url/`, `upload-confirm/`, `upload-cancel/`, `download-url/`, `thumbnail/…`
 - `admin/` - admin API (`scoremate_admin`)
-- Planned: `ensembles/` (S1), score versions (S2), `device/` + web `/activate` (S3), `sync/` (S4)
+- `ensembles/` - ensembles, `members/{user_id}/`, `invites/`, `invite/{code}/` preview, `join/`
+- Planned: score versions (S2), `device/` + web `/activate` (S3), `sync/` (S4)
 
 ## Environment Configuration
 See `.env.example`:
@@ -153,7 +155,8 @@ See `.env.example`:
 ## Testing Strategy
 - **pytest + pytest-django**, centralized in `backend/tests/`, **factory_boy** factories in `tests/factories.py`
 - Tests run on SQLite by default (same as production)
-- Mock S3 operations; tasks run eagerly without `REDIS_URL`
+- S3 is mocked with moto by an autouse fixture in `tests/conftest.py` (bucket `scores`); tasks run eagerly without `REDIS_URL`
+- Test requests default to JSON (`TEST_REQUEST_DEFAULT_FORMAT`); error responses are `{'error': {'details': {...}}}`
 - Use `@pytest.mark.django_db` for database access
 
 ```python
@@ -190,7 +193,7 @@ def process_pdf(self, score_id):
 ```
 
 ## Security Considerations
-- Every score query must be scoped: own scores, or scores of ensembles the user belongs to
+- Every score query must go through `Score.objects.readable_by(user)` or `writable_by(user)` — never `filter(user=...)` alone
 - Presigned URLs with short TTL (5-15 minutes)
 - Validate MIME types and file sizes before upload
 - Never expose storage credentials to clients

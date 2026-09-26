@@ -5,6 +5,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import F, Count, Sum, Avg, Q
 from django.db import transaction
@@ -25,10 +26,27 @@ class ScoreViewSet(viewsets.ModelViewSet):
     filterset_class = ScoreFilter
     ordering_fields = ['created_at', 'updated_at', 'title', 'composer', 'size_mb', 'pages']
     ordering = ['-updated_at']
+
+    # 앙상블 악보를 바꾸는 동작 — owner · leader 만 (멤버는 읽기만)
+    WRITE_ACTIONS = {
+        'update', 'partial_update', 'destroy',
+        'regenerate_thumbnail', 'refresh_info', 'generate_all_thumbnails',
+    }
     
     def get_queryset(self):
-        """Return scores for the current user only"""
-        return Score.objects.filter(user=self.request.user)
+        """내 개인 악보 + 내가 멤버인 앙상블의 악보"""
+        return Score.objects.readable_by(self.request.user).select_related('ensemble', 'user')
+
+    def get_writable_queryset(self):
+        """일괄 작업용 — 쓸 수 있는 악보만"""
+        return Score.objects.writable_by(self.request.user)
+
+    def get_object(self):
+        score = super().get_object()
+        # 읽을 수는 있지만 쓸 수 없는 악보는 404 가 아니라 403
+        if self.action in self.WRITE_ACTIONS and not score.can_edit(self.request.user):
+            raise PermissionDenied('Only ensemble owners and leaders can change this score.')
+        return score
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
@@ -48,9 +66,10 @@ class ScoreViewSet(viewsets.ModelViewSet):
         thumbnail_key = score.thumbnail_key
         score_id = score.id
         
-        # Update user quota before deleting
-        request.user.used_quota_mb = F('used_quota_mb') - size_mb
-        request.user.save(update_fields=['used_quota_mb'])
+        # 쿼터는 올린 사람 것을 돌려준다 (앙상블 악보를 리더가 지워도)
+        uploader = score.user
+        uploader.used_quota_mb = F('used_quota_mb') - size_mb
+        uploader.save(update_fields=['used_quota_mb'])
         
         # Delete the score record first
         response = super().destroy(request, *args, **kwargs)
@@ -184,8 +203,8 @@ class ScoreViewSet(viewsets.ModelViewSet):
         if not score_ids:
             return Response({'error': 'score_ids is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get user's scores only
-        scores = self.get_queryset().filter(id__in=score_ids)
+        # 쓸 수 있는 악보만
+        scores = self.get_writable_queryset().filter(id__in=score_ids)
         
         if not scores.exists():
             return Response({'error': 'No valid scores found'}, status=status.HTTP_404_NOT_FOUND)
@@ -227,10 +246,10 @@ class ScoreViewSet(viewsets.ModelViewSet):
         score_ids = request.data.get('score_ids', [])
         
         if not score_ids:
-            # If no specific IDs, regenerate for all user's scores
-            scores = self.get_queryset()
+            # If no specific IDs, regenerate for all writable scores
+            scores = self.get_writable_queryset()
         else:
-            scores = self.get_queryset().filter(id__in=score_ids)
+            scores = self.get_writable_queryset().filter(id__in=score_ids)
         
         if not scores.exists():
             return Response({'error': 'No scores found'}, status=status.HTTP_404_NOT_FOUND)

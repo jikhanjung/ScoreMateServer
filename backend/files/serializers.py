@@ -3,6 +3,8 @@ Serializers for files app (file upload/download)
 """
 from rest_framework import serializers
 from django.conf import settings
+from ensembles.models import Ensemble
+from scores.serializers import validate_target_ensemble
 from .utils import validate_file_request
 
 
@@ -104,6 +106,14 @@ class UploadConfirmationSerializer(serializers.Serializer):
     )
     duration_minutes = serializers.IntegerField(required=False, allow_null=True)
     instrument_parts = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    # 앙상블에 올리기 (owner · leader). 비우면 개인 악보
+    ensemble = serializers.PrimaryKeyRelatedField(
+        queryset=Ensemble.objects.all(), required=False, allow_null=True
+    )
+    part_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+    def validate_ensemble(self, value):
+        return validate_target_ensemble(self.context['request'], value)
     
     def validate_upload_id(self, value):
         """Validate upload ID exists in reservations"""

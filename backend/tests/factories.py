@@ -5,6 +5,7 @@ import factory
 from django.contrib.auth import get_user_model
 from core.models import User, ReferralLog, BillingLog
 from scores.models import Score
+from ensembles.models import Ensemble, Membership
 from setlists.models import Setlist, SetlistItem
 
 
@@ -91,3 +92,23 @@ class BillingLogFactory(factory.django.DjangoModelFactory):
     action = factory.Iterator(['upload', 'delete'])
     amount_mb = factory.Faker('pyint', min_value=1, max_value=100)
     description = factory.Faker('sentence')
+
+class EnsembleFactory(factory.django.DjangoModelFactory):
+    """Factory for creating Ensemble instances (멤버는 MembershipFactory 로 따로)"""
+
+    class Meta:
+        model = Ensemble
+
+    name = factory.Faker('company')
+    created_by = factory.SubFactory(UserFactory)
+
+
+class MembershipFactory(factory.django.DjangoModelFactory):
+    """Factory for creating Membership instances"""
+
+    class Meta:
+        model = Membership
+
+    ensemble = factory.SubFactory(EnsembleFactory)
+    user = factory.SubFactory(UserFactory)
+    role = Membership.ROLE_MEMBER

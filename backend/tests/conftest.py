@@ -11,6 +11,7 @@ django.setup()
 
 import boto3
 import pytest
+from django.core.cache import cache
 from django.test import override_settings
 from moto import mock_aws
 
@@ -32,6 +33,8 @@ def mock_s3_storage():
         PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'],
     ):
         boto3.client('s3', region_name='us-east-1').create_bucket(Bucket='scores')
+        # 요청 제한 카운터 · 업로드 예약이 테스트 사이에 남지 않게
+        cache.clear()
         yield
 
 

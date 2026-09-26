@@ -106,8 +106,8 @@ class FileDownloadURLView(APIView):
         
         user = request.user
         
-        # Get score and verify ownership
-        score = get_object_or_404(Score, id=score_id, user=user)
+        # 내 개인 악보이거나 내가 멤버인 앙상블의 악보
+        score = get_object_or_404(Score.objects.readable_by(user), id=score_id)
         
         # Determine S3 key based on file type
         if file_type == 'original':
@@ -234,7 +234,9 @@ class UploadConfirmationView(APIView):
                 s3_key=s3_key,
                 size_bytes=reservation_data['size_bytes'],
                 mime=reservation_data.get('mime_type', 'application/pdf'),
-                tags=serializer.validated_data.get('tags', [])
+                tags=serializer.validated_data.get('tags', []),
+                ensemble=serializer.validated_data.get('ensemble'),
+                part_name=serializer.validated_data.get('part_name', ''),
             )
             
             # Queue background tasks for PDF processing (asynchronously)
@@ -342,8 +344,8 @@ class FileDirectDownloadView(APIView):
         user = request.user
         file_type = request.query_params.get('file_type', 'original')
         
-        # Get score and verify ownership
-        score = get_object_or_404(Score, id=score_id, user=user)
+        # 내 개인 악보이거나 내가 멤버인 앙상블의 악보
+        score = get_object_or_404(Score.objects.readable_by(user), id=score_id)
         
         # Determine S3 key based on file type
         if file_type == 'original':

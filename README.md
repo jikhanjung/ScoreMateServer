@@ -4,6 +4,9 @@ ScoreMate Server는 Django REST API와 Next.js 웹 클라이언트를 포함한 
 
 2026-09부터 목적은 **앙상블 안에서 악보 공유**입니다 — 리더가 올린 곡·파트보가 멤버의 Google TV(MrgqPdfViewer)로 배포됩니다. 개인 악보는 비공개, 앙상블 악보는 그 멤버에게만 보이며 공개 공유는 하지 않습니다. 계획: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`, 개요: `ARCHITECTURE.md`.
 
+운영: https://scoremate.noematica.kr (API, dolfinid) — 배포 절차 `deploy/README.md`, 릴리스 기록 `DEPLOY.md`.
+웹은 Django 템플릿으로 새로 만든다. `frontend/`(Next.js)는 예전 것으로 배포하지 않는다.
+
 ## 스택
 - 백엔드: Django 5, DRF, SQLite(기본; `DATABASE_URL`로 PostgreSQL 가능), boto3, Celery(선택 — `REDIS_URL`이 없으면 작업을 요청 안에서 바로 실행)
 - 프런트엔드: Next.js(TypeScript), Playwright E2E

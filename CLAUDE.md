@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 **ScoreMateServer** - Django REST API backend for ScoreMate sheet music management, being extended (2026-09) into **ensemble score sharing** for Google TV clients (MrgqPdfViewer)
-- **Stack**: Python 3.12, Django 5.0, Django REST Framework, SQLite (default) / PostgreSQL (optional), Celery (optional), MinIO/S3 → local disk (planned)
+- **Stack**: Python 3.12, Django 5.2 LTS, Django REST Framework, SQLite (default) / PostgreSQL (optional), Celery (optional), storage = local disk (prod) or MinIO/S3 (dev)
+- **Production**: https://scoremate.noematica.kr (API only) on dolfinid — see `deploy/README.md`, `DEPLOY.md`
+- **Web**: to be rebuilt as **Django templates**. `frontend/` (Next.js) is legacy — not deployed, do not extend it
 - **Purpose**: User accounts, PDF sheet music storage, library metadata, setlists, page count / thumbnail processing, quota management — and next: ensembles, score versions, TV device linking, incremental sync API
 - **Current plan**: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md` (stages S0–S6). Read it before starting new feature work.
 
@@ -14,15 +16,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-26) — 194 backend tests passing
+### Status (2026-09-27) — 208 backend tests passing, 0.1.1 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
 | S1 | Ensemble · Membership · Invite, `Score.ensemble`, permissions (server; web screens pending) | ✅ devlog 055 |
-| S2 | ScoreVersion + data migration, new-version upload | next |
+| S5 | Deploy on dolfinid — API only, local file storage, fcmanager deploy contract (done ahead of S2) | ✅ devlog 056 |
+| Web | Django templates: login, ensembles/invites, upload, `/activate` | next |
+| S2 | ScoreVersion + data migration, new-version upload | |
 | S3 | Device · DeviceAuthorization · `/activate` (RFC 8628) | |
 | S4 | Sync API (cursor, soft delete, download redirect) | |
-| S5 | Deploy on dolfinid (single container, local file storage, static web) | |
 | S6 | (2nd) Google login, setlist sync | |
 
 ## Development Commands
@@ -41,7 +44,16 @@ python -m pytest tests/ --cov=. --cov-report=term-missing
 ```
 - No `DATABASE_URL` → SQLite at `$DATA_DIR/db.sqlite3` (`DATA_DIR` defaults to `backend/data`).
 - No `REDIS_URL` → Celery tasks run **eagerly inside the request** (`CELERY_TASK_ALWAYS_EAGER`); task failures do not fail the upload.
-- File storage still needs an S3-compatible endpoint (MinIO) until S5 adds `STORAGE_BACKEND=local`.
+- File storage: `STORAGE_BACKEND=s3` (default, MinIO) or `local` (`FILES_ROOT`, signed `/api/v1/files/blob/<token>/` URLs; production).
+
+### Release (build host m710q → dolfinid)
+```bash
+./deploy/preflight.sh
+./deploy/build.sh X.Y.Z        # tests → bump version.py → image → image smoke → push
+./deploy/remote-prod.sh X.Y.Z  # ssh dolfinid /srv/scoremate/deploy-prod.sh X.Y.Z
+```
+Append each release's operational delta to `DEPLOY.md`. On the server, run manage.py only inside the container **as the DB owner uid**:
+`cd /srv/scoremate && docker compose exec -u "$(stat -c %u db)" api python manage.py …`
 
 ### Docker Compose (full legacy stack: Postgres, Redis, worker, MinIO, frontend)
 ```bash

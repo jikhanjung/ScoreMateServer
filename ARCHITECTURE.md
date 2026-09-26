@@ -1,6 +1,6 @@
 # ScoreMateServer — ARCHITECTURE.md
 
-_Last updated: 2026-09-26 (Asia/Seoul). Plan of record: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`._
+_Last updated: 2026-09-27 (Asia/Seoul). In production: https://scoremate.noematica.kr (API). Plan of record: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`._
 
 ## 0) Purpose & Scope
 ScoreMateServer is the **server-side** for ScoreMate. Since 2026-09 its purpose is **sharing scores inside an ensemble**:
@@ -35,7 +35,7 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
 
 ## 2) High-Level Architecture
 
-### Target (S5, dolfinid)
+### Production (S5, dolfinid — live since 0.1.0)
 ```
  Google TV (MrgqPdfViewer)      Phone / PC browser
    device JWT                     user JWT, /activate
@@ -43,7 +43,7 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
            v                       v
  +-----------------------------------------------+
  | VM nginx (TLS, scoremate.noematica.kr)        |
- |  - static Next.js export                      |
+ |  - (web: Django templates, planned)           |
  |  - /api → 127.0.0.1:8016                      |
  |  - X-Accel-Redirect → /srv/scoremate/files    |
  +----------------------+------------------------+
@@ -57,10 +57,11 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
    /srv/scoremate/data/db.sqlite3   /srv/scoremate/files/
 ```
 
-### Today (development)
+### Development
 - Django API with SQLite by default (`DATA_DIR/db.sqlite3`), Postgres if `DATABASE_URL` is set.
 - Celery task code: runs eagerly in the request when `REDIS_URL` is unset; broker + worker when set.
-- MinIO/S3 through boto3 presigned URLs.
+- Storage: MinIO/S3 presigned URLs (`STORAGE_BACKEND=s3`), or `local` like production.
+- Web: `frontend/` (Next.js) is legacy and not deployed; the web UI is being rebuilt as Django templates.
 - `docker-compose.yml` still offers the full legacy stack (Postgres, Redis, worker, MinIO, frontend, nginx).
 
 ---
@@ -239,7 +240,8 @@ devlog/             # plans and reports
 | S2 | Score versions + data migration |
 | S3 | TV device linking |
 | S4 | Sync API, soft delete, download redirect |
-| S5 | dolfinid deployment (single container, local storage, static web) |
+| S5 ✅ | dolfinid deployment — API only (done before S2), devlog 056 |
+| Web | Django templates (login, ensembles/invites, upload, `/activate`) |
 | S6 | Google login, setlist sync, shared score analysis |
 
 ---

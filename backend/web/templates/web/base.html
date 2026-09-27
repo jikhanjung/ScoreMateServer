@@ -9,7 +9,7 @@
 <body>
 <header class="top">
   <div class="top-inner">
-    <a class="brand" href="{% url 'web:home' %}">ScoreMate</a>
+    <a class="brand" href="{% url 'web:home' %}">ScoreMate <span class="brand-version">v{{ app_version }}</span></a>
     {% if user.is_authenticated %}
     {% with url_name=request.resolver_match.url_name %}
     <nav class="nav">

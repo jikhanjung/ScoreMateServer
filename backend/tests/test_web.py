@@ -387,3 +387,10 @@ class InviteOnlyRegistrationTest(WebTestBase):
     def test_existing_users_still_log_in(self):
         response = self.client.post(reverse('web:login'), {'email': self.member.email, 'password': 'testpass123'})
         self.assertRedirects(response, reverse('web:scores'))
+
+
+class BrandVersionTest(WebTestBase):
+
+    def test_version_next_to_brand(self):
+        from scoremateserver.version import VERSION
+        self.assertContains(self.client.get(reverse('web:login')), f'<span class="brand-version">v{VERSION}</span>', html=False)

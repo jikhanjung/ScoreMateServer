@@ -158,3 +158,5 @@ details > summary { cursor: pointer; color: var(--accent); }
 /* .field label(칸 제목) 규칙이 선택지 글자에 번지지 않게 */
 .field .choice { display: flex; font-weight: 400; font-size: 1rem; margin: 0; }
 .field .choice.small { font-size: .85rem; }
+
+.brand-version { font-size: .72rem; font-weight: 500; color: var(--muted); margin-left: .2rem; letter-spacing: 0; }

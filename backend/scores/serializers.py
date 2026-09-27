@@ -255,3 +255,38 @@ class ScoreCreateSerializer(serializers.ModelSerializer):
             logger.warning(f"Failed to queue background tasks for score {score.id}: {e}")
         
         return score
+
+class SyncScoreSerializer(serializers.ModelSerializer):
+    """TV 동기화용 악보 — 받을 파일을 판 번호와 SHA-256 으로 가리킨다
+
+    version.sha256 이 비어 있으면 아직 처리 중이다(쪽수 · 해시가 채워지면 updated_at 이 바뀌어 다음 동기화에 다시 온다).
+    """
+    ensemble = serializers.SerializerMethodField()
+    version = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Score
+        fields = ['id', 'title', 'composer', 'instrumentation', 'part_name', 'tags', 'note',
+                  'ensemble', 'version', 'download_url', 'updated_at']
+        read_only_fields = fields
+
+    def get_ensemble(self, obj):
+        return {'id': obj.ensemble_id, 'name': obj.ensemble.name} if obj.ensemble_id else None
+
+    def get_version(self, obj):
+        v = obj.current_version
+        return {
+            'number': v.number if v else 1,
+            'sha256': obj.content_hash or None,
+            'size_bytes': obj.size_bytes,
+            'pages': obj.pages,
+            'filename': obj.original_filename or f'{obj.title}.pdf',
+            'created_at': v.created_at if v else obj.created_at,
+            'note': v.note if v else '',
+        }
+
+    def get_download_url(self, obj):
+        request = self.context.get('request')
+        path = f'/api/v1/scores/{obj.pk}/download/'
+        return request.build_absolute_uri(path) if request else path

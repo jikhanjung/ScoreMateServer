@@ -8,7 +8,7 @@
 {% if devices %}
 <div class="box table-wrap">
   <table class="stacked">
-    <thead><tr><th>이름</th><th>모델 · 앱</th><th>마지막 접속</th><th>연결한 날</th><th></th></tr></thead>
+    <thead><tr><th>이름</th><th>모델 · 앱</th><th>마지막 접속 · 동기화</th><th>연결한 날</th><th></th></tr></thead>
     <tbody>
     {% for d in devices %}
       <tr {% if not d.is_active %}class="muted"{% endif %}>
@@ -19,7 +19,7 @@
           </form>
           {% else %}{{ d.name }} <span class="badge plain">해제됨</span>{% endif %}</td>
         <td>{{ d.model|default:'—' }}{% if d.app_version %}<div class="muted small">{{ d.app_version }}</div>{% endif %}</td>
-        <td>{{ d.last_seen_at|date:'Y-m-d H:i'|default:'아직 없음' }}</td>
+        <td>{{ d.last_seen_at|date:'Y-m-d H:i'|default:'아직 없음' }}{% if d.last_synced_at %}<div class="muted small">동기화 {{ d.last_synced_at|date:'Y-m-d H:i' }}</div>{% endif %}</td>
         <td>{{ d.created_at|date:'Y-m-d' }}</td>
         <td style="text-align:right">{% if d.is_active %}
           <form method="post" action="{% url 'web:device_revoke' d.pk %}" class="inline">{% csrf_token %}

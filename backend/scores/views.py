@@ -6,7 +6,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
+from files.utils import get_storage
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import F, Count, Sum, Avg, Q
 from django.db import transaction
@@ -68,6 +69,22 @@ class ScoreViewSet(viewsets.ModelViewSet):
         delete_score(self.get_object())
         return Response(status=status.HTTP_204_NO_CONTENT)
     
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        """파일 받기 — 서명 URL 로 302 (파일은 Django 를 지나지 않는다). ?version=n 이면 그 판"""
+        score = self.get_object()
+        number = request.query_params.get('version')
+        if number:
+            if not number.isdigit():
+                raise ValidationError({'version': 'Must be a version number.'})
+            version = self._version(score, number)
+            key, original = version.s3_key, version.original_filename
+        else:
+            key, original = score.s3_key, score.original_filename
+        url = get_storage().generate_presigned_download_url(
+            key, expiry=300, filename=original or f'{score.title}.pdf')['url']
+        return HttpResponseRedirect(request.build_absolute_uri(url) if url.startswith('/') else url)
+
     # --- 판 (S2) ---
 
     def _version(self, score, number):

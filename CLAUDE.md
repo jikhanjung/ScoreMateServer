@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-27) — 275 backend tests passing, 0.4.0 in production
+### Status (2026-09-27) — 290 backend tests passing, 0.5.0 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -25,8 +25,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Web | Django templates: login, scores, upload, ensembles/members/invites, join links, account | ✅ devlog 057 |
 | S2 | ScoreVersion + data migration, new-version upload / revert / delete (API + web) | ✅ devlog 058 |
 | S3 | Device · DeviceAuthorization · `/activate` (RFC 8628), instant revoke, 180-day device refresh | ✅ devlog 059 |
-| S4 | Sync API (cursor, soft delete, download redirect) | next |
-| S6 | (2nd) Google login, setlist sync | |
+| S4 | Sync API (cursor + full `ids` set instead of soft delete), download redirect, heartbeat | ✅ devlog 060 |
+| S6 | (2nd) Google login, setlist sync | next |
 
 ## Development Commands
 
@@ -157,7 +157,7 @@ All under `/api/v1/`:
 - `admin/` - admin API (`scoremate_admin`)
 - `ensembles/` - ensembles, `members/{user_id}/`, `invites/`, `invite/{code}/` preview, `join/`
 - `device/code`, `device/token` (RFC 8628, TV), `devices/` (+ `me/`); web `/activate/`, `/devices/`
-- Planned: `sync/` (S4)
+- `sync/scores/` (TV sync: `cursor`, `has_more`, `scores`, `ids`), `scores/{id}/download/` (302 to signed URL), `devices/me/heartbeat/`
 
 ## Environment Configuration
 See `.env.example`:

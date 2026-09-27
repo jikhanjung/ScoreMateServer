@@ -47,3 +47,8 @@
 - 새 API: `/api/v1/device/code`, `/api/v1/device/token`, `/api/v1/devices/`. 웹: `/activate/`, `/devices/`(TV 메뉴)
 - 인증 클래스가 `devices.auth.DeviceAwareJWTAuthentication` 으로 바뀌었다(기존 사용자 토큰은 그대로 동작)
 - 선택 `.env`: `DEVICE_REFRESH_TOKEN_DAYS`(기본 180)
+
+### 0.5.0 (2026-09-27) — TV 동기화 API
+- 🔴 **마이그레이션 있음** `devices.0002_device_last_synced_at` (열 추가 — 가산, 되돌리기 안전)
+- 새 API: `/api/v1/sync/scores/`, `/api/v1/scores/{id}/download/`, `/api/v1/devices/me/heartbeat/`
+- 선택 `.env`: `SYNC_PAGE_SIZE`(200), `SYNC_LAG_SECONDS`(5)

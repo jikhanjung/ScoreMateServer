@@ -273,6 +273,10 @@ SIMPLE_JWT = {
     'TOKEN_REFRESH_SERIALIZER': 'devices.serializers.DeviceAwareTokenRefreshSerializer',
 }
 
+# TV 동기화 (scores/sync.py): 한 번에 보낼 악보 수, 늦은 커밋을 놓치지 않게 미루는 시간
+SYNC_PAGE_SIZE = int(os.environ.get('SYNC_PAGE_SIZE', 200))
+SYNC_LAG_SECONDS = int(os.environ.get('SYNC_LAG_SECONDS', 5))
+
 # TV 기기 토큰의 refresh 수명 — TV 에서 다시 로그인할 일이 거의 없게. 해제하면 곧바로 막힌다
 DEVICE_REFRESH_TOKEN_DAYS = int(os.environ.get('DEVICE_REFRESH_TOKEN_DAYS', 180))
 

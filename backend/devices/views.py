@@ -8,7 +8,8 @@ TV 기기 연결 API (RFC 8628)
 """
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
-from rest_framework import status, viewsets
+from django.utils import timezone
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -18,7 +19,7 @@ from rest_framework.views import APIView
 
 from . import services
 from .models import Device, DeviceAuthorization
-from .serializers import DeviceCodeRequestSerializer, DeviceSerializer
+from .serializers import DeviceCodeRequestSerializer, DeviceSerializer, HeartbeatSerializer
 
 DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
 
@@ -64,11 +65,13 @@ class DeviceTokenView(APIView):
         return response
 
 
-class DeviceViewSet(viewsets.ModelViewSet):
+class DeviceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin,
+                    mixins.DestroyModelMixin, viewsets.GenericViewSet):
+    """기기는 여기서 만들지 않는다 — /device/code · /activate 로만 생긴다"""
     serializer_class = DeviceSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
-    http_method_names = ['get', 'patch', 'delete']
+    http_method_names = ['get', 'patch', 'delete', 'post']   # post 는 me/heartbeat 뿐
 
     def get_queryset(self):
         return Device.objects.filter(user=self.request.user)
@@ -81,10 +84,28 @@ class DeviceViewSet(viewsets.ModelViewSet):
         services.revoke(self.get_object())
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=False, methods=['get'])
-    def me(self, request):
+    def _this_device(self, request):
         device_id = getattr(request.user, 'device_id', None)
         if not device_id:
             raise NotFound('Not a device token.')
-        device = get_object_or_404(Device, pk=device_id, user=request.user)
+        return get_object_or_404(Device, pk=device_id, user=request.user)
+
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        return Response(self.get_serializer(self._this_device(request)).data)
+
+    @action(detail=False, methods=['post'], url_path='me/heartbeat')
+    def heartbeat(self, request):
+        """TV 가 앱을 켤 때 · 업데이트 뒤: 앱 버전 · 모델을 알린다 (마지막 접속은 인증이 이미 남긴다)"""
+        device = self._this_device(request)
+        serializer = HeartbeatSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        fields = []
+        for name in ('app_version', 'model'):
+            value = serializer.validated_data.get(name)
+            if value:
+                setattr(device, name, value.strip())
+                fields.append(name)
+        device.last_seen_at = timezone.now()
+        device.save(update_fields=fields + ['last_seen_at'])
         return Response(self.get_serializer(device).data)

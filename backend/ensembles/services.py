@@ -89,7 +89,10 @@ def delete_ensemble(ensemble, actor):
     """악보는 지우지 않는다 — Score.ensemble 이 SET_NULL 이라 올린 사람의 개인 악보로 돌아간다"""
     if not ensemble.is_owner(actor):
         raise PermissionDenied('Only owners can delete the ensemble.')
-    ensemble.delete()
+    with transaction.atomic():
+        # 악보가 개인 악보로 돌아간다 — 올린 사람의 TV 가 "바뀐 것"으로 받게 (동기화 기준 시각)
+        ensemble.scores.update(updated_at=timezone.now())
+        ensemble.delete()
 
 
 def create_invite(ensemble, actor, expires_in_days=Invite.DEFAULT_EXPIRY_DAYS, max_uses=None):

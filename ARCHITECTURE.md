@@ -13,7 +13,7 @@ The server covers:
 - **Ensembles** (members, roles, invites) — S1 ✅ (server)
 - **Score versions** (frequent revisions) — S2 ✅
 - **TV device linking** (RFC 8628 code + QR) — S3 ✅
-- **Incremental sync API** for TVs — _planned S4_
+- **Incremental sync API** for TVs — S4 ✅
 - **Processing** (page count, thumbnails)
 - **Plans/Quota/Referral**, **Admin**
 
@@ -123,11 +123,11 @@ Implemented as `Score.objects.readable_by(user)` / `writable_by(user)`; every sc
 - Admin: `admin/…`
 - Ensembles (S1): `ensembles/`, `ensembles/{id}/members/{user_id}/`, `ensembles/{id}/invites/[{invite_id}/]`, `ensembles/invite/{code}/` (preview), `ensembles/join/`
 - Scores accept/return `ensemble`, `part_name`, `version`, `version_count`; filter `?ensemble=<id>|personal`
+- Sync (S4 ✅): `sync/scores/?cursor=` → `{cursor, has_more, scores, ids}` (TV drops local scores not in `ids`); `scores/{id}/download/` → 302; `devices/me/heartbeat/`
 - TV linking (S3 ✅): `device/code`, `device/token` (RFC 8628 errors), `devices/` (list · rename · revoke), `devices/me/`; web `/activate/`, `/devices/`
 - Score versions (S2 ✅): `scores/{id}/versions/` (list · new version), `versions/{n}/` (delete), `versions/{n}/make_current/`
 
 ### Planned
-- `sync/scores?cursor=` → `{cursor, scores:[…current version…], deleted:[ids]}`; `scores/{id}/download` → redirect; device heartbeat (S4)
 
 ---
 
@@ -144,10 +144,11 @@ TV  POST device/token {device_code} every interval
 
 ---
 
-## 6) Sync (S4)
+## 6) Sync (S4 ✅ — client contract: devlog 060)
 - Scope: my personal scores + scores of ensembles I belong to.
 - Cursor = last seen (`updated_at`, id), monotonic; a new version or metadata change bumps `updated_at`.
-- First sync without cursor returns everything. Leaving an ensemble reports its scores in `deleted`.
+- First sync without cursor returns everything. Instead of a `deleted` list (and soft delete), every response carries `ids` — all scores readable now; the TV deletes anything else. This covers delete, leave, kick, ensemble delete and moves alike.
+- Effective time = max(updated_at, my join time for that ensemble), so joining brings old scores; recent changes wait `SYNC_LAG_SECONDS` so late commits are not skipped.
 - TVs download files directly (presigned / X-Accel), never through Django.
 
 ---
@@ -248,7 +249,7 @@ devlog/             # plans and reports
 | S1 ✅ | Ensembles, membership, invites, permissions (web screens pending) |
 | S2 ✅ | Score versions + data migration (devlog 058) |
 | S3 ✅ | TV device linking (devlog 059) |
-| S4 | Sync API, soft delete, download redirect |
+| S4 ✅ | Sync API (ids set, no soft delete), download redirect (devlog 060) |
 | S5 ✅ | dolfinid deployment — API only (done before S2), devlog 056 |
 | Web ✅ | Django templates — login, scores, upload, ensembles/invites, join links (devlog 057) |
 | S6 | Google login, setlist sync, shared score analysis |

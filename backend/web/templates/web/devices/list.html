@@ -2,53 +2,72 @@
 {% block title %}TV{% endblock %}
 {% block content %}
 <div class="head">
-  <div><h1>TV</h1><p class="muted">내 계정에 연결된 기기. TV 마다 받을 것을 고릅니다 — 고른 세트리스트의 곡만, 또는 모든 악보.</p></div>
+  <div><h1>TV</h1><p class="muted">연결한 TV 마다 받을 것을 고릅니다 — 고른 세트리스트의 곡만, 또는 모든 악보.</p></div>
   <a class="btn primary" href="{% url 'web:activate' %}">TV 연결</a>
-</div>
-{% if devices %}
-<div class="box table-wrap">
-  <table class="stacked">
-    <thead><tr><th>이름</th><th>받는 것</th><th>모델 · 앱</th><th>마지막 접속 · 동기화</th><th>연결한 날</th><th></th></tr></thead>
-    <tbody>
-    {% for d in devices %}
-      <tr {% if not d.is_active %}class="muted"{% endif %}>
-        <td>{% if d.is_active %}
-          <form method="post" action="{% url 'web:device_rename' d.pk %}" class="row">{% csrf_token %}
-            <input type="text" name="name" value="{{ d.name }}" maxlength="100" aria-label="기기 이름">
-            <button class="btn sm" type="submit">저장</button>
-          </form>
-          {% else %}{{ d.name }} <span class="badge plain">해제됨</span>{% endif %}</td>
-        <td class="small">{% if d.sync_mode == 'all' %}모든 악보{% else %}세트리스트 {{ d.chosen|length }}개{% endif %}{% if d.is_active %}<div><a href="#sync-{{ d.pk }}">바꾸기</a></div>{% endif %}</td>
-        <td>{{ d.model|default:'—' }}{% if d.app_version %}<div class="muted small">{{ d.app_version }}</div>{% endif %}</td>
-        <td>{{ d.last_seen_at|date:'Y-m-d H:i'|default:'아직 없음' }}{% if d.last_synced_at %}<div class="muted small">동기화 {{ d.last_synced_at|date:'Y-m-d H:i' }}</div>{% endif %}</td>
-        <td>{{ d.created_at|date:'Y-m-d' }}</td>
-        <td style="text-align:right">{% if d.is_active %}
-          <form method="post" action="{% url 'web:device_revoke' d.pk %}" class="inline">{% csrf_token %}
-            <button class="btn sm danger" type="submit" data-confirm="{{ d.name }} 연결을 해제할까요? 그 TV 는 다시 연결해야 악보를 받습니다.">해제</button>
-          </form>{% else %}<span class="small">{{ d.revoked_at|date:'Y-m-d' }} 해제</span>{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
 </div>
 
 {% for d in devices %}{% if d.is_active %}
-<h2 id="sync-{{ d.pk }}">{{ d.name }} 이(가) 받는 것</h2>
-<div class="box" style="max-width:640px">
-  <form method="post" action="{% url 'web:device_sync' d.pk %}" class="stack">{% csrf_token %}
-    <label class="row"><input type="radio" name="sync_mode" value="setlists" {% if d.sync_mode == 'setlists' %}checked{% endif %}> <strong>고른 세트리스트의 곡만</strong></label>
-    <div style="margin-left:1.6rem">
-      {% for s in setlists %}
-      <label class="row small"><input type="checkbox" name="setlists" value="{{ s.pk }}" {% if s.pk in d.chosen %}checked{% endif %}> {{ s.title }}</label>
-      {% empty %}<p class="muted small">세트리스트가 없습니다 — <a href="{% url 'web:setlists' %}">만들기</a></p>{% endfor %}
+<section class="box device" id="sync-{{ d.pk }}">
+  <div class="device-head">
+    <div>
+      <h2>{{ d.name }}</h2>
+      <div class="device-meta">
+        {{ d.model|default:'모델 모름' }}{% if d.app_version %} · 앱 {{ d.app_version }}{% endif %}<br>
+        마지막 접속 {{ d.last_seen_at|date:'Y-m-d H:i'|default:'아직 없음' }}{% if d.last_synced_at %} · 동기화 {{ d.last_synced_at|date:'Y-m-d H:i' }}{% endif %} · 연결 {{ d.created_at|date:'Y-m-d' }}
+      </div>
     </div>
-    <label class="row"><input type="radio" name="sync_mode" value="all" {% if d.sync_mode == 'all' %}checked{% endif %}> <strong>모든 악보</strong></label>
-    <p class="muted small">목록에서 빠진 악보는 다음 동기화 때 TV 에서 정리됩니다.</p>
-    <button class="btn" type="submit">저장</button>
+    <form method="post" action="{% url 'web:device_revoke' d.pk %}">{% csrf_token %}
+      <button class="btn sm danger" type="submit" data-confirm="{{ d.name }} 연결을 해제할까요? 그 TV 는 다시 연결해야 악보를 받습니다.">해제</button>
+    </form>
+  </div>
+
+  <details>
+    <summary class="small">이름 바꾸기</summary>
+    <form method="post" action="{% url 'web:device_rename' d.pk %}" class="row">{% csrf_token %}
+      <input type="text" name="name" value="{{ d.name }}" maxlength="100" aria-label="기기 이름">
+      <button class="btn sm" type="submit">저장</button>
+    </form>
+  </details>
+
+  <form method="post" action="{% url 'web:device_sync' d.pk %}" data-sync-form>{% csrf_token %}
+    <h3>받는 것</h3>
+    <div class="option">
+      <label class="choice"><input type="radio" name="sync_mode" value="setlists" {% if d.sync_mode == 'setlists' %}checked{% endif %}> <strong>고른 세트리스트의 곡만</strong></label>
+      {% if setlists %}
+      <div class="checklist">
+        {% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}" {% if s.pk in d.chosen %}checked{% endif %}> {{ s.title }}</label>{% endfor %}
+      </div>
+      {% else %}<p class="hint">세트리스트가 아직 없습니다 — <a href="{% url 'web:setlists' %}">만들기</a></p>{% endif %}
+    </div>
+    <div class="option">
+      <label class="choice"><input type="radio" name="sync_mode" value="all" {% if d.sync_mode == 'all' %}checked{% endif %}> <strong>모든 악보</strong></label>
+    </div>
+    <div class="row" style="margin-top:.8rem; justify-content:space-between">
+      <span class="muted small">목록에서 빠진 악보는 다음 동기화 때 TV 에서 정리됩니다.</span>
+      <button class="btn primary sm" type="submit">저장</button>
+    </div>
   </form>
-</div>
-{% endif %}{% endfor %}
-{% else %}
+</section>
+{% endif %}{% empty %}
 <div class="box empty">연결된 TV 가 없습니다. TV 앱에서 "연결"을 고르면 코드가 뜹니다 — 그 코드를 <a href="{% url 'web:activate' %}">여기</a>에 넣으세요.</div>
+{% endfor %}
+
+{% if revoked %}
+<h2>해제한 기기</h2>
+<div class="box table-wrap">
+  <table class="stacked">
+    <tbody>{% for d in revoked %}<tr class="muted"><td>{{ d.name }}</td><td class="small">{{ d.model|default:'' }}</td><td class="small">{{ d.revoked_at|date:'Y-m-d' }} 해제</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
 {% endif %}
+
+<script>
+// "모든 악보"를 고르면 세트리스트 목록을 흐리게 — 저장되는 값은 같다(서버는 모드만 본다)
+document.querySelectorAll('[data-sync-form]').forEach(function (form) {
+  var first = form.querySelector('.option');
+  function update() { first.classList.toggle('all-selected', form.querySelector('input[value=all]').checked); }
+  form.querySelectorAll('input[name=sync_mode]').forEach(function (r) { r.addEventListener('change', update); });
+  update();
+});
+</script>
 {% endblock %}

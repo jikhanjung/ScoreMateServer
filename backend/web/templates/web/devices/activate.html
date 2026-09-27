@@ -21,12 +21,15 @@
       </div>
       <div class="field">
         <label>이 TV 가 받을 것</label>
-        <label class="row"><input type="radio" name="sync_mode" value="setlists" checked> 고른 세트리스트의 곡만</label>
-        <div style="margin-left:1.6rem">
-          {% for s in setlists %}<label class="row small"><input type="checkbox" name="setlists" value="{{ s.pk }}"> {{ s.title }}</label>
-          {% empty %}<p class="muted small">세트리스트가 아직 없습니다 — 연결한 뒤 세트리스트를 만들고 "보낼 TV"로 고르세요.</p>{% endfor %}
+        <div class="option">
+          <label class="choice"><input type="radio" name="sync_mode" value="setlists" checked> <strong>고른 세트리스트의 곡만</strong></label>
+          {% if setlists %}
+          <div class="checklist">{% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}"> {{ s.title }}</label>{% endfor %}</div>
+          {% else %}<p class="hint">세트리스트가 아직 없습니다 — 연결한 뒤 만들고 "보낼 TV"로 고르세요.</p>{% endif %}
         </div>
-        <label class="row"><input type="radio" name="sync_mode" value="all"> 모든 악보</label>
+        <div class="option">
+          <label class="choice"><input type="radio" name="sync_mode" value="all"> <strong>모든 악보</strong></label>
+        </div>
       </div>
       <div class="actions">
         <button class="btn primary" type="submit" name="decision" value="approve">연결</button>

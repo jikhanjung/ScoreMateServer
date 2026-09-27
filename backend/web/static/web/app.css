@@ -134,3 +134,27 @@ details > summary { cursor: pointer; color: var(--accent); }
   table.stacked td { display: block; border: 0; padding: .2rem 0; text-align: left !important; min-width: 0 !important; }
   table.stacked .row > input, table.stacked .row > select { flex: 1 1 100%; }
 }
+
+/* 체크박스 · 라디오 줄 — .row > input(텍스트 칸을 늘리는 규칙)을 쓰지 않는다 */
+.choice { display: flex; align-items: center; gap: .55rem; padding: .3rem 0; cursor: pointer; line-height: 1.4; }
+.choice input { width: auto; flex: none; margin: 0; accent-color: var(--accent); }
+.choice .muted { margin-left: .25rem; }
+.option { border: 1px solid var(--line); border-radius: 8px; padding: .55rem .8rem; }
+.option + .option { margin-top: .5rem; }
+.option:has(> .choice input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.option .hint { color: var(--muted); font-size: .8rem; margin: .1rem 0 0 1.6rem; }
+.checklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0 1rem; margin: .35rem 0 .1rem 1.6rem; }
+.option.all-selected .checklist { opacity: .45; }
+
+/* TV 카드 */
+.device { max-width: 760px; }
+.device + .device { margin-top: 1rem; }
+.device-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.device-head h2 { margin: 0; font-size: 1.15rem; }
+.device-meta { color: var(--muted); font-size: .85rem; margin: .2rem 0 .8rem; }
+.device details { margin: -.3rem 0 .8rem; }
+.device details .row { margin-top: .4rem; max-width: 420px; }
+.device h3 { font-size: .9rem; margin: 0 0 .5rem; color: var(--muted); font-weight: 600; }
+/* .field label(칸 제목) 규칙이 선택지 글자에 번지지 않게 */
+.field .choice { display: flex; font-weight: 400; font-size: 1rem; margin: 0; }
+.field .choice.small { font-size: .85rem; }

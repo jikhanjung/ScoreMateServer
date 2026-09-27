@@ -48,10 +48,12 @@
 <div class="box" style="max-width:640px">
   {% if devices %}
   <form method="post" action="{% url 'web:setlist_devices' setlist.pk %}" class="stack">{% csrf_token %}
+    <div>
     {% for d in devices %}
-    <label class="row"><input type="checkbox" name="devices" value="{{ d.pk }}" {% if d.sends %}checked{% endif %}> {{ d.name }}
-      {% if d.sync_mode == 'all' %}<span class="muted small">— 지금은 모든 악보를 받는 중(<a href="{% url 'web:devices' %}#sync-{{ d.pk }}">바꾸기</a>)</span>{% endif %}</label>
+    <label class="choice"><input type="checkbox" name="devices" value="{{ d.pk }}" {% if d.sends %}checked{% endif %}> {{ d.name }}
+      {% if d.sync_mode == 'all' %}<span class="muted small">지금은 모든 악보를 받는 중 · <a href="{% url 'web:devices' %}#sync-{{ d.pk }}">바꾸기</a></span>{% endif %}</label>
     {% endfor %}
+    </div>
     <p class="muted small">고른 TV 는 다음 동기화 때 이 곡목과 그 악보를 받습니다. 곡을 빼면 TV 에서도 정리됩니다.</p>
     <button class="btn" type="submit">저장</button>
   </form>
@@ -64,11 +66,11 @@
   {% if candidates %}
   <form method="post" action="{% url 'web:setlist_add' setlist.pk %}" class="stack">{% csrf_token %}
     <div class="field">
-      <label for="id_score">{% if ensembles_enabled and setlist.ensemble %}{{ setlist.ensemble.name }} 의 악보{% else %}내 악보{% endif %}</label>
-      <select id="id_score" name="score" multiple size="{% if candidates|length > 8 %}8{% else %}{{ candidates|length }}{% endif %}">
-        {% for s in candidates %}<option value="{{ s.pk }}">{{ s.title }}{% if s.part_name %} — {{ s.part_name }}{% endif %}</option>{% endfor %}
-      </select>
-      <div class="help">여러 곡을 고를 수 있습니다(Ctrl/⌘ 또는 길게 누르기). 끝에 붙습니다.</div>
+      <label>{% if ensembles_enabled and setlist.ensemble %}{{ setlist.ensemble.name }} 의 악보{% else %}내 악보{% endif %}</label>
+      <div class="checklist" style="margin-left:0">
+        {% for s in candidates %}<label class="choice small"><input type="checkbox" name="score" value="{{ s.pk }}"> {{ s.title }}{% if s.part_name %} — {{ s.part_name }}{% endif %}</label>{% endfor %}
+      </div>
+      <div class="help">고른 곡은 곡목 끝에 붙습니다.</div>
     </div>
     <button class="btn primary" type="submit">넣기</button>
   </form>

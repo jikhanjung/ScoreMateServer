@@ -595,7 +595,8 @@ def device_list(request):
     for device in devices:
         device.chosen = {link.setlist_id for link in device.setlist_links.all()}
     return render(request, 'web/devices/list.html', {
-        'devices': devices, 'setlists': Setlist.objects.readable_by(request.user).order_by('-updated_at'),
+        'devices': [d for d in devices if d.is_active], 'revoked': [d for d in devices if not d.is_active],
+        'setlists': Setlist.objects.readable_by(request.user).order_by('-updated_at'),
     })
 
 

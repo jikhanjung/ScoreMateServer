@@ -57,3 +57,8 @@
 - `/srv/scoremate/.env` 에 `REGISTRATION_OPEN=false` 추가(운영 결정). 초대 링크(`/join/<code>/`)로 온 사람만 가입하고, 가입하면 그 앙상블에 들어간다.
   API 가입은 `invite_code` 가 있어야 한다. 기존 계정 로그인은 그대로
 - 마이그레이션 없음
+
+### 0.6.0 (2026-09-27) — S6: 앙상블 세트리스트 · 분석 공유 · Google 로그인
+- 🔴 **마이그레이션 있음** `setlists.0003_setlist_ensemble`(열 추가), `scores.0005_score_analysis`, `core.0002_social_account`(새 테이블) — 모두 가산
+- 새 API: `/api/v1/sync/setlists/`, `/api/v1/scores/{id}/analysis/`. 웹: `/setlists/`, `/auth/google/`
+- Google 로그인은 `.env` 에 `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET` 을 넣어야 켜진다(devlog 061 §4). 지금은 꺼져 있다

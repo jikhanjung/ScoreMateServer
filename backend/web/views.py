@@ -12,7 +12,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
@@ -28,12 +28,14 @@ from devices import services as device_services
 from devices.models import Device
 from ensembles import services as ensemble_services
 from ensembles.models import Ensemble, Membership, Invite
+from core.models import SocialAccount
 from files.utils import LocalStorageHandler, generate_upload_s3_key, get_storage
 from scores.models import Score
 from setlists.models import Setlist, SetlistItem
 from scores.serializers import thumbnail_url
 from scores.services import VersionError, add_version, create_score, delete_score, delete_version, make_current
 
+from . import google
 from .forms import (
     ActivateForm, DeviceNameForm, EnsembleForm, SetlistForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, NewVersionForm, RegisterForm, ScoreEditForm,
     UploadForm,
@@ -135,7 +137,9 @@ def logout_view(request):
 
 @login_required
 def account(request):
-    form = PasswordChangeForm(request.user, request.POST or None)
+    # Google 로 가입해 비밀번호가 없으면 기존 비밀번호 없이 정한다
+    form_class = PasswordChangeForm if request.user.has_usable_password() else SetPasswordForm
+    form = form_class(request.user, request.POST or None)
     if request.method == 'POST' and form.is_valid():
         user = form.save()
         update_session_auth_hash(request, user)
@@ -147,6 +151,8 @@ def account(request):
         'form': form,
         'used_pct': min(100, round(used * 100 / user.total_quota_mb)) if user.total_quota_mb else 0,
         'score_count': Score.objects.filter(user=user).count(),
+        'google_account': user.social_accounts.filter(provider=SocialAccount.PROVIDER_GOOGLE).first(),
+        'has_password': user.has_usable_password(),
     })
 
 
@@ -700,3 +706,70 @@ def setlist_item(request, pk, item_id):
         SetlistItem.objects.filter(pk=item_id).update(notes=request.POST.get('notes', '').strip()[:2000])
     _renumber(setlist, items)
     return redirect(reverse('web:setlist_detail', args=[pk]) + f'#item-{item_id}')
+
+
+# --- Google 로그인 (web/google.py) ---
+
+def _unique_username(base):
+    base = (base or 'user').strip()[:140] or 'user'
+    candidate, n = base, 1
+    while User.objects.filter(username=candidate).exists():
+        n += 1
+        candidate = f'{base}{n}'
+    return candidate
+
+
+def google_start(request):
+    if not google.enabled():
+        raise Http404('Google login is not configured')
+    next_url = _safe_next(request, '')
+    invite = request.GET.get('invite') or ensemble_services.invite_code_from_next(next_url) or ''
+    redirect_uri = request.build_absolute_uri(reverse('web:google_callback'))
+    return HttpResponseRedirect(google.authorization_url(request, redirect_uri, next_url, invite))
+
+
+def google_callback(request):
+    """계정 찾기: Google sub 로 연결된 사용자 → 같은 (확인된) 이메일의 사용자에 연결 → 새 사용자(가입 규칙대로)"""
+    if not google.enabled():
+        raise Http404('Google login is not configured')
+    try:
+        claims, next_url, invite_code = google.verify_callback(request, request.GET)
+    except google.GoogleLoginError as exc:
+        logger.info(f'Google login failed: {exc}')
+        messages.error(request, 'Google 로그인에 실패했습니다. 다시 해 주세요.')
+        return redirect('web:login')
+
+    email = claims['email'].strip().lower()
+    account = SocialAccount.objects.select_related('user').filter(
+        provider=SocialAccount.PROVIDER_GOOGLE, subject=claims['sub']).first()
+    created_user = False
+    if account is not None:
+        user = account.user
+    else:
+        user = User.objects.filter(email__iexact=email).first()
+        if user is None:
+            invite = ensemble_services.registration_invite(invite_code)
+            if not settings.REGISTRATION_OPEN and invite is None:
+                return render(request, 'web/register_closed.html', status=403)
+            user = User.objects.create_user(email=email, password=None,
+                                            username=_unique_username(claims.get('name') or email.split('@')[0]))
+            created_user = True
+        account = SocialAccount.objects.create(user=user, provider=SocialAccount.PROVIDER_GOOGLE,
+                                               subject=claims['sub'], email=email)
+    if not user.is_active:
+        messages.error(request, '사용할 수 없는 계정입니다.')
+        return redirect('web:login')
+    SocialAccount.objects.filter(pk=account.pk).update(last_login_at=timezone.now(), email=email)
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+
+    if invite_code and ensemble_services.registration_invite(invite_code) is not None:
+        try:
+            ensemble, joined = ensemble_services.join(user, invite_code)
+        except ensemble_services.RuleError:
+            ensemble = None
+        if ensemble is not None:
+            messages.success(request, f'"{ensemble.name}" 에 들어왔습니다.' if joined else f'"{ensemble.name}" 멤버입니다.')
+            return redirect('web:ensemble_detail', pk=ensemble.pk)
+    if created_user:
+        messages.success(request, '가입했습니다.')
+    return redirect(next_url or reverse('web:scores'))

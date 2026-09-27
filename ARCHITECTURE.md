@@ -83,6 +83,13 @@ Invite              ensemble, code, created_by, expires_at, max_uses, uses, revo
 Score (+)           ensemble (null = personal, SET_NULL on ensemble delete), part_name
 ```
 
+### Added in S6
+```
+Setlist (+)         ensemble (null = personal; CASCADE with the ensemble)
+ScoreAnalysis       version, analyzer, analyzer_version, data (opaque JSON), uploaded_by, device; unique(version, analyzer)
+SocialAccount       user, provider (google), subject (OIDC sub), email
+```
+
 ### Added in S3 (`devices` app)
 ```
 Device              uuid, user, name, model, app_version, last_seen_at, revoked_at
@@ -98,7 +105,6 @@ Score (+)           current_version (file fields mirror it), last_version_number
 ### Planned additions
 ```
 Score (+)           deleted_at (soft delete for sync)                                       (S4)
-Setlist (+)         ensemble (null = personal)
 ```
 
 ### Permissions
@@ -123,6 +129,7 @@ Implemented as `Score.objects.readable_by(user)` / `writable_by(user)`; every sc
 - Admin: `admin/…`
 - Ensembles (S1): `ensembles/`, `ensembles/{id}/members/{user_id}/`, `ensembles/{id}/invites/[{invite_id}/]`, `ensembles/invite/{code}/` (preview), `ensembles/join/`
 - Scores accept/return `ensemble`, `part_name`, `version`, `version_count`; filter `?ensemble=<id>|personal`
+- S6 ✅: `sync/setlists/`; `scores/{id}/analysis/` (PUT requires the version's sha256; members replace only with a newer analyzer); web `/setlists/`, Google login `/auth/google/`
 - Sync (S4 ✅): `sync/scores/?cursor=` → `{cursor, has_more, scores, ids}` (TV drops local scores not in `ids`); `scores/{id}/download/` → 302; `devices/me/heartbeat/`
 - TV linking (S3 ✅): `device/code`, `device/token` (RFC 8628 errors), `devices/` (list · rename · revoke), `devices/me/`; web `/activate/`, `/devices/`
 - Score versions (S2 ✅): `scores/{id}/versions/` (list · new version), `versions/{n}/` (delete), `versions/{n}/make_current/`
@@ -252,7 +259,7 @@ devlog/             # plans and reports
 | S4 ✅ | Sync API (ids set, no soft delete), download redirect (devlog 060) |
 | S5 ✅ | dolfinid deployment — API only (done before S2), devlog 056 |
 | Web ✅ | Django templates — login, scores, upload, ensembles/invites, join links (devlog 057) |
-| S6 | Google login, setlist sync, shared score analysis |
+| S6 ✅ | Ensemble setlists + sync, shared score analysis, Google login (devlog 061) |
 
 ---
 

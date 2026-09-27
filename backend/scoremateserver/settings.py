@@ -288,6 +288,10 @@ LOGIN_URL = 'web:login'
 LOGIN_REDIRECT_URL = 'web:scores'
 LOGOUT_REDIRECT_URL = 'web:login'
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 30   # 한 달 — 리허설 때마다 로그인하지 않게
+# Google 로그인 (web/google.py) — 둘 다 있을 때만 켜진다. 승인된 리디렉션 URI: https://<도메인>/auth/google/callback/
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+
 # 가입을 누구에게나 열지 (False 면 웹 · API 가입이 닫히고 초대 링크로 이미 가입한 사람만 쓴다)
 REGISTRATION_OPEN = env_bool('REGISTRATION_OPEN', True)
 

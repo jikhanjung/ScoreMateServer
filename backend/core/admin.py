@@ -52,3 +52,15 @@ class AccessLogAdmin(admin.ModelAdmin):
 
 # Register custom User admin
 admin.site.register(User, UserAdmin)
+
+
+from .models import SocialAccount  # noqa: E402
+
+
+@admin.register(SocialAccount)
+class SocialAccountAdmin(admin.ModelAdmin):
+    list_display = ['provider', 'email', 'user', 'created_at', 'last_login_at']
+    list_filter = ['provider']
+    search_fields = ['email', 'user__email']
+    raw_id_fields = ['user']
+    readonly_fields = ['subject', 'created_at', 'last_login_at']

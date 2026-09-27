@@ -4,4 +4,6 @@ from scoremateserver.version import VERSION
 
 
 def site(request):
-    return {'app_version': VERSION, 'registration_open': settings.REGISTRATION_OPEN}
+    from . import google
+    return {'app_version': VERSION, 'registration_open': settings.REGISTRATION_OPEN,
+            'google_login': google.enabled()}

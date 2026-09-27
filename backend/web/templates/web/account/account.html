@@ -7,17 +7,19 @@
     <dt>이름</dt><dd>{{ user.username }}</dd>
     <dt>이메일</dt><dd>{{ user.email }}</dd>
     <dt>올린 악보</dt><dd>{{ score_count }}개</dd>
+    <dt>Google</dt><dd>{% if google_account %}{{ google_account.email }} 연결됨{% else %}연결 안 됨{% if google_login %} — 로그아웃 후 "Google 로 계속하기"로 로그인하면 이 계정에 연결됩니다(같은 이메일){% endif %}{% endif %}</dd>
   </dl>
   <div class="small">저장 공간 {{ user.used_quota_mb }}MB / {{ user.total_quota_mb }}MB</div>
   <div class="quota"><span style="width:{{ used_pct }}%"></span></div>
   <p class="muted small">앙상블에 올린 악보도 올린 사람의 공간을 씁니다.</p>
 </div>
-<h2>비밀번호 바꾸기</h2>
+<h2>{% if has_password %}비밀번호 바꾸기{% else %}비밀번호 정하기{% endif %}</h2>
 <div class="box" style="max-width:640px">
   <form method="post" class="stack">{% csrf_token %}
     {% include 'web/_form_errors.html' %}
     {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
-    <button class="btn" type="submit">바꾸기</button>
+    {% if not has_password %}<p class="muted small">Google 로 가입해 비밀번호가 없습니다. 정해 두면 이메일로도 로그인할 수 있습니다.</p>{% endif %}
+    <button class="btn" type="submit">{% if has_password %}바꾸기{% else %}정하기{% endif %}</button>
   </form>
 </div>
 {% endblock %}

@@ -99,3 +99,24 @@ class AccessLog(models.Model):
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['action', '-created_at']),
         ]
+
+
+class SocialAccount(models.Model):
+    """외부 로그인(Google) 연결 — 같은 사람을 이메일이 아니라 제공자의 고유 id(sub)로 알아본다"""
+    PROVIDER_GOOGLE = 'google'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='social_accounts')
+    provider = models.CharField(max_length=20)
+    subject = models.CharField(max_length=255, help_text='Provider user id (OIDC sub)')
+    email = models.EmailField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'social_accounts'
+        constraints = [
+            models.UniqueConstraint(fields=['provider', 'subject'], name='unique_social_account'),
+        ]
+
+    def __str__(self):
+        return f'{self.provider}:{self.email or self.subject} -> {self.user}'

@@ -1,6 +1,6 @@
 """
-TV 마다 받을 것 — 고른 세트리스트의 곡만. 고르는 곳은 웹(서버)의 TV 화면뿐, TV 는 API 로 보기만.
-서버 모드 all(모든 악보)은 예전 기기용으로만 남는다 — 웹에는 선택지가 없고, 저장하면 세트리스트로 바뀐다
+기기마다 받을 것 — 고른 세트리스트의 곡만. 고르는 곳은 웹(서버)의 "연결 기기" 화면뿐, 기기는 API 로 보기만.
+("모든 악보" 모드는 0.8.2 에서 없앴다 — 사용자 토큰(기기 아님)만 읽을 수 있는 전부를 받는다)
 """
 from datetime import timedelta
 
@@ -42,12 +42,12 @@ class DeviceSetlistSyncTest(TestCase):
         params = {'cursor': cursor} if cursor else {}
         return (client or self.tv).get('/api/v1/sync/scores/', params).data
 
-    def choose(self, *setlists, mode=Device.SYNC_SETLISTS):
-        device_services.set_sync(self.device, mode, [s.pk for s in setlists])
+    def choose(self, *setlists):
+        device_services.set_sync(self.device, [s.pk for s in setlists])
         DeviceSetlist.objects.filter(device=self.device).update(added_at=self.old)   # 고른 지 오래됐다고 치고
 
-    def test_new_device_defaults_to_selected_setlists_and_gets_nothing(self):
-        self.assertEqual(self.device.sync_mode, Device.SYNC_SETLISTS)
+    def test_new_device_has_no_setlists_and_gets_nothing(self):
+        self.assertFalse(self.device.setlist_links.exists())
         data = self.sync()
         self.assertEqual((data['scores'], data['ids']), ([], []))
         self.assertEqual(self.tv.get('/api/v1/sync/setlists/').data['setlists'], [])
@@ -74,7 +74,7 @@ class DeviceSetlistSyncTest(TestCase):
         Score.objects.filter(pk=other.pk).update(updated_at=self.old - timedelta(days=1))
         SetlistItem.objects.create(setlist=self.practice, score=other)
         SetlistItem.objects.filter(setlist=self.practice).update(created_at=self.old - timedelta(days=1))
-        device_services.set_sync(self.device, Device.SYNC_SETLISTS, [self.concert.pk, self.practice.pk])   # 웹 TV 화면에서 하나 더 고름
+        device_services.set_sync(self.device, [self.concert.pk, self.practice.pk])   # 연결 기기 화면에서 하나 더 고름
         data = self.sync(cursor)
         self.assertEqual([s['title'] for s in data['scores']], ['Arpeggione'])
 
@@ -83,7 +83,7 @@ class DeviceSetlistSyncTest(TestCase):
         cursor = self.sync()['cursor']
         SetlistItem.objects.filter(setlist=self.concert, score=self.gazza).delete()
         self.assertEqual(self.sync(cursor)['ids'], [self.moldau.pk])
-        device_services.set_sync(self.device, Device.SYNC_SETLISTS, [])   # 고른 것을 해제
+        device_services.set_sync(self.device, [])   # 고른 것을 해제
         self.assertEqual(self.sync(cursor)['ids'], [])
         self.assertTrue(Score.objects.filter(pk=self.moldau.pk).exists())   # 악보는 그대로 — TV 에서만 정리
 
@@ -92,14 +92,9 @@ class DeviceSetlistSyncTest(TestCase):
         self.choose(self.concert)
         cursor = self.sync()['cursor']
         other_tv, other_device = self.link()
-        device_services.set_sync(other_device, Device.SYNC_SETLISTS, [self.concert.pk])   # 방금 고름
+        device_services.set_sync(other_device, [self.concert.pk])   # 방금 고름
         self.assertEqual(self.sync(cursor)['scores'], [])
         self.assertEqual(len(self.sync(client=other_tv)['scores']), 2)
-
-    def test_all_mode(self):
-        self.choose(mode=Device.SYNC_ALL)
-        self.assertEqual(len(self.sync()['ids']), 3)
-        self.assertEqual(len(self.tv.get('/api/v1/sync/setlists/').data['setlists']), 2)
 
     def test_web_user_token_still_sees_everything(self):
         web = APIClient()
@@ -108,22 +103,21 @@ class DeviceSetlistSyncTest(TestCase):
 
     def test_choice_is_read_only_via_api(self):
         me = self.tv.get('/api/v1/devices/me/').data
-        self.assertEqual((me['sync_mode'], me['sync_setlists']), ('setlists', []))
+        self.assertEqual(me['sync_setlists'], [])
+        self.assertNotIn('sync_mode', me)
         self.tv.patch(f'/api/v1/devices/{self.device.pk}/', {'sync_mode': 'all', 'sync_setlists': [self.concert.pk]},
                       format='json')
         self.device.refresh_from_db()
-        self.assertEqual((self.device.sync_mode, self.device.setlist_links.count()), ('setlists', 0))
+        self.assertEqual(self.device.setlist_links.count(), 0)
 
     def test_web_choices(self):
-        """웹은 세트리스트만 고른다 — "모든 악보" 선택지는 없다(서버 모드 'all' 은 예전 기기용으로만 남는다)"""
+        """웹은 세트리스트만 고른다 — "모든 악보" 선택지는 없다"""
         self.client.force_login(self.user)
         page = self.client.get(reverse('web:devices'))
         self.assertContains(page, '받을 세트리스트')
         self.assertNotContains(page, '모든 악보')
         self.client.post(reverse('web:device_sync', args=[self.device.pk]),
-                         {'sync_mode': 'all', 'setlists': [self.concert.pk, self.practice.pk]})   # sync_mode 는 무시
-        self.device.refresh_from_db()
-        self.assertEqual(self.device.sync_mode, Device.SYNC_SETLISTS)
+                         {'sync_mode': 'all', 'setlists': [self.concert.pk, self.practice.pk]})   # 옛 폼 값은 무시
         self.assertEqual(set(self.device.setlist_links.values_list('setlist_id', flat=True)), {self.concert.pk, self.practice.pk})
         self.client.post(reverse('web:device_sync', args=[self.device.pk]), {'setlists': [self.practice.pk]})
         self.assertEqual(list(self.device.setlist_links.values_list('setlist_id', flat=True)), [self.practice.pk])
@@ -135,15 +129,6 @@ class DeviceSetlistSyncTest(TestCase):
         self.client.post(reverse('web:device_sync', args=[self.device.pk]), {'setlists': [other.pk]})
         self.assertFalse(self.device.setlist_links.filter(setlist=other).exists())
 
-    def test_old_all_device_moves_to_setlists_when_saved(self):
-        self.choose(mode=Device.SYNC_ALL)
-        self.client.force_login(self.user)
-        self.assertContains(self.client.get(reverse('web:devices')), '예전 설정대로 모든 악보를 받고 있습니다')
-        self.client.post(reverse('web:device_sync', args=[self.device.pk]), {'setlists': [self.concert.pk]})
-        self.device.refresh_from_db()
-        self.assertEqual(self.device.sync_mode, Device.SYNC_SETLISTS)
-        self.assertNotContains(self.client.get(reverse('web:devices')), '예전 설정대로')
-
     def test_activate_with_choice(self):
         codes_client = APIClient()
         codes = codes_client.post('/api/v1/device/code', {'name': '합주실 TV'}, format='json').data
@@ -154,5 +139,4 @@ class DeviceSetlistSyncTest(TestCase):
         self.client.post(reverse('web:activate'), {'code': codes['user_code'], 'decision': 'approve',
                                                    'sync_mode': 'all', 'setlists': [self.concert.pk]})
         device = Device.objects.get(name='합주실 TV')
-        self.assertEqual(device.sync_mode, Device.SYNC_SETLISTS)
         self.assertEqual(list(device.setlist_links.values_list('setlist_id', flat=True)), [self.concert.pk])

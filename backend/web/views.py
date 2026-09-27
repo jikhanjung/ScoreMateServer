@@ -593,7 +593,7 @@ def activate(request):
         if device is None:
             messages.error(request, '이 코드는 이미 쓰였거나 만료됐습니다.')
             return redirect('web:activate')
-        device_services.set_sync(device, Device.SYNC_SETLISTS, request.POST.getlist('setlists'))
+        device_services.set_sync(device, request.POST.getlist('setlists'))
         messages.success(request, f'"{device.name}" 을(를) 연결했습니다. 곧 기기 화면이 바뀝니다.')
         return redirect('web:devices')
     return render(request, 'web/devices/activate.html', {
@@ -617,9 +617,9 @@ def device_list(request):
 @login_required
 @require_POST
 def device_sync(request, pk):
-    """이 TV 가 받을 세트리스트 — 웹에서는 세트리스트만 고른다("모든 악보"는 없앴다, 저장하면 예전 'all' 기기도 세트리스트로)"""
+    """이 기기가 받을 세트리스트"""
     device = _my_device(request, pk)
-    device_services.set_sync(device, Device.SYNC_SETLISTS, request.POST.getlist('setlists'))
+    device_services.set_sync(device, request.POST.getlist('setlists'))
     n = device.setlist_links.count()
     messages.success(request, f'"{device.name}" 은(는) 고른 세트리스트 {n}개의 곡만 받습니다. 빠진 악보는 기기에서 정리됩니다.')
     return redirect('web:devices')

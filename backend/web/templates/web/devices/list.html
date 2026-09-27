@@ -31,7 +31,6 @@
 
   <form method="post" action="{% url 'web:device_sync' d.pk %}">{% csrf_token %}
     <h3>받을 세트리스트</h3>
-    {% if d.sync_mode == 'all' %}<p class="hint">지금은 예전 설정대로 모든 악보를 받고 있습니다. 세트리스트를 고르고 저장하면 고른 곡만 받습니다.</p>{% endif %}
     {% if setlists %}
     <div class="checklist">
       {% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}" {% if s.pk in d.chosen %}checked{% endif %}> {{ s.title }}</label>{% endfor %}

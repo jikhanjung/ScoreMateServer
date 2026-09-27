@@ -62,9 +62,8 @@ def device_setlists(user, device):
 
 
 def scoped_to_setlists(device):
-    """기기가 '고른 세트리스트만' 받는가"""
-    from devices.models import Device
-    return device is not None and device.sync_mode == Device.SYNC_SETLISTS
+    """기기는 늘 고른 세트리스트의 곡만 받는다 — 사용자 토큰(기기 아님)은 읽을 수 있는 전부"""
+    return device is not None
 
 
 def readable_in_scope(user, device=None):

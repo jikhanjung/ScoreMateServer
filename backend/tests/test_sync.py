@@ -17,6 +17,7 @@ from ensembles import services as ensemble_services
 from ensembles.models import Membership
 from files.utils import LocalStorageHandler, generate_upload_s3_key, load_blob_token
 from scores.models import Score
+from setlists.models import Setlist, SetlistItem
 from scores.services import add_version, create_score, delete_score
 from .factories import EnsembleFactory, MembershipFactory, UserFactory
 
@@ -231,7 +232,11 @@ class DeviceSyncTest(SyncTestBase):
     def device_client(self):
         authorization, device_code = device_services.start_authorization('거실 TV', 'Chromecast', '1.0')
         device = device_services.approve(authorization, self.me)
-        device_services.set_sync(device, Device.SYNC_ALL)   # 이 파일은 '모든 악보' 기준 — 곡목 범위는 test_device_setlist_sync.py
+        # 기기는 고른 세트리스트의 곡만 받는다 — 여기서는 지금 있는 악보를 모두 담은 곡목 하나를 고른다(곡목 범위 규칙은 test_device_setlist_sync.py)
+        everything = Setlist.objects.create(user=self.me, title='전부')
+        for index, score in enumerate(Score.objects.readable_by(self.me)):
+            SetlistItem.objects.create(setlist=everything, score=score, order_index=index)
+        device_services.set_sync(device, [everything.pk])
         tokens = device_services.issue_tokens(device)
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}")

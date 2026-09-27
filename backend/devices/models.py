@@ -36,14 +36,12 @@ def hash_device_code(device_code):
 
 
 class Device(models.Model):
-    """연결된 TV. 해제하면(revoked_at) 그 기기의 토큰이 곧바로 거부된다
+    """연결된 기기(TV · 태블릿). 해제하면(revoked_at) 그 기기의 토큰이 곧바로 거부된다
 
-    무엇을 받나(sync_mode): 고른 세트리스트의 곡만(기본) 또는 볼 수 있는 악보 전부.
-    TV 는 동기화 응답의 ids 에 없는 악보를 정리하므로, 곡목에서 빠지면 TV 에서도 정리된다.
+    무엇을 받나: 고른 세트리스트(sync_setlists)의 곡만 — 웹 "연결 기기" 화면에서 고른다.
+    기기는 동기화 응답의 ids 에 없는 악보를 정리하므로, 곡목에서 빠지면 기기에서도 정리된다.
+    ("모든 악보" 모드 sync_mode 는 0.8.2 에서 없앴다 — devlog 065)
     """
-    SYNC_SETLISTS = 'setlists'
-    SYNC_ALL = 'all'
-    SYNC_CHOICES = [(SYNC_SETLISTS, 'Selected setlists only'), (SYNC_ALL, 'All scores')]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='devices')
@@ -54,7 +52,6 @@ class Device(models.Model):
     last_seen_at = models.DateTimeField(null=True, blank=True)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
-    sync_mode = models.CharField(max_length=10, choices=SYNC_CHOICES, default=SYNC_SETLISTS)
     sync_setlists = models.ManyToManyField('setlists.Setlist', through='DeviceSetlist', blank=True, related_name='+')
 
     class Meta:

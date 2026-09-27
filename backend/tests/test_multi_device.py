@@ -8,6 +8,7 @@ from rest_framework.test import APIClient
 from devices import services as device_services
 from devices.models import Device
 from scores.models import ScoreVersion
+from setlists.models import Setlist, SetlistItem
 from .factories import ScoreFactory, UserFactory
 
 SHA = 'ab' * 32
@@ -20,14 +21,16 @@ class MultiDeviceTest(TestCase):
         self.user = UserFactory(username='jikhan')
         self.score = ScoreFactory(user=self.user, title='Mine', content_hash=SHA)
         ScoreVersion.objects.filter(score=self.score).update(content_hash=SHA)
+        self.setlist = Setlist.objects.create(user=self.user, title='연습')
+        SetlistItem.objects.create(setlist=self.setlist, score=self.score)
 
     def link(self, name):
         codes_client = APIClient()
         codes = codes_client.post('/api/v1/device/code', {'name': name}, format='json').data
         self.client.force_login(self.user)
-        self.client.post(reverse('web:activate'), {'code': codes['user_code'], 'decision': 'approve'})
+        self.client.post(reverse('web:activate'), {'code': codes['user_code'], 'decision': 'approve',
+                                                   'setlists': [self.setlist.pk]})   # 연결하면서 곡목을 고른다
         tokens = codes_client.post('/api/v1/device/token', {'device_code': codes['device_code']}, format='json').data
-        Device.objects.filter(pk=tokens['device_id']).update(sync_mode=Device.SYNC_ALL)   # 이 파일은 '모든 악보' 기준
         tv = APIClient()
         tv.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}")
         return tv, tokens

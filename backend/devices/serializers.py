@@ -55,10 +55,10 @@ class DeviceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Device
         fields = ['id', 'name', 'model', 'app_version', 'created_at', 'last_seen_at', 'last_synced_at', 'revoked_at',
-                  'is_active', 'is_this_device', 'sync_mode', 'sync_setlists']
-        # 무엇을 받는지(sync_mode · sync_setlists)는 웹에서만 정한다 — API 로는 보기만
+                  'is_active', 'is_this_device', 'sync_setlists']
+        # 무엇을 받는지(sync_setlists)는 웹에서만 정한다 — API 로는 보기만
         read_only_fields = ['id', 'model', 'app_version', 'created_at', 'last_seen_at', 'last_synced_at', 'revoked_at',
-                            'sync_mode', 'sync_setlists']
+                            'sync_setlists']
 
     def get_is_this_device(self, obj):
         request = self.context.get('request')

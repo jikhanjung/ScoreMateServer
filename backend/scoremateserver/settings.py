@@ -281,6 +281,13 @@ SYNC_LAG_SECONDS = int(os.environ.get('SYNC_LAG_SECONDS', 5))
 # TV 기기 토큰의 refresh 수명 — TV 에서 다시 로그인할 일이 거의 없게. 해제하면 곧바로 막힌다
 DEVICE_REFRESH_TOKEN_DAYS = int(os.environ.get('DEVICE_REFRESH_TOKEN_DAYS', 180))
 
+# 캐시 — 업로드 예약(upload-url → upload-confirm) · 요청 제한 · 로그인/코드 조회 제한이 쓴다.
+# 기본 메모리 캐시는 gunicorn 워커마다 따로라, 예약이 다른 워커에서 "없음"이 되고 제한이 워커 수만큼 느슨해진다(0.6.2 에서 발견).
+# CACHE_DIR 을 주면 워커들이 함께 보는 파일 캐시(운영: 컨테이너 /tmp — 재시작하면 비워져도 되는 것들뿐)
+CACHE_DIR = os.environ.get('CACHE_DIR')
+if CACHE_DIR:
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache', 'LOCATION': CACHE_DIR}}
+
 # Custom User Model
 AUTH_USER_MODEL = 'core.User'
 

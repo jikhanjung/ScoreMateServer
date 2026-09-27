@@ -106,11 +106,15 @@ c = connection.cursor()
 c.execute('CREATE TABLE IF NOT EXISTS _deploy_write_probe(x INTEGER)')
 c.execute('DROP TABLE _deploy_write_probe')
 fd, p = tempfile.mkstemp(dir=str(settings.FILES_ROOT), prefix='.deploy-probe-'); os.close(fd); os.unlink(p)
-print(settings.DATABASES['default']['NAME'], settings.FILES_ROOT, settings.STORAGE_BACKEND, 'ok')" 2>&1 | tr -d '\r' | tail -n1)
-if [ "$BINDING" = "${EXPECT_DB} ${EXPECT_FILES} local ok" ]; then
-    echo "  OK: DB=${EXPECT_DB}, files=${EXPECT_FILES} (local), 둘 다 쓰기 가능"
+from django.core.cache import cache
+cache.set('deploy-probe', 'ok', 30)
+shared = 'shared' if 'filebased' in settings.CACHES['default']['BACKEND'] and cache.get('deploy-probe') == 'ok' else 'per-worker'
+print(settings.DATABASES['default']['NAME'], settings.FILES_ROOT, settings.STORAGE_BACKEND, shared, 'ok')" 2>&1 | tr -d '\r' | tail -n1)
+if [ "$BINDING" = "${EXPECT_DB} ${EXPECT_FILES} local shared ok" ]; then
+    echo "  OK: DB=${EXPECT_DB}, files=${EXPECT_FILES} (local), 둘 다 쓰기 가능, 캐시는 워커 공유"
 else
-    echo "  ✗ FATAL: 바인딩 검사 실패 — 기대 '${EXPECT_DB} ${EXPECT_FILES} local ok', 실제 '${BINDING:-<empty>}'"
+    echo "  ✗ FATAL: 바인딩 검사 실패 — 기대 '${EXPECT_DB} ${EXPECT_FILES} local shared ok', 실제 '${BINDING:-<empty>}'"
+    echo "    · per-worker 면: compose 의 CACHE_DIR 이 없다 — 업로드 예약이 워커 사이에서 사라진다"
     echo "    · 경로가 다르면: compose 의 environment(DATA_DIR · FILES_ROOT · STORAGE_BACKEND) 확인"
     echo "    · 쓰기 실패면: ${ROOT}/db 와 ${ROOT}/files 소유자를 같게 (sudo chown -R \$(stat -c %u:%g ${ROOT}/db) ${ROOT}/files)"
     echo "    확인 후 (cd ${ROOT} && docker compose up -d --force-recreate)"

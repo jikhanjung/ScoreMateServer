@@ -19,6 +19,7 @@ services:
       FILES_ROOT: /app/hostfiles
       FILES_X_ACCEL_PREFIX: /_protected/     # 받기는 nginx 가 /srv/scoremate/files 에서 직접 보낸다
       FILE_UPLOAD_TEMP_DIR: /app/hostfiles/.incoming  # 웹 업로드 임시 파일 — tmpfs(/tmp 256m) 대신 디스크
+      CACHE_DIR: /tmp/scoremate-cache        # 워커들이 함께 보는 캐시(업로드 예약 · 요청 제한). 재시작하면 비워진다
       DJANGO_DEBUG: "false"
       REQUIRE_SECRET_KEY: "true"             # 개발용 · 짧은 SECRET_KEY 면 뜨지 않는다
       TRUST_PROXY_HEADERS: "true"

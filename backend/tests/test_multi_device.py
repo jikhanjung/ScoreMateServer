@@ -81,3 +81,36 @@ class MultiDeviceTest(TestCase):
         # 본인 악보라 owner 권한(can_edit) — 같은 버전도 덮어쓸 수 있다
         self.assertEqual(studio.put(f'/api/v1/scores/{self.score.pk}/analysis/', body, format='json').status_code, 200)
         self.assertEqual(len(studio.get(f'/api/v1/scores/{self.score.pk}/analysis/').data['analyses']), 1)
+
+
+@override_settings(SYNC_LAG_SECONDS=0)
+class PerDeviceThrottleTest(TestCase):
+    """동기화 · 받기 · 분석은 기기마다 센다 — 한 TV 가 한도를 다 써도 같은 계정의 다른 TV · 웹은 계속"""
+
+    def setUp(self):
+        self.user = UserFactory()
+        self.score = ScoreFactory(user=self.user)
+
+    def tv(self):
+        authorization, _ = device_services.start_authorization('TV')
+        device = device_services.approve(authorization, self.user)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {device_services.issue_tokens(device)['access_token']}")
+        return client
+
+    def test_each_device_has_its_own_budget(self):
+        from rest_framework.throttling import ScopedRateThrottle
+        from unittest.mock import patch
+        with patch.dict(ScopedRateThrottle.THROTTLE_RATES, {'sync': '3/hour'}):
+            living, studio = self.tv(), self.tv()
+            for _ in range(3):
+                self.assertEqual(living.get('/api/v1/sync/scores/').status_code, 200)
+            self.assertEqual(living.get('/api/v1/sync/scores/').status_code, 429)
+            self.assertEqual(living.get(f'/api/v1/scores/{self.score.pk}/download/').status_code, 429)   # 같은 통
+
+            self.assertEqual(studio.get('/api/v1/sync/scores/').status_code, 200)            # 다른 TV 는 따로
+            self.assertEqual(studio.get(f'/api/v1/scores/{self.score.pk}/download/').status_code, 302)
+            web = APIClient()
+            web.force_authenticate(user=self.user)
+            self.assertEqual(web.get('/api/v1/sync/scores/').status_code, 200)               # 웹(사용자)도 따로
+            self.assertEqual(living.get('/api/v1/scores/').status_code, 200)                 # 다른 API 는 기본 제한

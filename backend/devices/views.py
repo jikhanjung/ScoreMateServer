@@ -18,6 +18,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from . import services
+from .auth import PerDeviceScopedRateThrottle
 from .models import Device, DeviceAuthorization
 from .serializers import DeviceCodeRequestSerializer, DeviceSerializer, HeartbeatSerializer
 
@@ -72,6 +73,7 @@ class DeviceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Upd
     permission_classes = [IsAuthenticated]
     pagination_class = None
     http_method_names = ['get', 'patch', 'delete', 'post']   # post 는 me/heartbeat 뿐
+    throttle_scope = None   # heartbeat 만 'sync'(기기마다)
 
     def get_queryset(self):
         return Device.objects.filter(user=self.request.user)
@@ -94,7 +96,8 @@ class DeviceViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Upd
     def me(self, request):
         return Response(self.get_serializer(self._this_device(request)).data)
 
-    @action(detail=False, methods=['post'], url_path='me/heartbeat')
+    @action(detail=False, methods=['post'], url_path='me/heartbeat',
+            throttle_classes=[PerDeviceScopedRateThrottle], throttle_scope='sync')
     def heartbeat(self, request):
         """TV 가 앱을 켤 때 · 업데이트 뒤: 앱 버전 · 모델을 알린다 (마지막 접속은 인증이 이미 남긴다)"""
         device = self._this_device(request)

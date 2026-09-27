@@ -62,3 +62,8 @@
 - 🔴 **마이그레이션 있음** `setlists.0003_setlist_ensemble`(열 추가), `scores.0005_score_analysis`, `core.0002_social_account`(새 테이블) — 모두 가산
 - 새 API: `/api/v1/sync/setlists/`, `/api/v1/scores/{id}/analysis/`. 웹: `/setlists/`, `/auth/google/`
 - Google 로그인은 `.env` 에 `GOOGLE_CLIENT_ID` · `GOOGLE_CLIENT_SECRET` 을 넣어야 켜진다(devlog 061 §4). 지금은 꺼져 있다
+
+### 0.6.1 (2026-09-27) — 동기화 요청 제한을 기기마다
+- 동기화 · 받기 · 분석 · heartbeat 는 `sync` 제한(3000/시간)을 **기기마다**(기기 토큰이 아니면 사용자마다) 센다.
+  전에는 사용자당 1000/시간 한 통을 같은 계정의 TV 여러 대와 웹이 나눠 써서, 처음 연결하는 TV 두 대가 함께 막힐 수 있었다
+- 마이그레이션 없음

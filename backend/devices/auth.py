@@ -7,6 +7,7 @@
 from datetime import timedelta
 
 from django.utils import timezone
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
 
@@ -37,3 +38,18 @@ class DeviceAwareJWTAuthentication(JWTAuthentication):
                 Device.objects.filter(pk=device.pk).update(last_seen_at=now)
             user.device_id = str(device.pk)   # 뷰가 "지금 이 요청은 어느 기기인가"를 안다
         return user
+
+
+class PerDeviceScopedRateThrottle(ScopedRateThrottle):
+    """동기화 · 받기 · 분석 — 계정이 아니라 **기기마다** 센다
+
+    기본 UserRateThrottle(사용자당 1000/시간)은 한 계정의 TV 여러 대와 웹이 한 통을 나눠 쓴다 —
+    악보 300개를 처음 받는 TV 두 대가 함께 막힐 수 있다. 기기 토큰이면 device_id, 아니면 사용자 id 로 센다.
+    """
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = f"device:{request.user.device_id}" if getattr(request.user, 'device_id', None) else f"user:{request.user.pk}"
+        else:
+            ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}

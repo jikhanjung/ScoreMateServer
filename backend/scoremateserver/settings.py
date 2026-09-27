@@ -224,6 +224,7 @@ REST_FRAMEWORK = {
         'invite': '30/hour',  # 초대 코드 미리 보기 · 가입 — 코드 맞히기 방지
         'device_code': '30/hour',     # TV 코드 발급 (IP 당)
         'device_token': '2000/hour',  # TV 가 5초마다 토큰을 묻는다 (IP 당, 같은 집의 TV 여러 대)
+        'sync': '3000/hour',          # 동기화 · 받기 · 분석 — 기기마다(devices.auth.PerDeviceScopedRateThrottle)
     },
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',

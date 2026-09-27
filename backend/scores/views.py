@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponseRedirect
 from files.utils import get_storage
+from devices.auth import PerDeviceScopedRateThrottle
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import F, Count, Sum, Avg, Q
 from django.db import transaction
@@ -34,6 +35,7 @@ class ScoreViewSet(viewsets.ModelViewSet):
     filterset_class = ScoreFilter
     ordering_fields = ['created_at', 'updated_at', 'title', 'composer', 'size_mb', 'pages']
     ordering = ['-updated_at']
+    throttle_scope = None   # download · analysis 동작만 'sync'(기기마다) — 나머지는 기본 제한
 
     # 앙상블 악보를 바꾸는 동작 — owner · leader 만 (멤버는 읽기만)
     WRITE_ACTIONS = {
@@ -71,7 +73,7 @@ class ScoreViewSet(viewsets.ModelViewSet):
         delete_score(self.get_object())
         return Response(status=status.HTTP_204_NO_CONTENT)
     
-    @action(detail=True, methods=['get'])
+    @action(detail=True, methods=['get'], throttle_classes=[PerDeviceScopedRateThrottle], throttle_scope='sync')
     def download(self, request, pk=None):
         """파일 받기 — 서명 URL 로 302 (파일은 Django 를 지나지 않는다). ?version=n 이면 그 판"""
         score = self.get_object()
@@ -89,7 +91,7 @@ class ScoreViewSet(viewsets.ModelViewSet):
 
     # --- 분석 공유 (S6) ---
 
-    @action(detail=True, methods=['get', 'put'])
+    @action(detail=True, methods=['get', 'put'], throttle_classes=[PerDeviceScopedRateThrottle], throttle_scope='sync')
     def analysis(self, request, pk=None):
         """GET 지금 판(?version=n)의 분석들 · PUT {analyzer, analyzer_version, sha256, data} — TV 가 올린다"""
         score = self.get_object()

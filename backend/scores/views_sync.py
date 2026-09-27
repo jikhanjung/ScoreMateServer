@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from devices.auth import PerDeviceScopedRateThrottle
 from devices.models import Device
 from .serializers import SyncScoreSerializer
 from .sync import BadCursor, changes
@@ -15,6 +16,8 @@ from .sync import BadCursor, changes
 
 class ScoreSyncView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PerDeviceScopedRateThrottle]
+    throttle_scope = 'sync'
 
     def get(self, request):
         limit = request.query_params.get('limit')
@@ -48,6 +51,8 @@ class SetlistSyncView(APIView):
     항목은 곡 순서대로 score_id 만 — 악보 자체는 /sync/scores 로 받는다. 읽을 수 없게 된 악보의 항목은 빠진다.
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [PerDeviceScopedRateThrottle]
+    throttle_scope = 'sync'
 
     def get(self, request):
         from setlists.models import Setlist

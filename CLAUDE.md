@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-27) — 324 backend tests passing, 0.6.0 in production (invite-only registration)
+### Status (2026-09-27) — 351 backend tests passing, 0.7.2 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -28,6 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | S4 | Sync API (cursor + full `ids` set instead of soft delete), download redirect, heartbeat | ✅ devlog 060 |
 | S6 | Ensemble setlists + sync, shared score analysis (per version, sha256-checked), Google login (OIDC, off until client id set) | ✅ devlog 061 |
 | — | Per-TV scope: selected setlists only (default) / all scores; chosen on the web only | ✅ devlog 062 |
+| — | Web polish: tidy TV / setlist pickers (0.7.1), version next to the brand (0.7.2) | ✅ devlog 063 |
 
 ## Development Commands
 

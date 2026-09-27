@@ -138,3 +138,47 @@ def delete_score(score):
     delete_score_files.delay(s3_key, thumbnail_key, score_id)
     for key in other_keys:
         delete_single_file.delay(key)
+
+
+class AnalysisError(ValueError):
+    """code: processing(아직 해시 없음) · mismatch(다른 파일의 분석) · not_newer(더 새 분석기가 아님) · too_large"""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def save_analysis(score, *, user, analyzer, analyzer_version, sha256, data, device_id=None, version=None):
+    """TV 가 만든 분석을 판에 붙인다. (analysis, created)
+
+    - 분석한 파일이 그 판의 파일이어야 한다(SHA-256)
+    - 이미 있으면: 멤버는 더 새 분석기 버전일 때만 바꾼다, owner · leader 는 언제나
+    - 악보 updated_at 을 올린다 — 멤버 TV 가 동기화로 알아채게
+    """
+    import json
+    from django.utils import timezone
+    from .models import ScoreAnalysis, version_key
+
+    version = version or score.current_version
+    if version is None or not version.content_hash:
+        raise AnalysisError('processing', 'The file of this version is still being processed. Try again later.')
+    if (sha256 or '').lower() != version.content_hash:
+        raise AnalysisError('mismatch', 'sha256 does not match this version of the score.')
+    if len(json.dumps(data, separators=(',', ':')).encode()) > ScoreAnalysis.MAX_BYTES:
+        raise AnalysisError('too_large', 'Analysis data is too large.')
+
+    with transaction.atomic():
+        existing = ScoreAnalysis.objects.select_for_update().filter(version=version, analyzer=analyzer).first()
+        if existing is not None and not score.can_edit(user) and \
+                version_key(analyzer_version) <= version_key(existing.analyzer_version):
+            raise AnalysisError('not_newer', 'An analysis from the same or a newer analyzer already exists.')
+        fields = dict(analyzer_version=analyzer_version, data=data, uploaded_by=user, device_id=device_id)
+        if existing is None:
+            analysis = ScoreAnalysis.objects.create(version=version, analyzer=analyzer, **fields)
+        else:
+            for name, value in fields.items():
+                setattr(existing, name, value)
+            existing.save()
+            analysis = existing
+        Score.objects.filter(pk=score.pk).update(updated_at=timezone.now())
+    return analysis, existing is None

@@ -6,7 +6,7 @@ from rest_framework import serializers
 
 from ensembles.models import Ensemble, Membership
 from files.utils import get_storage
-from .models import Score, ScoreVersion
+from .models import Score, ScoreAnalysis, ScoreVersion
 
 
 def thumbnail_url(score):
@@ -284,9 +284,32 @@ class SyncScoreSerializer(serializers.ModelSerializer):
             'filename': obj.original_filename or f'{obj.title}.pdf',
             'created_at': v.created_at if v else obj.created_at,
             'note': v.note if v else '',
+            # 이 판에 붙은 분석 — TV 는 가진 것보다 새 것만 GET /scores/{id}/analysis/ 로 받는다
+            'analyses': [{'analyzer': a.analyzer, 'analyzer_version': a.analyzer_version, 'updated_at': a.updated_at}
+                         for a in (v.analyses.all() if v else [])],
         }
 
     def get_download_url(self, obj):
         request = self.context.get('request')
         path = f'/api/v1/scores/{obj.pk}/download/'
         return request.build_absolute_uri(path) if request else path
+
+
+class AnalysisWriteSerializer(serializers.Serializer):
+    analyzer = serializers.RegexField(r'^[a-z0-9][a-z0-9._-]{0,49}$', help_text='e.g. mrgq-measures')
+    analyzer_version = serializers.CharField(max_length=50)
+    sha256 = serializers.RegexField(r'^[0-9a-fA-F]{64}$')
+    data = serializers.JSONField()
+
+
+class AnalysisSerializer(serializers.ModelSerializer):
+    version = serializers.IntegerField(source='version.number', read_only=True)
+    sha256 = serializers.CharField(source='version.content_hash', read_only=True)
+    uploaded_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ScoreAnalysis
+        fields = ['analyzer', 'analyzer_version', 'version', 'sha256', 'data', 'uploaded_by', 'created_at', 'updated_at']
+
+    def get_uploaded_by(self, obj):
+        return {'id': obj.uploaded_by_id, 'username': obj.uploaded_by.username} if obj.uploaded_by_id else None

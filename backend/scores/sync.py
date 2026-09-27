@@ -60,7 +60,8 @@ def readable_with_effective_time(user):
     return (Score.objects.readable_by(user)
             .annotate(effective=Greatest('updated_at', Coalesce(Subquery(my_join, output_field=DateTimeField()),
                                                                 'updated_at')))
-            .select_related('ensemble', 'current_version'))
+            .select_related('ensemble', 'current_version')
+            .prefetch_related('current_version__analyses'))
 
 
 def changes(user, cursor=None, limit=None):

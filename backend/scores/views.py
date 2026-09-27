@@ -19,8 +19,10 @@ from .serializers import (
     ScoreCreateSerializer
 )
 from .filters import ScoreFilter, ScoreOrderingFilter
-from .services import add_version, delete_score, delete_version, make_current, VersionError
-from .serializers import ScoreVersionSerializer
+from .services import (
+    AnalysisError, VersionError, add_version, delete_score, delete_version, make_current, save_analysis,
+)
+from .serializers import AnalysisSerializer, AnalysisWriteSerializer, ScoreVersionSerializer
 from files.serializers import NewVersionSerializer
 from files.utils import QuotaManager
 
@@ -84,6 +86,36 @@ class ScoreViewSet(viewsets.ModelViewSet):
         url = get_storage().generate_presigned_download_url(
             key, expiry=300, filename=original or f'{score.title}.pdf')['url']
         return HttpResponseRedirect(request.build_absolute_uri(url) if url.startswith('/') else url)
+
+    # --- 분석 공유 (S6) ---
+
+    @action(detail=True, methods=['get', 'put'])
+    def analysis(self, request, pk=None):
+        """GET 지금 판(?version=n)의 분석들 · PUT {analyzer, analyzer_version, sha256, data} — TV 가 올린다"""
+        score = self.get_object()
+        if request.method == 'GET':
+            number = request.query_params.get('version')
+            version = self._version(score, number) if number and number.isdigit() else score.current_version
+            analyses = version.analyses.select_related('uploaded_by', 'version') if version else []
+            analyzer = request.query_params.get('analyzer')
+            if analyzer:
+                analyses = [a for a in analyses if a.analyzer == analyzer]
+                if not analyses:
+                    raise Http404('No analysis')
+            return Response({'version': version.number if version else None,
+                             'analyses': AnalysisSerializer(analyses, many=True).data})
+
+        serializer = AnalysisWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            analysis, created = save_analysis(
+                score, user=request.user, analyzer=data['analyzer'], analyzer_version=data['analyzer_version'],
+                sha256=data['sha256'], data=data['data'], device_id=getattr(request.user, 'device_id', None))
+        except AnalysisError as exc:
+            code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE if exc.code == 'too_large' else status.HTTP_409_CONFLICT
+            return Response({'error': exc.code, 'message': str(exc)}, status=code)
+        return Response(AnalysisSerializer(analysis).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     # --- 판 (S2) ---
 

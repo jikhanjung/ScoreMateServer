@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Score, ScoreVersion
+from .models import Score, ScoreAnalysis, ScoreVersion
 
 
 class ScoreVersionInline(admin.TabularInline):
@@ -40,3 +40,10 @@ class ScoreAdmin(admin.ModelAdmin):
         """Display size in MB"""
         return f"{obj.size_mb:.2f} MB"
     size_mb_display.short_description = 'Size'
+
+
+@admin.register(ScoreAnalysis)
+class ScoreAnalysisAdmin(admin.ModelAdmin):
+    list_display = ['version', 'analyzer', 'analyzer_version', 'uploaded_by', 'updated_at']
+    list_filter = ['analyzer']
+    raw_id_fields = ['version', 'uploaded_by', 'device']

@@ -236,7 +236,7 @@ def score_detail(request, pk):
     score = _readable_score(request, pk)
     score.thumb = thumbnail_url(score)
     score.editable = score.can_edit(request.user)
-    versions = list(score.versions.select_related('uploaded_by'))
+    versions = list(score.versions.select_related('uploaded_by').prefetch_related('analyses'))
     form = NewVersionForm(user=request.user) if score.editable else None
     return render(request, 'web/scores/detail.html', {'score': score, 'versions': versions, 'version_form': form})
 

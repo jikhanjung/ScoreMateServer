@@ -180,3 +180,38 @@ class ScoreVersion(models.Model):
     @property
     def is_current(self):
         return self.score.current_version_id == self.pk
+
+
+def version_key(text):
+    """'2.10.1' > '2.9' — 숫자 마디끼리 비교. 숫자가 아니면 문자열 그대로"""
+    parts = []
+    for piece in str(text or '').replace('-', '.').split('.'):
+        parts.append((0, int(piece), '') if piece.isdigit() else (1, 0, piece))
+    return tuple(parts)
+
+
+class ScoreAnalysis(models.Model):
+    """TV 가 만든 악보 분석(보표 시스템 · 마디 · 박자표 …)을 판마다 나눈다 — 멤버 TV 가 같은 마디 번호를 쓰게
+
+    서버는 data 를 해석하지 않는다. 분석한 파일의 SHA-256 이 그 판의 것과 같을 때만 받는다.
+    """
+    MAX_BYTES = 1024 * 1024
+
+    version = models.ForeignKey(ScoreVersion, on_delete=models.CASCADE, related_name='analyses')
+    analyzer = models.CharField(max_length=50, help_text='e.g. "mrgq-measures"')
+    analyzer_version = models.CharField(max_length=50)
+    data = models.JSONField()
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                    related_name='uploaded_analyses')
+    device = models.ForeignKey('devices.Device', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'score_analyses'
+        constraints = [
+            models.UniqueConstraint(fields=['version', 'analyzer'], name='unique_analysis_per_version_analyzer'),
+        ]
+
+    def __str__(self):
+        return f'{self.version} {self.analyzer} {self.analyzer_version}'

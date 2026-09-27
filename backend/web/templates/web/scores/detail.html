@@ -43,7 +43,7 @@
         <td><strong>판 {{ v.number }}</strong>{% if v.pk == score.current_version_id %} <span class="badge">지금 쓰는 판</span>{% endif %}</td>
         <td>{{ v.created_at|date:'Y-m-d H:i' }}<div class="muted small">{{ v.uploaded_by.username|default:'(지운 계정)' }}</div></td>
         <td>{{ v.note|default:'—' }}{% if v.original_filename %}<div class="muted small">{{ v.original_filename }}</div>{% endif %}</td>
-        <td class="small">{{ v.pages|default:'?' }}쪽 · {{ v.size_bytes|filesizeformat }}</td>
+        <td class="small">{{ v.pages|default:'?' }}쪽 · {{ v.size_bytes|filesizeformat }}{% for a in v.analyses.all %}<div class="muted small">분석 {{ a.analyzer }} {{ a.analyzer_version }}</div>{% endfor %}</td>
         <td style="text-align:right">
           <div class="actions" style="justify-content:flex-end">
             <a class="btn sm" href="{% url 'web:version_view' score.pk v.number %}" target="_blank" rel="noopener">보기</a>

@@ -35,3 +35,9 @@
 - 가입을 닫으려면 `.env` 에 `REGISTRATION_OPEN=false` (웹 · API 가입이 함께 닫힌다) 후 `docker compose up -d --force-recreate`
 - 웹 업로드 임시 파일: `/srv/scoremate/files/.incoming` (compose `FILE_UPLOAD_TEMP_DIR`) — 요청이 끝나면 지워진다
 - 마이그레이션 없음
+
+### 0.3.0 (2026-09-27) — 악보 판(버전)
+- 🔴 **마이그레이션 있음** `scores.0004_score_versions` — 스키마 + 데이터(기존 악보마다 판 1). 되돌리기가 있지만,
+  이 배포 뒤 판을 올렸다면 0.2.0 으로의 `rollback --db=keep` 은 가드가 막는다 → `--db=restore`(pre-deploy 스냅샷) 판단
+- 새 API: `/api/v1/scores/{id}/versions/…`. 웹 상세에 판 칸
+- `.env` 변경 없음

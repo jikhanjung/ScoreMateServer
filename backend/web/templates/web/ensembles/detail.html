@@ -19,7 +19,7 @@
     {% for song in songs %}
       <tr>
         <td>{{ song.title }}</td>
-        <td><div class="parts">{% for score in song.parts %}<a class="chip" href="{% url 'web:score_detail' score.pk %}">{{ score.part_name|default:'보기' }}</a>{% endfor %}</div></td>
+        <td><div class="parts">{% for score in song.parts %}<a class="chip" href="{% url 'web:score_detail' score.pk %}">{{ score.part_name|default:'보기' }}{% if score.current_version.number > 1 %} <span class="muted small">v{{ score.current_version.number }}</span>{% endif %}</a>{% endfor %}</div></td>
         <td class="muted small">{{ song.composer }}</td>
       </tr>
     {% endfor %}

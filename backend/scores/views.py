@@ -5,7 +5,8 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from django.http import Http404
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import F, Count, Sum, Avg, Q
 from django.db import transaction
@@ -17,7 +18,10 @@ from .serializers import (
     ScoreCreateSerializer
 )
 from .filters import ScoreFilter, ScoreOrderingFilter
-from .services import delete_score
+from .services import add_version, delete_score, delete_version, make_current, VersionError
+from .serializers import ScoreVersionSerializer
+from files.serializers import NewVersionSerializer
+from files.utils import QuotaManager
 
 
 class ScoreViewSet(viewsets.ModelViewSet):
@@ -36,7 +40,9 @@ class ScoreViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """내 개인 악보 + 내가 멤버인 앙상블의 악보"""
-        return Score.objects.readable_by(self.request.user).select_related('ensemble', 'user')
+        return (Score.objects.readable_by(self.request.user)
+                .select_related('ensemble', 'user', 'current_version')
+                .annotate(version_count=Count('versions', distinct=True)))
 
     def get_writable_queryset(self):
         """일괄 작업용 — 쓸 수 있는 악보만"""
@@ -62,6 +68,60 @@ class ScoreViewSet(viewsets.ModelViewSet):
         delete_score(self.get_object())
         return Response(status=status.HTTP_204_NO_CONTENT)
     
+    # --- 판 (S2) ---
+
+    def _version(self, score, number):
+        version = score.versions.filter(number=number).first()
+        if version is None:
+            raise Http404('No such version')
+        return version
+
+    def _require_edit(self, score):
+        if not score.can_edit(self.request.user):
+            raise PermissionDenied('Only ensemble owners and leaders can change this score.')
+
+    @action(detail=True, methods=['get', 'post'])
+    def versions(self, request, pk=None):
+        """GET 판 목록(최신부터) · POST 새 판 {upload_id, note} — upload-url → PUT 다음에"""
+        score = self.get_object()
+        if request.method == 'GET':
+            versions = score.versions.select_related('uploaded_by', 'score')
+            return Response(ScoreVersionSerializer(versions, many=True).data)
+
+        self._require_edit(score)
+        serializer = NewVersionSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        upload_id = serializer.validated_data['upload_id']
+        from django.core.cache import cache
+        reservation = cache.get(f"quota_reservation:{upload_id}")
+        QuotaManager.confirm_quota(request.user, upload_id)   # 쿼터는 이 판을 올린 사람에게
+        version = add_version(
+            score, user=request.user, s3_key=reservation['s3_key'], size_bytes=reservation['size_bytes'],
+            original_filename=reservation.get('original_filename') or '', mime=reservation.get('mime_type'),
+            note=serializer.validated_data.get('note', ''), charge_quota=False,
+        )
+        version.refresh_from_db()
+        return Response(ScoreVersionSerializer(version).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'versions/(?P<number>\d+)')
+    def delete_version(self, request, pk=None, number=None):
+        score = self.get_object()
+        self._require_edit(score)
+        try:
+            delete_version(score, self._version(score, number))
+        except VersionError as exc:
+            raise ValidationError({'version': str(exc)})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path=r'versions/(?P<number>\d+)/make_current')
+    def make_current(self, request, pk=None, number=None):
+        """예전 판으로 되돌린다 (판은 남는다)"""
+        score = self.get_object()
+        self._require_edit(score)
+        make_current(score, self._version(score, number))
+        score.refresh_from_db()
+        return Response(ScoreSerializer(score, context={'request': request}).data)
+
     @action(detail=True, methods=['post'])
     def regenerate_thumbnail(self, request, pk=None):
         """Regenerate thumbnail for a score"""

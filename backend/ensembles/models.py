@@ -69,7 +69,7 @@ class Membership(models.Model):
     ensemble = models.ForeignKey(Ensemble, on_delete=models.CASCADE, related_name='memberships')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='memberships')
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default=ROLE_MEMBER)
-    part = models.CharField(max_length=100, blank=True, help_text='예: "Guitar 1", "총보"')
+    part = models.CharField(max_length=100, blank=True, help_text='e.g. "Guitar 1", "Full score"')
     joined_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -112,8 +112,8 @@ class Invite(models.Model):
         related_name='created_invites'
     )
     created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField(null=True, blank=True, help_text='비우면 만료 없음')
-    max_uses = models.PositiveIntegerField(null=True, blank=True, help_text='비우면 횟수 제한 없음')
+    expires_at = models.DateTimeField(null=True, blank=True, help_text='Empty = never expires')
+    max_uses = models.PositiveIntegerField(null=True, blank=True, help_text='Empty = unlimited uses')
     uses = models.PositiveIntegerField(default=0)
     revoked_at = models.DateTimeField(null=True, blank=True)
 

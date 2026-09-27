@@ -8,6 +8,7 @@
     <p>
       {% if score.part_name %}<span class="badge plain">{{ score.part_name }}</span>{% endif %}
       {% if score.ensemble %}<a class="badge" href="{% url 'web:ensemble_detail' score.ensemble.pk %}">{{ score.ensemble.name }}</a>{% else %}<span class="badge plain">내 악보</span>{% endif %}
+      {% if score.current_version %}<a class="badge plain" href="#versions">판 {{ score.current_version.number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</a>{% endif %}
     </p>
     <div class="actions">
       <a class="btn primary" href="{% url 'web:score_view' score.pk %}" target="_blank" rel="noopener">보기</a>
@@ -31,4 +32,42 @@
     {% if score.note %}<div class="box"><div class="muted small">메모</div>{{ score.note|linebreaksbr }}</div>{% endif %}
   </div>
 </div>
+
+<h2 id="versions">판 ({{ versions|length }})</h2>
+<div class="box table-wrap">
+  <table class="stacked">
+    <thead><tr><th>판</th><th>올린 날 · 사람</th><th>무엇이 바뀌었나</th><th>쪽 · 크기</th><th></th></tr></thead>
+    <tbody>
+    {% for v in versions %}
+      <tr>
+        <td><strong>판 {{ v.number }}</strong>{% if v.pk == score.current_version_id %} <span class="badge">지금 쓰는 판</span>{% endif %}</td>
+        <td>{{ v.created_at|date:'Y-m-d H:i' }}<div class="muted small">{{ v.uploaded_by.username|default:'(지운 계정)' }}</div></td>
+        <td>{{ v.note|default:'—' }}{% if v.original_filename %}<div class="muted small">{{ v.original_filename }}</div>{% endif %}</td>
+        <td class="small">{{ v.pages|default:'?' }}쪽 · {{ v.size_bytes|filesizeformat }}</td>
+        <td style="text-align:right">
+          <div class="actions" style="justify-content:flex-end">
+            <a class="btn sm" href="{% url 'web:version_view' score.pk v.number %}" target="_blank" rel="noopener">보기</a>
+            <a class="btn sm" href="{% url 'web:version_download' score.pk v.number %}">받기</a>
+            {% if score.editable and v.pk != score.current_version_id %}
+            <form method="post" action="{% url 'web:version_make_current' score.pk v.number %}" class="inline">{% csrf_token %}<button class="btn sm" type="submit">이 판으로</button></form>
+            {% endif %}
+            {% if score.editable and versions|length > 1 %}
+            <form method="post" action="{% url 'web:version_delete' score.pk v.number %}" class="inline">{% csrf_token %}<button class="btn sm danger" type="submit" data-confirm="판 {{ v.number }} 을(를) 지울까요? 되돌릴 수 없습니다.">지우기</button></form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if version_form %}
+<div class="box" style="max-width:640px">
+  <form method="post" action="{% url 'web:version_upload' score.pk %}" enctype="multipart/form-data" class="stack" data-busy="올리는 중…">{% csrf_token %}
+    {% with form=version_form %}{% for field in form %}{% include 'web/_field.html' %}{% endfor %}{% endwith %}
+    <button class="btn primary" type="submit">새 판 올리기</button>
+    <p class="muted small">새 판이 곧바로 지금 쓰는 판이 됩니다{% if score.ensemble %} — "{{ score.ensemble.name }}" 멤버 모두에게{% endif %}. 예전 판은 남아 있어 되돌릴 수 있습니다.</p>
+  </form>
+</div>
+{% endif %}
 {% endblock %}

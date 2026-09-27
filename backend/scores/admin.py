@@ -1,5 +1,13 @@
 from django.contrib import admin
-from .models import Score
+from .models import Score, ScoreVersion
+
+
+class ScoreVersionInline(admin.TabularInline):
+    model = ScoreVersion
+    extra = 0
+    fields = ['number', 'original_filename', 'size_bytes', 'pages', 'uploaded_by', 'note', 'created_at']
+    readonly_fields = ['number', 'original_filename', 'size_bytes', 'pages', 'uploaded_by', 'created_at']
+    can_delete = False  # 판 삭제는 쿼터 · 파일을 함께 다뤄야 한다 — 웹/API(scores/services.py)로
 
 
 @admin.register(Score)
@@ -10,6 +18,7 @@ class ScoreAdmin(admin.ModelAdmin):
     search_fields = ['title', 'composer', 'instrumentation', 'user__email']
     date_hierarchy = 'created_at'
     raw_id_fields = ['user']
+    inlines = [ScoreVersionInline]
     readonly_fields = ['size_mb_display', 'content_hash', 'created_at', 'updated_at']
     
     fieldsets = (

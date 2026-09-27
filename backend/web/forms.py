@@ -164,3 +164,25 @@ class InviteForm(forms.Form):
 
 class JoinCodeForm(forms.Form):
     code = forms.CharField(label='초대 코드', max_length=32, widget=forms.TextInput(attrs={'autocapitalize': 'characters', 'autocomplete': 'off'}))
+
+
+class NewVersionForm(forms.Form):
+    file = forms.FileField(label='새 판 PDF', widget=forms.ClearableFileInput(attrs={'accept': 'application/pdf,.pdf'}))
+    note = forms.CharField(label='무엇이 바뀌었나', max_length=2000, required=False,
+                           widget=forms.TextInput(attrs={'placeholder': '예: 42쪽까지 수정, 도돌이 풀기'}))
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+
+    def clean_file(self):
+        f = self.cleaned_data['file']
+        if f.size > settings.MAX_UPLOAD_SIZE:
+            raise forms.ValidationError(f'파일이 너무 큽니다 (최대 {settings.MAX_UPLOAD_SIZE // (1024 * 1024)}MB).')
+        head = f.read(5)
+        f.seek(0)
+        if head != b'%PDF-':
+            raise forms.ValidationError('PDF 파일이 아닙니다.')
+        if not self.user.can_upload(f.size):
+            raise forms.ValidationError(f'저장 공간이 부족합니다 (남은 공간 {self.user.available_quota_mb}MB).')
+        return f

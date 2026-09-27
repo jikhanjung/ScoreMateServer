@@ -94,6 +94,27 @@ class FileDownloadResponseSerializer(serializers.Serializer):
     file_type = serializers.CharField(read_only=True)
 
 
+def validate_reservation(upload_id, user):
+    """upload-url 이 만든 예약이 있고 이 사람 것인가 — 악보 만들기와 새 판 올리기가 같이 쓴다"""
+    from django.core.cache import cache
+
+    reservation_data = cache.get(f"quota_reservation:{upload_id}")
+    if not reservation_data:
+        raise serializers.ValidationError("Upload reservation not found or expired")
+    if reservation_data['user_id'] != user.id:
+        raise serializers.ValidationError("Upload reservation belongs to different user")
+    return upload_id
+
+
+class NewVersionSerializer(serializers.Serializer):
+    """새 판 올리기: upload-url → PUT → 이것"""
+    upload_id = serializers.UUIDField()
+    note = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+    def validate_upload_id(self, value):
+        return validate_reservation(value, self.context['request'].user)
+
+
 class UploadConfirmationSerializer(serializers.Serializer):
     """Serializer for confirming upload completion and creating score"""
     upload_id = serializers.UUIDField()
@@ -117,20 +138,4 @@ class UploadConfirmationSerializer(serializers.Serializer):
     
     def validate_upload_id(self, value):
         """Validate upload ID exists in reservations"""
-        from django.core.cache import cache
-        
-        reservation_key = f"quota_reservation:{value}"
-        reservation_data = cache.get(reservation_key)
-        
-        if not reservation_data:
-            raise serializers.ValidationError(
-                "Upload reservation not found or expired"
-            )
-        
-        user = self.context['request'].user
-        if reservation_data['user_id'] != user.id:
-            raise serializers.ValidationError(
-                "Upload reservation belongs to different user"
-            )
-        
-        return value
+        return validate_reservation(value, self.context['request'].user)

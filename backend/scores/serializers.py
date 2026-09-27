@@ -6,7 +6,7 @@ from rest_framework import serializers
 
 from ensembles.models import Ensemble, Membership
 from files.utils import get_storage
-from .models import Score
+from .models import Score, ScoreVersion
 
 
 def thumbnail_url(score):
@@ -14,7 +14,8 @@ def thumbnail_url(score):
         return None
     try:
         return get_storage().generate_presigned_download_url(
-            score.thumbnail_key, expiry=settings.THUMBNAIL_URL_EXPIRY)['url']
+            score.thumbnail_key, expiry=settings.THUMBNAIL_URL_EXPIRY,
+            variant=score.current_version_id)['url']   # 새 판이면 URL 이 바뀐다
     except Exception:
         return None
 
@@ -37,12 +38,22 @@ class EnsembleFieldsMixin(serializers.Serializer):
     ensemble_name = serializers.SerializerMethodField()
     uploader = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    version = serializers.SerializerMethodField()
+    version_count = serializers.SerializerMethodField()
 
     def get_ensemble_name(self, obj):
         return obj.ensemble.name if obj.ensemble_id else None
 
     def get_uploader(self, obj):
         return {'id': obj.user_id, 'username': obj.user.username}
+
+    def get_version(self, obj):
+        """지금 쓰는 판 번호"""
+        return obj.current_version.number if obj.current_version_id else None
+
+    def get_version_count(self, obj):
+        annotated = getattr(obj, 'version_count', None)
+        return annotated if annotated is not None else obj.versions.count()
 
     def get_can_edit(self, obj):
         request = self.context.get('request')
@@ -61,7 +72,24 @@ class EnsembleFieldsMixin(serializers.Serializer):
         return obj.ensemble_id in managed
 
 
-ENSEMBLE_FIELDS = ['ensemble', 'ensemble_name', 'part_name', 'uploader', 'can_edit']
+ENSEMBLE_FIELDS = ['ensemble', 'ensemble_name', 'part_name', 'uploader', 'can_edit', 'version', 'version_count']
+
+
+class ScoreVersionSerializer(serializers.ModelSerializer):
+    uploaded_by = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ScoreVersion
+        fields = ['number', 'is_current', 'original_filename', 'size_bytes', 'pages', 'content_hash',
+                  'note', 'uploaded_by', 'created_at']
+        read_only_fields = fields
+
+    def get_uploaded_by(self, obj):
+        return {'id': obj.uploaded_by_id, 'username': obj.uploaded_by.username} if obj.uploaded_by_id else None
+
+    def get_is_current(self, obj):
+        return obj.score.current_version_id == obj.pk
 
 
 class ScoreSerializer(EnsembleFieldsMixin, serializers.ModelSerializer):

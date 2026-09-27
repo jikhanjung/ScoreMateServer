@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='score',
             name='part_name',
-            field=models.CharField(blank=True, help_text='예: "총보", "Guitar 1"', max_length=100),
+            field=models.CharField(blank=True, help_text='e.g. "Full score", "Guitar 1"', max_length=100),
         ),
         migrations.AddIndex(
             model_name='score',

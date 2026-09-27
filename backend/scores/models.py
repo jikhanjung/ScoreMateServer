@@ -43,7 +43,7 @@ class Score(models.Model):
         blank=True,
         related_name='scores'
     )
-    part_name = models.CharField(max_length=100, blank=True, help_text='예: "총보", "Guitar 1"')
+    part_name = models.CharField(max_length=100, blank=True, help_text='e.g. "Full score", "Guitar 1"')
     title = models.CharField(max_length=255)
     original_filename = models.CharField(
         max_length=255, 
@@ -71,6 +71,17 @@ class Score(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # 지금 쓰는 판. 위의 파일 필드(s3_key · size_bytes · mime · original_filename · pages · content_hash)는
+    # 이 판의 사본이다 — 목록 · 받기 · 처리 작업이 판을 몰라도 되게. 바꾸는 곳은 scores/services.py 하나
+    current_version = models.ForeignKey(
+        'ScoreVersion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    # 마지막으로 쓴 판 번호 — 판을 지워도 번호를 다시 쓰지 않게(TV 는 판 번호로 받은 파일을 기억한다)
+    last_version_number = models.PositiveIntegerField(default=0)
 
     objects = ScoreQuerySet.as_manager()
     
@@ -87,6 +98,21 @@ class Score(models.Model):
     def __str__(self):
         return f"{self.title} - {self.composer}" if self.composer else self.title
     
+    def save(self, *args, **kwargs):
+        """불변식: 파일이 있는 악보는 판을 적어도 하나 가진다 — 새로 만들면 판 1"""
+        creating = self._state.adding
+        super().save(*args, **kwargs)
+        if creating and self.s3_key and self.current_version_id is None:
+            version = ScoreVersion.objects.create(
+                score=self, number=1, s3_key=self.s3_key, original_filename=self.original_filename,
+                size_bytes=self.size_bytes, mime=self.mime, pages=self.pages, content_hash=self.content_hash,
+                uploaded_by_id=self.user_id,
+            )
+            # update() 는 updated_at 을 건드리지 않는다
+            Score.objects.filter(pk=self.pk).update(current_version=version, last_version_number=1)
+            self.current_version = version
+            self.last_version_number = 1
+
     def can_read(self, user):
         if self.ensemble_id is None:
             return self.user_id == user.id
@@ -117,3 +143,40 @@ class Score(models.Model):
     def calculate_content_hash(self, file_content):
         """Calculate SHA256 hash of file content"""
         return hashlib.sha256(file_content).hexdigest()
+
+
+class ScoreVersion(models.Model):
+    """악보 한 판 — 수정판이 잦다(`블타바_0829_42페이지까지`). 파일 이름으로 판을 가리던 것을 대신한다 (054 S2)
+
+    쿼터는 그 판을 올린 사람에게 매긴다. 판 번호는 악보 안에서 1 부터 늘기만 한다(지운 번호를 다시 쓰지 않는다).
+    """
+    score = models.ForeignKey(Score, on_delete=models.CASCADE, related_name='versions')
+    number = models.PositiveIntegerField()
+    s3_key = models.CharField(max_length=500)
+    original_filename = models.CharField(max_length=255, blank=True)
+    size_bytes = models.BigIntegerField()
+    mime = models.CharField(max_length=100, default='application/pdf')
+    pages = models.IntegerField(null=True, blank=True)
+    content_hash = models.CharField(max_length=64, blank=True, help_text='SHA-256 of the file')
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='uploaded_versions',
+    )
+    note = models.TextField(blank=True, help_text='What changed in this version')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'score_versions'
+        ordering = ['-number']
+        constraints = [
+            models.UniqueConstraint(fields=['score', 'number'], name='unique_score_version_number'),
+        ]
+
+    def __str__(self):
+        return f'{self.score.title} v{self.number}'
+
+    @property
+    def is_current(self):
+        return self.score.current_version_id == self.pk

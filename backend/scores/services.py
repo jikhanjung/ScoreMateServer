@@ -5,9 +5,9 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Max
 
-from .models import Score
+from .models import Score, ScoreVersion
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +46,95 @@ def create_score(*, user, s3_key, size_bytes, title, mime='application/pdf', ori
     return score
 
 
-def delete_score(score):
-    """악보를 지우고, 쿼터는 **올린 사람**에게 돌려주고(앙상블 악보를 리더가 지워도), 파일을 지운다"""
-    s3_key, thumbnail_key, score_id = score.s3_key, score.thumbnail_key, score.id
+class VersionError(ValueError):
+    """판 규칙 위반 (예: 하나뿐인 판을 지우기)"""
+
+
+def _mirror(score, version):
+    """판을 '지금 쓰는 판'으로 — Score 의 파일 필드를 그 판으로 맞춘다(updated_at 이 바뀌어 동기화가 알아챈다)"""
+    score.current_version = version
+    score.s3_key = version.s3_key
+    score.original_filename = version.original_filename
+    score.size_bytes = version.size_bytes
+    score.mime = version.mime
+    score.pages = version.pages
+    score.content_hash = version.content_hash
+    score.save()
+
+
+def add_version(score, *, user, s3_key, size_bytes, original_filename='', mime='application/pdf', note='',
+                charge_quota=True):
+    """새 판을 올려 지금 쓰는 판으로 만든다. 쓰기 권한(score.can_edit)은 호출자가 확인한다.
+    쿼터는 **이 판을 올린 사람**에게 매긴다"""
     with transaction.atomic():
-        get_user_model().objects.filter(pk=score.user_id).update(
-            used_quota_mb=F('used_quota_mb') - size_mb(score.size_bytes))
+        locked = Score.objects.select_for_update().get(pk=score.pk)
+        # 지운 판의 번호도 다시 쓰지 않는다
+        number = max(locked.last_version_number, locked.versions.aggregate(n=Max('number'))['n'] or 0) + 1
+        locked.last_version_number = number
+        version = ScoreVersion.objects.create(
+            score=locked, number=number, s3_key=s3_key, original_filename=original_filename or '',
+            size_bytes=size_bytes, mime=mime or 'application/pdf', uploaded_by=user, note=note or '',
+        )
+        _mirror(locked, version)   # pages · content_hash 는 비고 처리 작업이 채운다
+        if charge_quota:
+            get_user_model().objects.filter(pk=user.pk).update(used_quota_mb=F('used_quota_mb') + size_mb(size_bytes))
+    start_processing(locked)
+    return version
+
+
+def make_current(score, version):
+    """예전 판으로 되돌린다(판은 지우지 않는다). 썸네일은 그 판으로 다시 만든다"""
+    if version.score_id != score.pk:
+        raise VersionError('Version does not belong to this score.')
+    with transaction.atomic():
+        _mirror(Score.objects.select_for_update().get(pk=score.pk), version)
+    from tasks.pdf_tasks import generate_thumbnail
+    try:
+        generate_thumbnail.delay(score.pk, page_number=1)
+    except Exception as e:
+        logger.warning(f"Failed to queue thumbnail for score {score.pk}: {e}")
+
+
+def delete_version(score, version):
+    """판 하나를 지운다. 하나뿐이면 안 된다(악보를 지운다). 지금 쓰는 판이면 남은 것 중 가장 최근 판으로.
+    쿼터는 그 판을 올린 사람에게 돌려준다"""
+    if version.score_id != score.pk:
+        raise VersionError('Version does not belong to this score.')
+    with transaction.atomic():
+        locked = Score.objects.select_for_update().get(pk=score.pk)
+        if locked.versions.count() <= 1:
+            raise VersionError('A score keeps at least one version. Delete the score instead.')
+        was_current = locked.current_version_id == version.pk
+        s3_key = version.s3_key
+        if version.uploaded_by_id:
+            get_user_model().objects.filter(pk=version.uploaded_by_id).update(
+                used_quota_mb=F('used_quota_mb') - size_mb(version.size_bytes))
+        version.delete()
+        if was_current:
+            _mirror(locked, locked.versions.order_by('-number').first())
+    from tasks.file_tasks import delete_single_file
+    delete_single_file.delay(s3_key)
+    if was_current:
+        make_current(locked, locked.current_version)   # 썸네일을 그 판으로
+
+
+def delete_score(score):
+    """악보와 모든 판을 지운다. 쿼터는 **판마다 올린 사람**에게 돌려준다(앙상블 악보를 리더가 지워도)"""
+    versions = list(score.versions.all())
+    refunds = {}
+    for version in versions:
+        if version.uploaded_by_id:
+            refunds[version.uploaded_by_id] = refunds.get(version.uploaded_by_id, 0) + size_mb(version.size_bytes)
+    if not versions:    # 판 없는 옛 행(이론상) — 올린 사람 기준
+        refunds[score.user_id] = size_mb(score.size_bytes)
+    s3_key, thumbnail_key, score_id = score.s3_key, score.thumbnail_key, score.id
+    other_keys = [v.s3_key for v in versions if v.s3_key != s3_key]
+    with transaction.atomic():
+        User = get_user_model()
+        for user_id, mb in refunds.items():
+            User.objects.filter(pk=user_id).update(used_quota_mb=F('used_quota_mb') - mb)
         score.delete()
-    from tasks.file_tasks import delete_score_files
+    from tasks.file_tasks import delete_score_files, delete_single_file
     delete_score_files.delay(s3_key, thumbnail_key, score_id)
+    for key in other_keys:
+        delete_single_file.delay(key)

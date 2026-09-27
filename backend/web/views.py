@@ -28,10 +28,11 @@ from ensembles.models import Ensemble, Membership, Invite
 from files.utils import LocalStorageHandler, generate_upload_s3_key, get_storage
 from scores.models import Score
 from scores.serializers import thumbnail_url
-from scores.services import create_score, delete_score
+from scores.services import VersionError, add_version, create_score, delete_score, delete_version, make_current
 
 from .forms import (
-    EnsembleForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, RegisterForm, ScoreEditForm, UploadForm,
+    EnsembleForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, NewVersionForm, RegisterForm, ScoreEditForm,
+    UploadForm,
     managed_ensembles,
 )
 
@@ -139,7 +140,7 @@ def _decorate(scores, user):
 @login_required
 def score_list(request):
     user = request.user
-    scores = Score.objects.readable_by(user).select_related('ensemble', 'user').order_by('-updated_at')
+    scores = Score.objects.readable_by(user).select_related('ensemble', 'user', 'current_version').order_by('-updated_at')
     q = request.GET.get('q', '').strip()
     where = request.GET.get('ensemble', '').strip()
     if q:
@@ -210,16 +211,73 @@ def score_detail(request, pk):
     score = _readable_score(request, pk)
     score.thumb = thumbnail_url(score)
     score.editable = score.can_edit(request.user)
-    return render(request, 'web/scores/detail.html', {'score': score})
+    versions = list(score.versions.select_related('uploaded_by'))
+    form = NewVersionForm(user=request.user) if score.editable else None
+    return render(request, 'web/scores/detail.html', {'score': score, 'versions': versions, 'version_form': form})
+
+
+def _version_or_404(score, number):
+    version = score.versions.filter(number=number).first()
+    if version is None:
+        raise Http404('No such version')
+    return version
 
 
 @login_required
-def score_file(request, pk, disposition):
-    """보기(브라우저 PDF 뷰어) · 받기(파일로 저장) — 짧은 서명 URL 로 보낸다. 파일은 Django 를 지나지 않는다"""
+def score_file(request, pk, disposition, number=None):
+    """보기(브라우저 PDF 뷰어) · 받기(파일로 저장) — 짧은 서명 URL 로 보낸다. 파일은 Django 를 지나지 않는다.
+    number 가 없으면 지금 쓰는 판"""
     score = _readable_score(request, pk)
-    filename = (score.original_filename or f'{score.title}.pdf') if disposition == 'download' else None
-    url = get_storage().generate_presigned_download_url(score.s3_key, expiry=300, filename=filename)['url']
+    if number is None:
+        key, original = score.s3_key, score.original_filename
+    else:
+        version = _version_or_404(score, number)
+        key, original = version.s3_key, version.original_filename
+    filename = None
+    if disposition == 'download':
+        stem = original.rsplit('.', 1)[0] if original else score.title
+        filename = f'{stem} (v{number}).pdf' if number is not None else (original or f'{score.title}.pdf')
+    url = get_storage().generate_presigned_download_url(key, expiry=300, filename=filename)['url']
     return HttpResponseRedirect(url)
+
+
+@login_required
+@require_POST
+def version_upload(request, pk):
+    score = _writable_score(request, pk)
+    form = NewVersionForm(request.POST, request.FILES, user=request.user)
+    if form.is_valid():
+        uploaded = form.cleaned_data['file']
+        key = _store_upload(request.user, uploaded)
+        version = add_version(score, user=request.user, s3_key=key, size_bytes=uploaded.size,
+                              original_filename=uploaded.name, note=form.cleaned_data['note'])
+        messages.success(request, f'판 {version.number} 을(를) 올렸습니다. 이제 이 판을 씁니다.')
+    else:
+        for errors in form.errors.values():
+            for error in errors:
+                messages.error(request, error)
+    return redirect(reverse('web:score_detail', args=[pk]) + '#versions')
+
+
+@login_required
+@require_POST
+def version_make_current(request, pk, number):
+    score = _writable_score(request, pk)
+    make_current(score, _version_or_404(score, number))
+    messages.success(request, f'판 {number} 으로 되돌렸습니다.')
+    return redirect(reverse('web:score_detail', args=[pk]) + '#versions')
+
+
+@login_required
+@require_POST
+def version_delete(request, pk, number):
+    score = _writable_score(request, pk)
+    try:
+        delete_version(score, _version_or_404(score, number))
+        messages.success(request, f'판 {number} 을(를) 지웠습니다.')
+    except VersionError:
+        messages.error(request, '판이 하나뿐이면 지울 수 없습니다. 악보를 지우세요.')
+    return redirect(reverse('web:score_detail', args=[pk]) + '#versions')
 
 
 @login_required
@@ -299,7 +357,7 @@ def ensemble_detail(request, pk):
     mine = ensemble.membership_of(request.user)
     # 총보가 파트 맨 앞에
     full_score = {'총보', 'score', 'full score', 'full'}
-    scores = sorted(ensemble.scores.select_related('user', 'ensemble'),
+    scores = sorted(ensemble.scores.select_related('user', 'ensemble', 'current_version'),
                     key=lambda s: (s.title, s.part_name.strip().lower() not in full_score, s.part_name))
     # 곡(제목)마다 파트를 묶는다 — 앙상블에서는 "블타바: 총보 · Guitar 1 · …" 로 찾는다
     songs = {}

@@ -6,6 +6,7 @@ import os
 import tempfile
 import logging
 from celery import shared_task
+from django.utils import timezone
 from django.conf import settings
 import pdfplumber
 from PIL import Image
@@ -36,7 +37,8 @@ def process_pdf_info(self, score_id):
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as temp_file:
             try:
                 # 저장소에서 바로 읽는다 (S3 든 서버 디스크든)
-                content = s3_handler.read_bytes(score.s3_key)
+                read_key = score.s3_key
+                content = s3_handler.read_bytes(read_key)
                 temp_file.write(content)
                 temp_file.flush()
                 
@@ -63,7 +65,14 @@ def process_pdf_info(self, score_id):
                     # 파일 내용의 SHA-256 — TV 가 받은 파일이 맞는지 확인하는 데 쓴다 (동기화 API)
                     score.content_hash = hashlib.sha256(content).hexdigest()
 
-                    score.save(update_fields=['pages', 'title', 'content_hash'])
+                    # 읽은 파일의 **판**에 쓴다. 악보 행은 그 파일이 아직 지금 쓰는 판일 때만 —
+                    # 읽는 사이 새 판이 올라왔으면(워커 실행) 옛 파일의 쪽수로 새 판을 덮지 않는다
+                    from scores.models import ScoreVersion
+                    ScoreVersion.objects.filter(score=score, s3_key=read_key).update(
+                        pages=page_count, content_hash=score.content_hash)
+                    Score.objects.filter(pk=score.pk, s3_key=read_key).update(
+                        pages=page_count, content_hash=score.content_hash, title=score.title,
+                        updated_at=timezone.now())   # 동기화 커서가 쪽수 · 해시가 채워진 것을 알아채게
                 
                 logger.info(f"Successfully extracted PDF info for score {score_id}: {page_count} pages")
                 

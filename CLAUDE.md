@@ -16,15 +16,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-27) — 236 backend tests passing, 0.2.0 in production
+### Status (2026-09-27) — 254 backend tests passing, 0.3.0 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
 | S1 | Ensemble · Membership · Invite, `Score.ensemble`, permissions (server; web screens pending) | ✅ devlog 055 |
 | S5 | Deploy on dolfinid — API only, local file storage, fcmanager deploy contract (done ahead of S2) | ✅ devlog 056 |
 | Web | Django templates: login, scores, upload, ensembles/members/invites, join links, account | ✅ devlog 057 |
-| S2 | ScoreVersion + data migration, new-version upload (API + web) | next |
-| S3 | Device · DeviceAuthorization · `/activate` (RFC 8628) | |
+| S2 | ScoreVersion + data migration, new-version upload / revert / delete (API + web) | ✅ devlog 058 |
+| S3 | Device · DeviceAuthorization · `/activate` (RFC 8628) | next |
 | S4 | Sync API (cursor, soft delete, download redirect) | |
 | S6 | (2nd) Google login, setlist sync | |
 
@@ -193,6 +193,8 @@ item = SetlistItemFactory(setlist=setlist, score=score)
 - Business logic in models or service modules
 - Docstrings for public methods and complex logic
 - Always create and review migrations; `db_index=True` on frequently queried fields
+- **Migration files must be pure ASCII** (enforced by `tests/test_migrations_ascii.py`) — keep model `help_text`/`verbose_name` in English, put Korean labels in forms
+- Score file fields mirror `current_version`; change them only through `scores/services.py` (`add_version`, `make_current`, `delete_version`)
 
 ## Background Task Patterns
 ```python

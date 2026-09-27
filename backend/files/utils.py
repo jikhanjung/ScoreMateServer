@@ -71,8 +71,8 @@ class S3Handler:
             logger.error(f"Failed to generate upload URL for {s3_key}: {e}")
             raise
     
-    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True, filename=None):
-        """Generate presigned URL for file download"""
+    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True, filename=None, variant=None):
+        """Generate presigned URL for file download (variant 는 local 저장소용 — S3 URL 은 요청마다 다르다)"""
         if expiry is None:
             expiry = settings.PRESIGNED_URL_EXPIRY
         
@@ -201,12 +201,15 @@ class LocalStorageHandler:
         token = sign_blob_token({'op': 'put', 'k': s3_key, 'ct': content_type}, expiry)
         return {'url': self._url(token), 'headers': {'Content-Type': content_type}, 'method': 'PUT'}
 
-    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True, filename=None):
+    def generate_presigned_download_url(self, s3_key, expiry=None, use_public_endpoint=True, filename=None, variant=None):
+        """variant: 같은 키의 내용이 바뀔 때(새 판의 표지 썸네일) URL 을 바꿔 브라우저 캐시를 피한다"""
         expiry = expiry or settings.PRESIGNED_URL_EXPIRY
         self.path_for(s3_key)
         payload = {'op': 'get', 'k': s3_key}
         if filename:
             payload['fn'] = filename
+        if variant is not None:
+            payload['v'] = variant
         return {'url': self._url(sign_blob_token(payload, expiry)), 'method': 'GET', 'expires_in': expiry}
 
     def check_file_exists(self, s3_key):

@@ -92,7 +92,8 @@ def call_astra(images, prompt, workdir, effort, timeout):
     (workdir / 'stderr.log').write_text(stderr)
     events = [json.loads(line) for line in stdout.splitlines() if line.strip()]
     if code or not any(e.get('type') == 'turn.completed' for e in events):
-        raise RuntimeError(f'codex failed (exit {code}); see {workdir}/stderr.log')
+        tail = ' | '.join((stderr or '').strip().splitlines()[-3:])   # 로그인 만료(401)를 레인이 알아보게 run.log 에 남긴다
+        raise RuntimeError(f'codex failed (exit {code}): {tail} — see {workdir}/stderr.log')
     usage = [e.get('usage') for e in events if e.get('type') == 'turn.completed']
     return json.loads(response.read_text()), round(time.monotonic() - start, 1), usage
 

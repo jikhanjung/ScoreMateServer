@@ -79,6 +79,10 @@ if [ "${RC}" -eq 0 ]; then
     STATUS=ok
 elif [ "${RC}" -eq 3 ]; then
     STATUS=failed
+elif tail -n 50 "${WORK}/run.log" | grep -qiE '401|unauthori[sz]ed|log ?in|refresh token'; then
+    # 로그인 문제는 악보 탓이 아니다 — 시도 횟수에 넣지 않는다(넣으면 로그인이 풀린 사이 멀쩡한 악보가 '실패'로 기록된다)
+    log "ERROR codex 로그인 필요(토큰 만료?) — codex logout && codex login --device-auth. v${VID} 는 그대로 대기"
+    exit 1
 else
     TRIES=$(( $(cat "${WORK}/tries" 2>/dev/null || echo 0) + 1 ))
     echo "${TRIES}" > "${WORK}/tries"

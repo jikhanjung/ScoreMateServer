@@ -305,3 +305,43 @@ class BackfillMigrationTest(TransactionTestCase):
         executor = MigrationExecutor(connection)
         executor.loader.build_graph()
         executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+class DuplicateUploadPromptTest(VersionTestBase):
+    """TV P06 §2 — 같은 곳에 같은 제목 · 파트를 올리면 묻는다: 새 판으로(권장) / 따로"""
+
+    def post(self, **extra):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        data = {'files': SimpleUploadedFile('moldau.pdf', PDF, content_type='application/pdf'),
+                'title': ' moldau ', 'ensemble': self.ensemble.pk, **extra}
+        return self.client.post(reverse('web:score_upload'), data)
+
+    def test_asks_first(self):
+        self.client.force_login(self.leader)
+        response = self.post()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '제목 · 파트가 같은 악보가 이미 있습니다')
+        self.assertContains(response, '새 판으로 올리기')
+        self.assertEqual(Score.objects.filter(ensemble=self.ensemble).count(), 1)
+        self.assertEqual(self.score.versions.count(), 1)
+
+    def test_as_new_version(self):
+        self.client.force_login(self.leader)
+        response = self.post(duplicates='version', note='42쪽까지')
+        self.assertRedirects(response, reverse('web:score_detail', args=[self.score.pk]))
+        self.assertEqual(Score.objects.filter(ensemble=self.ensemble).count(), 1)
+        self.reload(self.score)
+        self.assertEqual((self.score.current_version.number, self.score.current_version.note), (2, '42쪽까지'))
+
+    def test_as_separate_score(self):
+        self.client.force_login(self.leader)
+        self.post(duplicates='separate')
+        self.assertEqual(Score.objects.filter(ensemble=self.ensemble, title__iexact='moldau').count(), 2)
+
+    def test_different_part_or_place_is_not_a_duplicate(self):
+        self.client.force_login(self.leader)
+        response = self.post(part_name='Guitar 1')
+        self.assertEqual(response.status_code, 302)                       # 파트가 다르면 묻지 않는다
+        response = self.post(ensemble='')                                  # 내 악보 칸에는 없다
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Score.objects.filter(title__iexact='moldau').count(), 3)

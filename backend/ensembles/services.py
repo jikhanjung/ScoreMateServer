@@ -85,6 +85,28 @@ def remove_member(ensemble, actor, target):
     target.delete()
 
 
+def update_ensemble(ensemble, actor, name=None, description=None):
+    """앙상블 정보 바꾸기 — API 와 웹이 이 하나로(규칙이 한 곳에 있게)
+
+    이름이 바뀌면 그 앙상블 악보의 updated_at 을 올린다: TV 는 앙상블 이름으로 폴더를 만드는데, 악보가 다시 오지 않으면
+    옛 이름 폴더에 머문다(TV P06 §1). 설명만 바꾸면 올리지 않는다 — TV 가 쓰지 않는 필드라 재전송이 필요 없다.
+    """
+    require_manager(ensemble, actor, 'Only owners and leaders can edit the ensemble.')
+    old_name = ensemble.name
+    if name is not None:
+        name = name.strip()
+        if not name:
+            raise RuleError('name', 'Name cannot be empty')
+        ensemble.name = name
+    if description is not None:
+        ensemble.description = description
+    with transaction.atomic():
+        ensemble.save()
+        if ensemble.name != old_name:
+            ensemble.scores.update(updated_at=timezone.now())
+    return ensemble
+
+
 def delete_ensemble(ensemble, actor):
     """악보는 지우지 않는다 — Score.ensemble 이 SET_NULL 이라 올린 사람의 개인 악보로 돌아간다"""
     if not ensemble.is_owner(actor):

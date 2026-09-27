@@ -81,6 +81,11 @@ class UploadForm(forms.Form):
     instrumentation = forms.CharField(label='편성', max_length=255, required=False)
     tags = forms.CharField(label='태그', max_length=500, required=False, help_text='쉼표로 나눕니다.')
     note = forms.CharField(label='메모', required=False, widget=forms.Textarea(attrs={'rows': 3}))
+    # 같은 제목 · 파트가 이미 있을 때만 보인다(뷰가 알림과 함께) — 비어 있으면 묻는다
+    duplicates = forms.ChoiceField(
+        label='같은 제목 · 파트의 악보가 있을 때', required=False, widget=forms.RadioSelect,
+        choices=[('version', '새 판으로 올리기 (권장) — 멤버 TV 에 같은 파일 자리로 들어간다'),
+                 ('separate', '새 악보로 따로 올리기')])
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)

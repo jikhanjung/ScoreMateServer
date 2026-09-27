@@ -33,7 +33,9 @@ from files.utils import LocalStorageHandler, generate_upload_s3_key, get_storage
 from scores.models import Score
 from setlists.models import Setlist, SetlistItem
 from scores.serializers import thumbnail_url
-from scores.services import VersionError, add_version, create_score, delete_score, delete_version, make_current
+from scores.services import (
+    VersionError, add_version, create_score, delete_score, delete_version, make_current, same_title_and_part,
+)
 
 from . import google
 from .forms import (
@@ -209,21 +211,41 @@ def score_upload(request):
     if request.GET.get('ensemble', '').isdigit():
         initial['ensemble'] = int(request.GET['ensemble'])
     form = UploadForm(request.POST or None, request.FILES or None, user=user, initial=initial)
+    context = {'form': form, 'max_mb': settings.MAX_UPLOAD_SIZE // (1024 * 1024), 'duplicates': []}
     if request.method == 'POST' and form.is_valid():
         ensemble = form.cleaned_data['ensemble']
-        created = []
-        for uploaded, title, part in form.items():
+        items = list(form.items())
+        # 같은 곳에 제목 · 파트가 같은 악보가 있으면 먼저 묻는다 — 대개 수정판을 새 악보로 올리는 경우(새 판이 맞다)
+        matches = [(title, part, same_title_and_part(user, ensemble, title, part).first()) for _, title, part in items]
+        duplicates = [(title, part, existing) for title, part, existing in matches if existing is not None]
+        choice = form.cleaned_data['duplicates']
+        if duplicates and not choice:
+            context['duplicates'] = duplicates
+            return render(request, 'web/scores/upload.html', context)
+
+        created, versioned = [], []
+        for (uploaded, title, part), (_, _, existing) in zip(items, matches):
             key = _store_upload(user, uploaded)
+            if existing is not None and choice == 'version' and existing.can_edit(user):
+                version = add_version(existing, user=user, s3_key=key, size_bytes=uploaded.size,
+                                      original_filename=uploaded.name, note=form.cleaned_data['note'])
+                versioned.append((existing, version))
+                continue
             created.append(create_score(
                 user=user, s3_key=key, size_bytes=uploaded.size, title=title, original_filename=uploaded.name,
                 composer=form.cleaned_data['composer'], instrumentation=form.cleaned_data['instrumentation'],
                 tags=form.tag_list(), note=form.cleaned_data['note'], ensemble=ensemble, part_name=part,
             ))
-        messages.success(request, f'{len(created)}개를 올렸습니다.')
-        if len(created) == 1:
-            return redirect('web:score_detail', pk=created[0].pk)
+        parts = []
+        if created:
+            parts.append(f'{len(created)}개를 새로 올렸습니다')
+        if versioned:
+            parts.append(f'{len(versioned)}개는 새 판으로 올렸습니다')
+        messages.success(request, ', '.join(parts) + '.')
+        if len(created) + len(versioned) == 1:
+            return redirect('web:score_detail', pk=(created[0].pk if created else versioned[0][0].pk))
         return redirect(reverse('web:ensemble_detail', args=[ensemble.pk]) if ensemble else reverse('web:scores'))
-    return render(request, 'web/scores/upload.html', {'form': form, 'max_mb': settings.MAX_UPLOAD_SIZE // (1024 * 1024)})
+    return render(request, 'web/scores/upload.html', context)
 
 
 def _readable_score(request, pk):
@@ -416,9 +438,11 @@ def ensemble_detail(request, pk):
 def ensemble_edit(request, pk):
     ensemble = _my_ensemble(request, pk)
     ensemble_services.require_manager(ensemble, request.user)
-    form = EnsembleForm(request.POST, instance=ensemble)
+    # ModelForm(instance=…) 은 is_valid() 때 instance 를 바꾼다 — 폼에는 복사본을 주고 저장은 서비스로(이름 변경 → TV 재전송)
+    form = EnsembleForm(request.POST, instance=Ensemble(pk=ensemble.pk, name=ensemble.name))
     if form.is_valid():
-        form.save()
+        ensemble_services.update_ensemble(ensemble, request.user, name=form.cleaned_data['name'],
+                                          description=form.cleaned_data['description'])
         messages.success(request, '저장했습니다.')
     else:
         messages.error(request, '이름을 적어 주세요.')

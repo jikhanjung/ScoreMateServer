@@ -6,7 +6,7 @@ import tempfile
 from datetime import timedelta
 from pathlib import Path
 
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -267,3 +267,55 @@ class DeviceSyncTest(SyncTestBase):
         device_services.revoke(device)
         self.assertEqual(tv.get('/api/v1/sync/scores/').status_code, 401)
         self.assertFalse(Device.objects.get().is_active)
+
+
+class EnsembleRenameSyncTest(SyncTestBase):
+    """TV P06 §1 — 앙상블 이름을 바꾸면(API · 웹 어느 쪽이든) 그 앙상블 악보가 새 이름으로 다시 온다"""
+
+    def leader_client(self):
+        client = APIClient()
+        client.force_authenticate(user=self.leader)
+        return client
+
+    def test_rename_via_api_resends_that_ensembles_scores(self):
+        self.score(self.leader, 'Moldau', self.ensemble)
+        self.score(self.me, 'Mine')                      # 다른 악보는 다시 오지 않는다
+        first = self.sync()
+
+        response = self.leader_client().patch(f'/api/v1/ensembles/{self.ensemble.pk}/',
+                                              {'name': 'Guitar Quartet'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['name'], 'Guitar Quartet')
+
+        second = self.sync(first['cursor'])
+        self.assertEqual(self.titles(second), ['Moldau'])
+        self.assertEqual(second['scores'][0]['ensemble']['name'], 'Guitar Quartet')
+
+    def test_rename_via_web_resends_too(self):
+        self.score(self.leader, 'Moldau', self.ensemble)
+        first = self.sync()
+        web = Client()
+        web.force_login(self.leader)
+        web.post(reverse('web:ensemble_edit', args=[self.ensemble.pk]), {'name': 'Guitar Quartet', 'description': ''})
+        self.ensemble.refresh_from_db()
+        self.assertEqual(self.ensemble.name, 'Guitar Quartet')
+        second = self.sync(first['cursor'])
+        self.assertEqual(self.titles(second), ['Moldau'])
+        self.assertEqual(second['scores'][0]['ensemble']['name'], 'Guitar Quartet')
+
+    def test_description_only_does_not_resend(self):
+        self.score(self.leader, 'Moldau', self.ensemble)
+        first = self.sync()
+        self.assertEqual(self.leader_client().patch(f'/api/v1/ensembles/{self.ensemble.pk}/', {'description': 'Tue'},
+                                                    format='json').status_code, 200)
+        web = Client()
+        web.force_login(self.leader)
+        web.post(reverse('web:ensemble_edit', args=[self.ensemble.pk]), {'name': 'Guitar Ensemble', 'description': 'Wed'})
+        self.assertEqual(self.sync(first['cursor'])['scores'], [])
+
+    def test_member_cannot_rename(self):
+        client = APIClient()
+        client.force_authenticate(user=self.me)
+        self.assertEqual(client.patch(f'/api/v1/ensembles/{self.ensemble.pk}/', {'name': 'x'}, format='json').status_code, 403)
+        self.assertEqual(self.leader_client().patch(f'/api/v1/ensembles/{self.ensemble.pk}/', {'name': '  '},
+                                                    format='json').status_code, 400)

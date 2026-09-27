@@ -182,3 +182,14 @@ def save_analysis(score, *, user, analyzer, analyzer_version, sha256, data, devi
             analysis = existing
         Score.objects.filter(pk=score.pk).update(updated_at=timezone.now())
     return analysis, existing is None
+
+
+def same_title_and_part(user, ensemble, title, part_name):
+    """같은 곳(그 앙상블, 또는 이 사람의 개인 악보)에 제목 · 파트가 같은 악보 — 대소문자 · 앞뒤 공백 무시(TV 파일 이름 규칙과 같게)
+
+    TV 는 같은 폴더에 같은 이름이 둘이면 파일 이름에 [#id] 를 붙인다(TV P06 §2). 대개는 수정판을 새 악보로 올린 경우다.
+    """
+    queryset = Score.objects.filter(title__iexact=(title or '').strip(), part_name__iexact=(part_name or '').strip())
+    if ensemble is not None:
+        return queryset.filter(ensemble=ensemble).order_by('-updated_at')
+    return queryset.filter(ensemble__isnull=True, user=user).order_by('-updated_at')

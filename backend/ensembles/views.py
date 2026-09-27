@@ -67,8 +67,12 @@ class EnsembleViewSet(viewsets.ModelViewSet):
         serializer.instance = ensemble
 
     def perform_update(self, serializer):
-        services.require_manager(serializer.instance, self.request.user, 'Only owners and leaders can edit the ensemble.')
-        serializer.save()
+        data = serializer.validated_data
+        try:
+            serializer.instance = services.update_ensemble(
+                serializer.instance, self.request.user, name=data.get('name'), description=data.get('description'))
+        except services.RuleError as exc:
+            raise self._rule(exc)
 
     def perform_destroy(self, instance):
         services.delete_ensemble(instance, self.request.user)

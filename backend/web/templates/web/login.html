@@ -1,0 +1,19 @@
+{% extends 'web/base.html' %}
+{% block title %}로그인{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>로그인</h1>
+  <p class="muted">앙상블 악보를 올리고 받아 보는 곳입니다.</p>
+  <div class="box">
+    <form method="post" class="stack">{% csrf_token %}
+      {% include 'web/_form_errors.html' %}
+      {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn primary" type="submit">로그인</button>
+    </form>
+  </div>
+  {% if registration_open %}
+  <p class="muted small" style="margin-top:1rem">계정이 없으면 <a href="{% url 'web:register' %}{% if next %}?next={{ next|urlencode }}{% endif %}">가입</a></p>
+  {% endif %}
+</div>
+{% endblock %}

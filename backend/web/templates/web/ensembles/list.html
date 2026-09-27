@@ -1,0 +1,43 @@
+{% extends 'web/base.html' %}
+{% block title %}앙상블{% endblock %}
+{% block content %}
+<div class="head"><div><h1>앙상블</h1><p class="muted">앙상블에 올린 악보는 그 멤버만 봅니다.</p></div></div>
+{% if memberships %}
+<div class="box table-wrap">
+  <table>
+    <thead><tr><th>이름</th><th>내 역할</th><th>내 파트</th><th>멤버</th><th>악보</th></tr></thead>
+    <tbody>
+    {% for m in memberships %}
+      <tr>
+        <td><a href="{% url 'web:ensemble_detail' m.ensemble.pk %}"><strong>{{ m.ensemble.name }}</strong></a></td>
+        <td>{% for key, label in role_labels.items %}{% if key == m.role %}{{ label }}{% endif %}{% endfor %}</td>
+        <td>{{ m.part|default:'—' }}</td>
+        <td>{{ m.member_count }}</td>
+        <td>{{ m.score_count }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="box empty">아직 속한 앙상블이 없습니다. 새로 만들거나, 받은 초대 링크를 여세요.</div>
+{% endif %}
+
+<h2>새 앙상블</h2>
+<div class="box" style="max-width:640px">
+  <form method="post" class="stack">{% csrf_token %}
+    {% include 'web/_form_errors.html' %}
+    {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
+    <button class="btn primary" type="submit">만들기</button>
+    <p class="muted small">만든 사람이 소유자가 됩니다.</p>
+  </form>
+</div>
+
+<h2>초대 코드로 들어가기</h2>
+<div class="box" style="max-width:640px">
+  <form method="get" action="{% url 'web:join_form' %}" class="row">
+    <input type="text" name="code" placeholder="예: BCDFG-HJKMN" aria-label="초대 코드" autocapitalize="characters" autocomplete="off">
+    <button class="btn" type="submit">확인</button>
+  </form>
+</div>
+{% endblock %}

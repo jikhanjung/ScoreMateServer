@@ -1,0 +1,136 @@
+/* ScoreMate 웹 — 라이트/다크, 모바일 우선. 외부 폰트 · 프레임워크 없음 */
+:root {
+  --bg: #f7f6f3; --surface: #ffffff; --surface-2: #f0eee9; --text: #1f1f1f; --muted: #6b6860;
+  --line: #e2dfd8; --accent: #2f5d8a; --accent-text: #ffffff; --accent-soft: #e6eef6;
+  --danger: #a33a2c; --danger-soft: #f7e8e5; --ok: #2d6a3e; --ok-soft: #e5f1e8; --warn-soft: #f6efdd;
+  --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a; --surface: #1d2024; --surface-2: #25292e; --text: #e8e6e1; --muted: #9a978f;
+    --line: #30343a; --accent: #7fb0e0; --accent-text: #0f1a25; --accent-soft: #1f2d3b;
+    --danger: #e38a7c; --danger-soft: #3a2320; --ok: #8cc79b; --ok-soft: #1f3226; --warn-soft: #36301f;
+    --shadow: none; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+h2 { font-size: 1.1rem; margin: 2rem 0 .75rem; }
+p { margin: .25rem 0 .75rem; }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+
+/* 머리 */
+.top { background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-inner { max-width: 1080px; margin: 0 auto; padding: .6rem 16px; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 1.05rem; color: var(--text); letter-spacing: -.01em; }
+.brand:hover { text-decoration: none; }
+.nav { display: flex; gap: .25rem; flex-wrap: wrap; flex: 1; }
+.nav a { color: var(--muted); padding: .3rem .6rem; border-radius: 8px; }
+.nav a:hover, .nav a.on { color: var(--text); background: var(--surface-2); text-decoration: none; }
+.who { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .9rem; }
+.who form { margin: 0; }
+.linkbtn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; padding: 0; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 1.25rem 16px 3rem; }
+.narrow { max-width: 420px; margin: 2rem auto; }
+.head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+footer { max-width: 1080px; margin: 0 auto; padding: 1rem 16px 2rem; color: var(--muted); font-size: .8rem; }
+
+/* 메시지 */
+.messages { list-style: none; padding: 0; margin: 0 0 1rem; }
+.messages li { padding: .6rem .8rem; border-radius: var(--radius); margin-bottom: .5rem; background: var(--accent-soft); }
+.messages .success { background: var(--ok-soft); }
+.messages .error { background: var(--danger-soft); }
+.messages .warning { background: var(--warn-soft); }
+
+/* 카드 · 상자 */
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.box + .box { margin-top: 1rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; color: var(--text); }
+.card:hover { text-decoration: none; border-color: var(--accent); }
+.thumb { aspect-ratio: 3 / 4; background: var(--surface-2); display: grid; place-items: center; overflow: hidden; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.thumb .ph { color: var(--muted); font-size: .8rem; }
+.card-body { padding: .55rem .7rem .7rem; }
+.card-title { font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.card-meta { color: var(--muted); font-size: .8rem; margin-top: .25rem; display: flex; flex-wrap: wrap; gap: .25rem; }
+.card-sub { color: var(--muted); font-size: .8rem; margin-top: .2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { display: inline-block; font-size: .72rem; padding: .05rem .45rem; border-radius: 99px; background: var(--accent-soft); color: var(--text); white-space: nowrap; }
+.badge.plain { background: var(--surface-2); }
+
+/* 표 */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-weight: 600; color: var(--muted); font-size: .8rem; }
+.table-wrap { overflow-x: auto; }
+
+/* 폼 */
+form.stack > * + * { margin-top: .8rem; }
+.field label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .25rem; }
+.field .help { color: var(--muted); font-size: .8rem; margin-top: .2rem; }
+.field .errorlist { list-style: none; padding: 0; margin: .25rem 0 0; color: var(--danger); font-size: .85rem; }
+.errorlist.nonfield { background: var(--danger-soft); color: var(--text); padding: .5rem .7rem; border-radius: var(--radius); list-style: none; margin: 0 0 .8rem; }
+input[type=text], input[type=email], input[type=password], input[type=number], input[type=search], select, textarea {
+  width: 100%; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: .5rem .6rem; }
+input[type=file] { font: inherit; max-width: 100%; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+.row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.row > input, .row > select { width: auto; flex: 1 1 140px; }
+.inline { display: inline; margin: 0; }
+
+.btn { display: inline-block; font: inherit; font-weight: 600; cursor: pointer; border-radius: 8px; padding: .5rem .9rem;
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); white-space: nowrap; }
+.btn:hover { text-decoration: none; border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.btn.danger { color: var(--danger); }
+.btn.danger.solid { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn.sm { padding: .25rem .6rem; font-size: .85rem; font-weight: 500; }
+.actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+/* 상세 */
+.detail { display: grid; grid-template-columns: 220px 1fr; gap: 1.5rem; align-items: start; }
+.detail .thumb { border-radius: var(--radius); border: 1px solid var(--line); }
+dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem; margin: 1rem 0; }
+dl.meta dt { color: var(--muted); }
+dl.meta dd { margin: 0; }
+@media (max-width: 640px) {
+  .top-inner { gap: .25rem .75rem; }
+  .brand { flex: 1; }
+  .nav { order: 3; flex: 1 0 100%; margin: 0 -.6rem; }
+  .detail { grid-template-columns: 1fr; }
+  .detail .thumb { max-width: 220px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+}
+
+.quota { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin: .4rem 0; }
+.quota span { display: block; height: 100%; background: var(--accent); }
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .05em; }
+.copy { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; }
+.empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
+details > summary { cursor: pointer; color: var(--accent); }
+.danger-zone { border-color: var(--danger-soft); }
+.pager { display: flex; gap: .75rem; justify-content: center; align-items: center; margin-top: 1.25rem; }
+
+/* 앙상블 곡 목록 — 곡마다 파트 칩 */
+.songs td:first-child { font-weight: 600; }
+.parts { display: flex; flex-wrap: wrap; gap: .35rem; }
+.chip { display: inline-block; padding: .2rem .6rem; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--text); font-size: .85rem; }
+.chip:hover { border-color: var(--accent); text-decoration: none; }
+
+/* 좁은 화면: 표의 행을 세로로 쌓는다 (멤버 · 초대 — 오른쪽 버튼이 잘리지 않게) */
+@media (max-width: 640px) {
+  table.stacked thead { display: none; }
+  table.stacked tr { display: block; padding: .6rem 0; border-bottom: 1px solid var(--line); }
+  table.stacked td { display: block; border: 0; padding: .2rem 0; text-align: left !important; min-width: 0 !important; }
+  table.stacked .row > input, table.stacked .row > select { flex: 1 1 100%; }
+}

@@ -1,0 +1,12 @@
+{% extends 'web/base.html' %}
+{% block title %}고치기 · {{ score.title }}{% endblock %}
+{% block content %}
+<div class="head"><div><h1>고치기</h1><p class="muted"><a href="{% url 'web:score_detail' score.pk %}">{{ score.title }}</a></p></div></div>
+<div class="box" style="max-width:640px">
+  <form method="post" class="stack">{% csrf_token %}
+    {% include 'web/_form_errors.html' %}
+    {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
+    <div class="actions"><button class="btn primary" type="submit">저장</button><a class="btn" href="{% url 'web:score_detail' score.pk %}">취소</a></div>
+  </form>
+</div>
+{% endblock %}

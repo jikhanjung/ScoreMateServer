@@ -1,0 +1,125 @@
+{% extends 'web/base.html' %}
+{% block title %}{{ ensemble.name }}{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>{{ ensemble.name }}</h1>
+    {% if ensemble.description %}<p>{{ ensemble.description }}</p>{% endif %}
+    <p class="muted small">내 역할: {% for key, label in role_labels.items %}{% if key == mine.role %}{{ label }}{% endif %}{% endfor %}{% if mine.part %} · 파트 {{ mine.part }}{% endif %}</p>
+  </div>
+  {% if mine.is_manager %}<a class="btn primary" href="{% url 'web:score_upload' %}?ensemble={{ ensemble.pk }}">악보 올리기</a>{% endif %}
+</div>
+
+<h2>악보 ({{ songs|length }}곡 · {{ scores|length }}개)</h2>
+{% if scores %}
+<div class="box table-wrap">
+  <table class="songs">
+    <thead><tr><th>곡</th><th>파트</th><th>작곡 · 편곡</th></tr></thead>
+    <tbody>
+    {% for song in songs %}
+      <tr>
+        <td>{{ song.title }}</td>
+        <td><div class="parts">{% for score in song.parts %}<a class="chip" href="{% url 'web:score_detail' score.pk %}">{{ score.part_name|default:'보기' }}</a>{% endfor %}</div></td>
+        <td class="muted small">{{ song.composer }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="box empty">아직 악보가 없습니다.{% if mine.is_manager %} <a href="{% url 'web:score_upload' %}?ensemble={{ ensemble.pk }}">올리기</a>{% endif %}</div>
+{% endif %}
+
+<h2>멤버 ({{ members|length }})</h2>
+<div class="box table-wrap">
+  <table class="stacked">
+    <thead><tr><th>이름</th><th>역할</th><th>파트</th><th></th></tr></thead>
+    <tbody>
+    {% for m in members %}
+      <tr>
+        <td>{{ m.user.username }}{% if m.user_id == user.id %} <span class="muted small">(나)</span>{% endif %}<div class="muted small">{{ m.user.email }}</div></td>
+        {% if mine.role == 'owner' or mine.is_manager or m.user_id == user.id %}
+        <td colspan="2">
+          <form method="post" action="{% url 'web:member_update' ensemble.pk m.user_id %}" class="row">{% csrf_token %}
+            {% if mine.role == 'owner' %}
+            <select name="role" aria-label="역할">{% for key, label in role_choices %}<option value="{{ key }}" {% if key == m.role %}selected{% endif %}>{% for k, l in role_labels.items %}{% if k == key %}{{ l }}{% endif %}{% endfor %}</option>{% endfor %}</select>
+            {% else %}
+            <span class="badge plain">{% for k, l in role_labels.items %}{% if k == m.role %}{{ l }}{% endif %}{% endfor %}</span>
+            {% endif %}
+            {% if mine.is_manager or m.user_id == user.id %}
+            <input type="text" name="part" value="{{ m.part }}" placeholder="파트" aria-label="파트" maxlength="100">
+            {% else %}<span>{{ m.part|default:'—' }}</span>{% endif %}
+            <button class="btn sm" type="submit">저장</button>
+          </form>
+        </td>
+        {% else %}
+        <td>{% for k, l in role_labels.items %}{% if k == m.role %}{{ l }}{% endif %}{% endfor %}</td>
+        <td>{{ m.part|default:'—' }}</td>
+        {% endif %}
+        <td style="text-align:right">
+          {% if m.user_id == user.id %}
+          <form method="post" action="{% url 'web:member_remove' ensemble.pk m.user_id %}" class="inline">{% csrf_token %}
+            <button class="btn sm danger" type="submit" data-confirm="{{ ensemble.name }} 에서 나갈까요? 이 앙상블의 악보가 더는 보이지 않습니다.">나가기</button>
+          </form>
+          {% elif mine.role == 'owner' or mine.role == 'leader' and m.role == 'member' %}
+          <form method="post" action="{% url 'web:member_remove' ensemble.pk m.user_id %}" class="inline">{% csrf_token %}
+            <button class="btn sm danger" type="submit" data-confirm="{{ m.user.username }} 을(를) 내보낼까요?">내보내기</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if mine.is_manager %}
+<h2 id="invites">초대 링크</h2>
+<div class="box">
+  <p class="muted small">링크를 받은 사람은 로그인(또는 가입)한 뒤 멤버로 들어옵니다. 역할은 소유자가 나중에 바꿉니다.</p>
+  <form method="post" action="{% url 'web:invite_create' ensemble.pk %}" class="row">{% csrf_token %}
+    <select name="expires_in_days" aria-label="유효 기간">{% for value, label in invite_form.fields.expires_in_days.choices %}<option value="{{ value }}" {% if value == '7' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    <input type="number" name="max_uses" min="1" max="1000" placeholder="최대 인원 (비우면 제한 없음)" aria-label="최대 인원">
+    <button class="btn primary" type="submit">링크 만들기</button>
+  </form>
+  {% if invites %}
+  <div class="table-wrap" style="margin-top:1rem">
+    <table class="stacked">
+      <thead><tr><th>링크</th><th>코드</th><th></th><th></th><th></th></tr></thead>
+      <tbody>
+      {% for invite in invites %}
+        <tr {% if not invite.is_usable %}class="muted"{% endif %}>
+          <td style="min-width:16rem">{% if invite.is_usable %}
+            <div class="row"><input class="copy" id="invite-{{ invite.pk }}" type="text" value="{{ invite.url }}" readonly aria-label="초대 링크"><button class="btn sm" type="button" data-copy="invite-{{ invite.pk }}" hidden>복사</button></div>
+            {% else %}{% if invite.revoked_at %}취소됨{% else %}쓸 수 없음{% endif %}{% endif %}</td>
+          <td class="code">{{ invite.code }}</td>
+          <td><span class="muted small">사용</span> {{ invite.uses }}{% if invite.max_uses %} / {{ invite.max_uses }}{% endif %}</td>
+          <td><span class="muted small">만료</span> {{ invite.expires_at|date:'Y-m-d H:i'|default:'없음' }}</td>
+          <td>{% if invite.is_usable %}<form method="post" action="{% url 'web:invite_revoke' ensemble.pk invite.pk %}" class="inline">{% csrf_token %}<button class="btn sm danger" type="submit">취소</button></form>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<h2>앙상블 정보</h2>
+<div class="box" style="max-width:640px">
+  <form method="post" action="{% url 'web:ensemble_edit' ensemble.pk %}" class="stack">{% csrf_token %}
+    {% with form=edit_form %}{% for field in form %}{% include 'web/_field.html' %}{% endfor %}{% endwith %}
+    <button class="btn" type="submit">저장</button>
+  </form>
+</div>
+{% endif %}
+
+{% if mine.role == 'owner' %}
+<h2>앙상블 지우기</h2>
+<div class="box danger-zone" style="max-width:640px">
+  <p class="muted">앙상블과 멤버 · 초대가 지워집니다. 악보는 지우지 않고 올린 사람의 개인 악보로 돌아갑니다.</p>
+  <form method="post" action="{% url 'web:ensemble_delete' ensemble.pk %}">{% csrf_token %}
+    <button class="btn danger solid" type="submit" data-confirm="{{ ensemble.name }} 을(를) 지울까요? 되돌릴 수 없습니다.">앙상블 지우기</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

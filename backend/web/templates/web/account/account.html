@@ -1,0 +1,23 @@
+{% extends 'web/base.html' %}
+{% block title %}계정{% endblock %}
+{% block content %}
+<div class="head"><div><h1>계정</h1></div></div>
+<div class="box" style="max-width:640px">
+  <dl class="meta" style="margin-top:0">
+    <dt>이름</dt><dd>{{ user.username }}</dd>
+    <dt>이메일</dt><dd>{{ user.email }}</dd>
+    <dt>올린 악보</dt><dd>{{ score_count }}개</dd>
+  </dl>
+  <div class="small">저장 공간 {{ user.used_quota_mb }}MB / {{ user.total_quota_mb }}MB</div>
+  <div class="quota"><span style="width:{{ used_pct }}%"></span></div>
+  <p class="muted small">앙상블에 올린 악보도 올린 사람의 공간을 씁니다.</p>
+</div>
+<h2>비밀번호 바꾸기</h2>
+<div class="box" style="max-width:640px">
+  <form method="post" class="stack">{% csrf_token %}
+    {% include 'web/_form_errors.html' %}
+    {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
+    <button class="btn" type="submit">바꾸기</button>
+  </form>
+</div>
+{% endblock %}

@@ -28,3 +28,10 @@
 - local 저장소에서 파일을 지우면 비게 된 디렉터리도 지운다
 - `prune.sh` 추가 (이 서비스 이미지만, 기본 3개 보존)
 - 마이그레이션 없음
+
+### 0.2.0 (2026-09-27) — 웹 화면 (Django 템플릿)
+- `/` 가 웹이 됐다(로그인 · 악보 · 올리기 · 앙상블 · 초대 링크 `/join/<code>/` · 계정). API 안내 JSON 은 `/api/v1/` 에만 남는다
+- 세션 로그인 — `.env` 변경 없음(CSRF_TRUSTED_ORIGINS · 보안 쿠키는 compose 에 이미 있다)
+- 가입을 닫으려면 `.env` 에 `REGISTRATION_OPEN=false` (웹 · API 가입이 함께 닫힌다) 후 `docker compose up -d --force-recreate`
+- 웹 업로드 임시 파일: `/srv/scoremate/files/.incoming` (compose `FILE_UPLOAD_TEMP_DIR`) — 요청이 끝나면 지워진다
+- 마이그레이션 없음

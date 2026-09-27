@@ -1,0 +1,23 @@
+{% extends 'web/base.html' %}
+{% block title %}앙상블 초대{% endblock %}
+{% block content %}
+<div class="narrow">
+  {% if invite %}
+  <h1>{{ invite.ensemble.name }}</h1>
+  <div class="box">
+    <p>이 앙상블에 초대받았습니다.</p>
+    <p class="muted small">멤버 {{ member_count }}명{% if invite.expires_at %} · {{ invite.expires_at|date:'Y-m-d H:i' }} 까지{% endif %}</p>
+    <form method="post">{% csrf_token %}<button class="btn primary" type="submit">들어가기</button></form>
+  </div>
+  {% else %}
+  <h1>초대 코드</h1>
+  {% if error %}<ul class="messages"><li class="error">{{ error }}</li></ul>{% endif %}
+  <div class="box">
+    <form method="get" action="{% url 'web:join_form' %}" class="stack">
+      {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
+      <button class="btn primary" type="submit">확인</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

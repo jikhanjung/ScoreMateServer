@@ -1,0 +1,33 @@
+{% extends 'web/base.html' %}
+{% block title %}악보{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>악보</h1><p class="muted">내 악보와 내가 속한 앙상블의 악보 {{ page.paginator.count }}개</p></div>
+  <a class="btn primary" href="{% url 'web:score_upload' %}">올리기</a>
+</div>
+<form method="get" class="row" style="margin-bottom:1rem">
+  <input type="search" name="q" value="{{ q }}" placeholder="제목 · 작곡가 · 편성 · 파트" aria-label="검색">
+  <select name="ensemble" aria-label="어디의 악보">
+    <option value="">전체</option>
+    <option value="personal" {% if where == 'personal' %}selected{% endif %}>내 악보만</option>
+    {% for e in ensembles %}<option value="{{ e.pk }}" {% if where == e.pk|stringformat:'s' %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">찾기</button>
+</form>
+{% if page.object_list %}
+<div class="grid">
+  {% for score in page.object_list %}{% include 'web/scores/_card.html' with show_ensemble=True %}{% endfor %}
+</div>
+{% if page.has_other_pages %}
+<div class="pager">
+  {% if page.has_previous %}<a href="?q={{ q|urlencode }}&ensemble={{ where }}&page={{ page.previous_page_number }}">← 이전</a>{% endif %}
+  <span class="muted small">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a href="?q={{ q|urlencode }}&ensemble={{ where }}&page={{ page.next_page_number }}">다음 →</a>{% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="box empty">
+  {% if q or where %}찾는 악보가 없습니다.{% else %}아직 악보가 없습니다. <a href="{% url 'web:score_upload' %}">PDF 를 올리거나</a>, 초대 링크로 앙상블에 들어가세요.{% endif %}
+</div>
+{% endif %}
+{% endblock %}

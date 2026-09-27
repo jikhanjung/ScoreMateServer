@@ -18,6 +18,7 @@ from django.shortcuts import get_object_or_404
 import logging
 
 from scores.models import Score
+from scores.services import create_score
 from .serializers import (
     FileUploadRequestSerializer,
     FileUploadResponseSerializer,
@@ -215,9 +216,6 @@ class UploadConfirmationView(APIView):
             # Confirm quota usage
             used_mb = QuotaManager.confirm_quota(user, upload_id)
             
-            # Create score with uploaded file
-            from scores.models import Score
-            
             # Generate S3 key from reservation data
             s3_key = reservation_data['s3_key']
             
@@ -230,7 +228,8 @@ class UploadConfirmationView(APIView):
                 if s3_filename and s3_filename != 'original.pdf':
                     original_filename = s3_filename
             
-            score = Score.objects.create(
+            # 쿼터는 위 confirm_quota 가 이미 더했다
+            score = create_score(
                 user=user,
                 title=serializer.validated_data['title'],
                 original_filename=original_filename,
@@ -242,18 +241,8 @@ class UploadConfirmationView(APIView):
                 tags=serializer.validated_data.get('tags', []),
                 ensemble=serializer.validated_data.get('ensemble'),
                 part_name=serializer.validated_data.get('part_name', ''),
+                charge_quota=False,
             )
-            
-            # Queue background tasks for PDF processing (asynchronously)
-            try:
-                from tasks.pdf_tasks import process_pdf_info, generate_thumbnail
-                process_pdf_info.delay(score.id)
-                generate_thumbnail.delay(score.id, page_number=1)
-            except Exception as e:
-                # Log but don't fail the upload
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Failed to queue background tasks for score {score.id}: {e}")
             
             return Response({
                 'message': 'Upload confirmed and score created',

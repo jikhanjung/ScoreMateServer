@@ -28,6 +28,10 @@ class UserRegistrationView(generics.CreateAPIView):
     
     def create(self, request, *args, **kwargs):
         """Create a new user and return JWT tokens"""
+        from django.conf import settings
+        from rest_framework.exceptions import PermissionDenied
+        if not settings.REGISTRATION_OPEN:  # 웹 가입과 같은 스위치
+            raise PermissionDenied('Registration is closed.')
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()

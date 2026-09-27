@@ -1,9 +1,6 @@
 """
 Serializers for ensembles app
 """
-from datetime import timedelta
-
-from django.utils import timezone
 from rest_framework import serializers
 
 from .models import Ensemble, Membership, Invite
@@ -93,14 +90,6 @@ class InviteSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'code', 'expires_at', 'uses', 'revoked_at', 'created_at']
         extra_kwargs = {'max_uses': {'min_value': 1}}
 
-    def create(self, validated_data):
-        if 'expires_in_days' in validated_data:
-            days = validated_data.pop('expires_in_days')
-            validated_data['expires_at'] = timezone.now() + timedelta(days=days) if days else None
-        else:
-            validated_data['expires_at'] = Invite.default_expiry()
-        return super().create(validated_data)
-
 
 class InvitePreviewSerializer(serializers.Serializer):
     """초대 링크를 연 사람에게 보여 줄 것 — 멤버 목록 · 악보는 가입 전에는 보이지 않는다"""
@@ -117,4 +106,5 @@ class JoinSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=32)
 
     def validate_code(self, value):
-        return value.strip().upper().replace('-', '')
+        from .services import normalize_code
+        return normalize_code(value)

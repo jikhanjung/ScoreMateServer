@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **ScoreMateServer** - Django REST API backend for ScoreMate sheet music management, being extended (2026-09) into **ensemble score sharing** for Google TV clients (MrgqPdfViewer)
 - **Stack**: Python 3.12, Django 5.2 LTS, Django REST Framework, SQLite (default) / PostgreSQL (optional), Celery (optional), storage = local disk (prod) or MinIO/S3 (dev)
 - **Production**: https://scoremate.noematica.kr (API only) on dolfinid — see `deploy/README.md`, `DEPLOY.md`
-- **Web**: to be rebuilt as **Django templates**. `frontend/` (Next.js) is legacy — not deployed, do not extend it
+- **Web**: **Django templates** in `backend/web/` (session login). `frontend/` (Next.js) is legacy — not deployed, do not extend it
 - **Purpose**: User accounts, PDF sheet music storage, library metadata, setlists, page count / thumbnail processing, quota management — and next: ensembles, score versions, TV device linking, incremental sync API
 - **Current plan**: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md` (stages S0–S6). Read it before starting new feature work.
 
@@ -16,14 +16,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-27) — 208 backend tests passing, 0.1.1 in production
+### Status (2026-09-27) — 236 backend tests passing, 0.2.0 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
 | S1 | Ensemble · Membership · Invite, `Score.ensemble`, permissions (server; web screens pending) | ✅ devlog 055 |
 | S5 | Deploy on dolfinid — API only, local file storage, fcmanager deploy contract (done ahead of S2) | ✅ devlog 056 |
-| Web | Django templates: login, ensembles/invites, upload, `/activate` | next |
-| S2 | ScoreVersion + data migration, new-version upload | |
+| Web | Django templates: login, scores, upload, ensembles/members/invites, join links, account | ✅ devlog 057 |
+| S2 | ScoreVersion + data migration, new-version upload (API + web) | next |
 | S3 | Device · DeviceAuthorization · `/activate` (RFC 8628) | |
 | S4 | Sync API (cursor, soft delete, download redirect) | |
 | S6 | (2nd) Google login, setlist sync | |
@@ -72,15 +72,15 @@ Note: `scores/migrations/0001_initial.py` was edited in place for the SQLite swi
 - **Django API** (`backend/`): REST endpoints, JWT auth, presigned URL generation
 - **DB**: SQLite by default; PostgreSQL via `DATABASE_URL` (no Postgres-only features may be used)
 - **Background tasks**: Celery task code (`tasks/`); eager in-process without `REDIS_URL`, broker + worker with it
-- **Object storage**: MinIO/S3 via boto3 presigned URLs
-- **Web client**: Next.js (`frontend/`)
+- **File storage**: `STORAGE_BACKEND=local` (production: disk + signed blob URLs + nginx X-Accel) or `s3` (MinIO, dev compose)
+- **Web**: Django templates (`backend/web/`), same process as the API
 
-### Target deployment (S5, dolfinid GCP VM shared with other projects)
+### Production (dolfinid GCP VM shared with other projects) — `deploy/README.md`
 - **One container** (Gunicorn) bound to `127.0.0.1:8016`; the VM's nginx proxies `scoremate.noematica.kr` (Let's Encrypt)
 - SQLite file + score files on VM disk under `/srv/scoremate/` (bind mount), backed up before each deploy
 - Downloads: Django checks permission, nginx sends the file via **`X-Accel-Redirect`**
-- Web: `next build` static export served by nginx
-- Image `honestjung/scoremateserver:vX.Y.Z` (linux/amd64); `deploy/` follows the hanyang3d convention (`deploy.toml`, `deploy.sh`)
+- Web: Django templates in the same container (static via WhiteNoise)
+- Image `honestjung/scoremateserver:X.Y.Z` (linux/amd64); `deploy/` follows devdocs `guides/web` and the fcmanager implementation (`deploy.toml`, git-free host scripts extracted from the image)
 
 ### Key Design Decisions
 1. **Access scope**: personal scores → owner only; ensemble scores → members read, owner/leader write. No public links.
@@ -127,8 +127,9 @@ Before moving to the next stage:
 backend/
   scoremateserver/   # settings (env vars), urls, celery
   core/              # auth, users, quota, referrals
-  ensembles/         # Ensemble, Membership, Invite; ensemble/member/invite API
-  scores/            # Score model (+ ensemble, part_name), readable_by/writable_by, CRUD
+  ensembles/         # Ensemble, Membership, Invite; services.py = membership/invite rules (API + web)
+  web/               # web UI (Django templates, session auth) — uses the same services/permissions as the API
+  scores/            # Score model (+ ensemble, part_name), readable_by/writable_by, services.py (create/delete + quota)
   setlists/          # Setlist and SetlistItem
   files/             # presigned URL generation
   tasks/             # task definitions (pdf_info, thumbnail)
@@ -206,6 +207,7 @@ def process_pdf(self, score_id):
 
 ## Security Considerations
 - Every score query must go through `Score.objects.readable_by(user)` or `writable_by(user)` — never `filter(user=...)` alone
+- Rules live once: `scores/services.py`, `ensembles/services.py`. API views and web views both call them — don't re-implement a rule in a view
 - Presigned URLs with short TTL (5-15 minutes)
 - Validate MIME types and file sizes before upload
 - Never expose storage credentials to clients

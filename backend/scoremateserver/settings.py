@@ -82,6 +82,7 @@ INSTALLED_APPS = [
     'files',
     'tasks',
     'scoremate_admin', # Custom admin app
+    'web',             # 웹 화면 (Django 템플릿)
 ]
 
 MIDDLEWARE = [
@@ -113,6 +114,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'web.context_processors.site',
             ],
         },
     },
@@ -266,6 +268,19 @@ SIMPLE_JWT = {
 
 # Custom User Model
 AUTH_USER_MODEL = 'core.User'
+
+# 웹 로그인 (세션). API 는 JWT
+LOGIN_URL = 'web:login'
+LOGIN_REDIRECT_URL = 'web:scores'
+LOGOUT_REDIRECT_URL = 'web:login'
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 30   # 한 달 — 리허설 때마다 로그인하지 않게
+# 가입을 누구에게나 열지 (False 면 웹 · API 가입이 닫히고 초대 링크로 이미 가입한 사람만 쓴다)
+REGISTRATION_OPEN = env_bool('REGISTRATION_OPEN', True)
+
+# 큰 업로드는 메모리 대신 디스크 임시 파일로 — 운영은 tmpfs(/tmp) 대신 파일 저장소 옆(FILE_UPLOAD_TEMP_DIR)
+FILE_UPLOAD_TEMP_DIR = os.environ.get('FILE_UPLOAD_TEMP_DIR') or None
+if FILE_UPLOAD_TEMP_DIR:
+    os.makedirs(FILE_UPLOAD_TEMP_DIR, exist_ok=True)
 
 # Storage settings (for S3/MinIO)
 STORAGE_ENDPOINT = os.environ.get('STORAGE_ENDPOINT')

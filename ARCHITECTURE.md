@@ -43,7 +43,7 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
            v                       v
  +-----------------------------------------------+
  | VM nginx (TLS, scoremate.noematica.kr)        |
- |  - (web: Django templates, planned)           |
+ |  - web: Django templates (same container)     |
  |  - /api → 127.0.0.1:8016                      |
  |  - X-Accel-Redirect → /srv/scoremate/files    |
  +----------------------+------------------------+
@@ -61,7 +61,7 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
 - Django API with SQLite by default (`DATA_DIR/db.sqlite3`), Postgres if `DATABASE_URL` is set.
 - Celery task code: runs eagerly in the request when `REDIS_URL` is unset; broker + worker when set.
 - Storage: MinIO/S3 presigned URLs (`STORAGE_BACKEND=s3`), or `local` like production.
-- Web: `frontend/` (Next.js) is legacy and not deployed; the web UI is being rebuilt as Django templates.
+- Web: Django templates in `backend/web/` (session auth). `frontend/` (Next.js) is legacy and not deployed.
 - `docker-compose.yml` still offers the full legacy stack (Postgres, Redis, worker, MinIO, frontend, nginx).
 
 ---
@@ -241,7 +241,7 @@ devlog/             # plans and reports
 | S3 | TV device linking |
 | S4 | Sync API, soft delete, download redirect |
 | S5 ✅ | dolfinid deployment — API only (done before S2), devlog 056 |
-| Web | Django templates (login, ensembles/invites, upload, `/activate`) |
+| Web ✅ | Django templates — login, scores, upload, ensembles/invites, join links (devlog 057) |
 | S6 | Google login, setlist sync, shared score analysis |
 
 ---

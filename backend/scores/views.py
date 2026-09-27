@@ -17,6 +17,7 @@ from .serializers import (
     ScoreCreateSerializer
 )
 from .filters import ScoreFilter, ScoreOrderingFilter
+from .services import delete_score
 
 
 class ScoreViewSet(viewsets.ModelViewSet):
@@ -57,28 +58,9 @@ class ScoreViewSet(viewsets.ModelViewSet):
         return ScoreSerializer
     
     def destroy(self, request, *args, **kwargs):
-        """Delete score and update user quota"""
-        score = self.get_object()
-        size_mb = score.size_bytes // (1024 * 1024)
-        
-        # Store file information before deletion
-        s3_key = score.s3_key
-        thumbnail_key = score.thumbnail_key
-        score_id = score.id
-        
-        # 쿼터는 올린 사람 것을 돌려준다 (앙상블 악보를 리더가 지워도)
-        uploader = score.user
-        uploader.used_quota_mb = F('used_quota_mb') - size_mb
-        uploader.save(update_fields=['used_quota_mb'])
-        
-        # Delete the score record first
-        response = super().destroy(request, *args, **kwargs)
-        
-        # Trigger background task to delete S3 files
-        from tasks.file_tasks import delete_score_files
-        delete_score_files.delay(s3_key, thumbnail_key, score_id)
-        
-        return response
+        """악보 삭제 — 쿼터는 올린 사람에게 돌려주고 파일을 지운다 (scores/services.py)"""
+        delete_score(self.get_object())
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['post'])
     def regenerate_thumbnail(self, request, pk=None):

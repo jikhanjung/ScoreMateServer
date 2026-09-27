@@ -1,0 +1,60 @@
+{% load static %}<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}ScoreMate{% endblock %} · ScoreMate</title>
+<link rel="stylesheet" href="{% static 'web/app.css' %}">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="{% url 'web:home' %}">ScoreMate</a>
+    {% if user.is_authenticated %}
+    {% with url_name=request.resolver_match.url_name %}
+    <nav class="nav">
+      <a href="{% url 'web:scores' %}" class="{% if url_name == 'scores' or url_name == 'score_detail' or url_name == 'score_edit' %}on{% endif %}">악보</a>
+      <a href="{% url 'web:ensembles' %}" class="{% if 'ensemble' in url_name %}on{% endif %}">앙상블</a>
+      <a href="{% url 'web:score_upload' %}" class="{% if url_name == 'score_upload' %}on{% endif %}">올리기</a>
+    </nav>
+    {% endwith %}
+    <div class="who">
+      <a href="{% url 'web:account' %}">{{ user.username }}</a>
+      <form method="post" action="{% url 'web:logout' %}">{% csrf_token %}<button class="linkbtn" type="submit">로그아웃</button></form>
+    </div>
+    {% endif %}
+  </div>
+</header>
+<main>
+  {% if messages %}
+  <ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer>ScoreMate {{ app_version }}</footer>
+<script>
+// 초대 링크 복사 — 없어도 입력칸을 길게 눌러 복사할 수 있다
+document.querySelectorAll('[data-copy]').forEach(function (btn) {
+  btn.hidden = false;
+  btn.addEventListener('click', function () {
+    var input = document.getElementById(btn.dataset.copy);
+    input.select();
+    (navigator.clipboard ? navigator.clipboard.writeText(input.value) : Promise.reject())
+      .catch(function () { document.execCommand('copy'); })
+      .finally(function () { btn.textContent = '복사됨'; setTimeout(function () { btn.textContent = '복사'; }, 1500); });
+  });
+});
+// 오래 걸리는 제출(업로드) — 두 번 누르지 않게
+document.querySelectorAll('form[data-busy]').forEach(function (form) {
+  form.addEventListener('submit', function () {
+    var btn = form.querySelector('button[type=submit]');
+    if (btn) { btn.disabled = true; btn.textContent = form.dataset.busy; }
+  });
+});
+// 되돌릴 수 없는 버튼
+document.querySelectorAll('[data-confirm]').forEach(function (el) {
+  el.addEventListener('click', function (e) { if (!confirm(el.dataset.confirm)) e.preventDefault(); });
+});
+</script>
+</body>
+</html>

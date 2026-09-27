@@ -1,0 +1,34 @@
+{% extends 'web/base.html' %}
+{% block title %}{{ score.title }}{% endblock %}
+{% block content %}
+<div class="detail">
+  <div class="thumb">{% if score.thumb %}<img src="{{ score.thumb }}" alt="{{ score.title }} 첫 쪽">{% else %}<span class="ph">미리보기 없음</span>{% endif %}</div>
+  <div>
+    <h1>{{ score.title }}</h1>
+    <p>
+      {% if score.part_name %}<span class="badge plain">{{ score.part_name }}</span>{% endif %}
+      {% if score.ensemble %}<a class="badge" href="{% url 'web:ensemble_detail' score.ensemble.pk %}">{{ score.ensemble.name }}</a>{% else %}<span class="badge plain">내 악보</span>{% endif %}
+    </p>
+    <div class="actions">
+      <a class="btn primary" href="{% url 'web:score_view' score.pk %}" target="_blank" rel="noopener">보기</a>
+      <a class="btn" href="{% url 'web:score_download' score.pk %}">받기</a>
+      {% if score.editable %}
+      <a class="btn" href="{% url 'web:score_edit' score.pk %}">고치기</a>
+      <a class="btn danger" href="{% url 'web:score_delete' score.pk %}">지우기</a>
+      {% endif %}
+    </div>
+    <dl class="meta">
+      {% if score.composer %}<dt>작곡 · 편곡</dt><dd>{{ score.composer }}</dd>{% endif %}
+      {% if score.instrumentation %}<dt>편성</dt><dd>{{ score.instrumentation }}</dd>{% endif %}
+      <dt>쪽수</dt><dd>{{ score.pages|default:'처리 중' }}</dd>
+      <dt>크기</dt><dd>{{ score.size_bytes|filesizeformat }}</dd>
+      {% if score.original_filename %}<dt>파일</dt><dd>{{ score.original_filename }}</dd>{% endif %}
+      {% if score.tags %}<dt>태그</dt><dd>{% for t in score.tags %}<span class="badge plain">{{ t }}</span> {% endfor %}</dd>{% endif %}
+      <dt>올린 사람</dt><dd>{{ score.user.username }}</dd>
+      <dt>올린 날</dt><dd>{{ score.created_at|date:'Y-m-d H:i' }}</dd>
+      {% if score.updated_at|date:'YmdHi' != score.created_at|date:'YmdHi' %}<dt>고친 날</dt><dd>{{ score.updated_at|date:'Y-m-d H:i' }}</dd>{% endif %}
+    </dl>
+    {% if score.note %}<div class="box"><div class="muted small">메모</div>{{ score.note|linebreaksbr }}</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

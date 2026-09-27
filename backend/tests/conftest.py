@@ -31,6 +31,11 @@ def mock_s3_storage():
         STORAGE_USE_SSL=True,
         # 테스트에서는 느린 PBKDF2 대신 (사용자 · 로그인을 많이 만든다)
         PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'],
+        # 테스트는 collectstatic 을 하지 않는다 — manifest 저장소 대신 일반 저장소(운영 이미지는 빌드 때 모은다)
+        STORAGES={
+            'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+            'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+        },
     ):
         boto3.client('s3', region_name='us-east-1').create_bucket(Bucket='scores')
         # 요청 제한 카운터 · 업로드 예약이 테스트 사이에 남지 않게

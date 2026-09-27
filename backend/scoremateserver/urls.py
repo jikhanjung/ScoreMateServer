@@ -40,5 +40,6 @@ urlpatterns = [
     path('api/v1/admin/', include('scoremate_admin.urls')),
     
     # Default redirect to API
-    path('', api_root, name='root'),
+    # 웹 (Django 템플릿)
+    path('', include('web.urls')),
 ]

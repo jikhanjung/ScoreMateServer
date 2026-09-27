@@ -12,7 +12,7 @@ The server covers:
 - **Library & Setlists** (CRUD, tags, metadata)
 - **Ensembles** (members, roles, invites) — S1 ✅ (server)
 - **Score versions** (frequent revisions) — S2 ✅
-- **TV device linking** (RFC 8628 code + QR) — _planned S3_
+- **TV device linking** (RFC 8628 code + QR) — S3 ✅
 - **Incremental sync API** for TVs — _planned S4_
 - **Processing** (page count, thumbnails)
 - **Plans/Quota/Referral**, **Admin**
@@ -83,6 +83,12 @@ Invite              ensemble, code, created_by, expires_at, max_uses, uses, revo
 Score (+)           ensemble (null = personal, SET_NULL on ensemble delete), part_name
 ```
 
+### Added in S3 (`devices` app)
+```
+Device              uuid, user, name, model, app_version, last_seen_at, revoked_at
+DeviceAuthorization device_code_hash, user_code ("BCDF-GHJK"), status, device, user, interval, expires_at
+```
+
 ### Added in S2
 ```
 ScoreVersion        score, number, s3_key, original_filename, size_bytes, mime, pages, content_hash, uploaded_by, note
@@ -93,8 +99,6 @@ Score (+)           current_version (file fields mirror it), last_version_number
 ```
 Score (+)           deleted_at (soft delete for sync)                                       (S4)
 Setlist (+)         ensemble (null = personal)
-Device              uuid, user, name, model, app_version, last_seen_at, revoked_at          (S3)
-DeviceAuthorization device_code (hashed), user_code ("BCDF-GHJK"), status, user, expires_at, interval
 ```
 
 ### Permissions
@@ -119,15 +123,15 @@ Implemented as `Score.objects.readable_by(user)` / `writable_by(user)`; every sc
 - Admin: `admin/…`
 - Ensembles (S1): `ensembles/`, `ensembles/{id}/members/{user_id}/`, `ensembles/{id}/invites/[{invite_id}/]`, `ensembles/invite/{code}/` (preview), `ensembles/join/`
 - Scores accept/return `ensemble`, `part_name`, `version`, `version_count`; filter `?ensemble=<id>|personal`
+- TV linking (S3 ✅): `device/code`, `device/token` (RFC 8628 errors), `devices/` (list · rename · revoke), `devices/me/`; web `/activate/`, `/devices/`
 - Score versions (S2 ✅): `scores/{id}/versions/` (list · new version), `versions/{n}/` (delete), `versions/{n}/make_current/`
 
 ### Planned
-- `device/code`, `device/token` (RFC 8628) + web page `/activate`; "my devices" with revoke (S3)
 - `sync/scores?cursor=` → `{cursor, scores:[…current version…], deleted:[ids]}`; `scores/{id}/download` → redirect; device heartbeat (S4)
 
 ---
 
-## 5) TV Device Linking (S3, RFC 8628)
+## 5) TV Device Linking (S3 ✅, RFC 8628) — details and client contract: devlog 059
 ```
 TV  POST device/code {name, model} → device_code, user_code, verification_uri(_complete), interval
 TV  shows code + QR
@@ -243,7 +247,7 @@ devlog/             # plans and reports
 | S0 ✅ | Repo cleanup, SQLite default, Celery optional |
 | S1 ✅ | Ensembles, membership, invites, permissions (web screens pending) |
 | S2 ✅ | Score versions + data migration (devlog 058) |
-| S3 | TV device linking |
+| S3 ✅ | TV device linking (devlog 059) |
 | S4 | Sync API, soft delete, download redirect |
 | S5 ✅ | dolfinid deployment — API only (done before S2), devlog 056 |
 | Web ✅ | Django templates — login, scores, upload, ensembles/invites, join links (devlog 057) |

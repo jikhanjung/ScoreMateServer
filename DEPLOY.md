@@ -41,3 +41,9 @@
   이 배포 뒤 판을 올렸다면 0.2.0 으로의 `rollback --db=keep` 은 가드가 막는다 → `--db=restore`(pre-deploy 스냅샷) 판단
 - 새 API: `/api/v1/scores/{id}/versions/…`. 웹 상세에 판 칸
 - `.env` 변경 없음
+
+### 0.4.0 (2026-09-27) — TV 기기 연결 (RFC 8628)
+- 🔴 **마이그레이션 있음** `devices.0001_initial` (새 테이블만 — 가산, 되돌리기 안전)
+- 새 API: `/api/v1/device/code`, `/api/v1/device/token`, `/api/v1/devices/`. 웹: `/activate/`, `/devices/`(TV 메뉴)
+- 인증 클래스가 `devices.auth.DeviceAwareJWTAuthentication` 으로 바뀌었다(기존 사용자 토큰은 그대로 동작)
+- 선택 `.env`: `DEVICE_REFRESH_TOKEN_DAYS`(기본 180)

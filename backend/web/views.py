@@ -23,6 +23,8 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from devices import services as device_services
+from devices.models import Device
 from ensembles import services as ensemble_services
 from ensembles.models import Ensemble, Membership, Invite
 from files.utils import LocalStorageHandler, generate_upload_s3_key, get_storage
@@ -31,7 +33,7 @@ from scores.serializers import thumbnail_url
 from scores.services import VersionError, add_version, create_score, delete_score, delete_version, make_current
 
 from .forms import (
-    EnsembleForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, NewVersionForm, RegisterForm, ScoreEditForm,
+    ActivateForm, DeviceNameForm, EnsembleForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, NewVersionForm, RegisterForm, ScoreEditForm,
     UploadForm,
     managed_ensembles,
 )
@@ -486,3 +488,72 @@ def join(request, code=None):
             return redirect('web:ensemble_detail', pk=result[0].pk)
         return redirect('web:ensembles')
     return render(request, 'web/join.html', {'invite': invite, 'member_count': ensemble.memberships.count()})
+
+
+# --- TV 기기 연결 (RFC 8628) — 규칙은 devices/services.py ---
+
+ACTIVATE_LOOKUP_LIMIT = 30   # 사용자당 시간당 코드 조회 — 코드 맞히기 방지
+
+
+@login_required
+def activate(request):
+    """휴대폰에서 TV 코드를 넣는다. QR(verification_uri_complete)로 오면 ?code= 가 채워져 있다"""
+    code = (request.POST.get('code') or request.GET.get('code') or '').strip()
+    form = ActivateForm(initial={'code': code})
+    if not code:
+        return render(request, 'web/devices/activate.html', {'form': form})
+
+    key = f'web-activate:{request.user.pk}'
+    attempts = cache.get(key, 0)
+    if attempts >= ACTIVATE_LOOKUP_LIMIT:
+        messages.error(request, '코드 확인이 너무 많습니다. 잠시 뒤에 다시 해 주세요.')
+        return render(request, 'web/devices/activate.html', {'form': form}, status=429)
+    cache.set(key, attempts + 1, 3600)
+
+    authorization = device_services.find_pending(code)
+    if authorization is None:
+        return render(request, 'web/devices/activate.html', {
+            'form': form, 'error': '없거나 만료된 코드입니다. TV 에 새 코드가 떠 있는지 확인하세요.'}, status=404)
+
+    if request.method == 'POST' and request.POST.get('decision') in ('approve', 'deny'):
+        if request.POST['decision'] == 'deny':
+            device_services.deny(authorization, request.user)
+            messages.info(request, '연결하지 않았습니다.')
+            return redirect('web:devices')
+        device = device_services.approve(authorization, request.user, name=request.POST.get('name'))
+        if device is None:
+            messages.error(request, '이 코드는 이미 쓰였거나 만료됐습니다.')
+            return redirect('web:activate')
+        messages.success(request, f'"{device.name}" 을(를) 연결했습니다. 곧 TV 화면이 바뀝니다.')
+        return redirect('web:devices')
+    return render(request, 'web/devices/activate.html', {'form': form, 'authorization': authorization})
+
+
+@login_required
+def device_list(request):
+    devices = Device.objects.filter(user=request.user).order_by('revoked_at', '-last_seen_at', '-created_at')
+    return render(request, 'web/devices/list.html', {'devices': devices})
+
+
+def _my_device(request, pk):
+    return get_object_or_404(Device, pk=pk, user=request.user)
+
+
+@login_required
+@require_POST
+def device_rename(request, pk):
+    device = _my_device(request, pk)
+    form = DeviceNameForm(request.POST)
+    if form.is_valid():
+        device_services.rename(device, form.cleaned_data['name'])
+        messages.success(request, '이름을 바꿨습니다.')
+    return redirect('web:devices')
+
+
+@login_required
+@require_POST
+def device_revoke(request, pk):
+    device = _my_device(request, pk)
+    device_services.revoke(device)
+    messages.success(request, f'"{device.name}" 연결을 해제했습니다. 그 TV 는 더는 악보를 받지 못합니다.')
+    return redirect('web:devices')

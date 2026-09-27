@@ -1,0 +1,39 @@
+{% extends 'web/base.html' %}
+{% block title %}TV 연결{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>TV 연결</h1>
+  {% if authorization %}
+  <div class="box">
+    <p>이 TV 를 <strong>{{ user.username }}</strong> 계정에 연결할까요?</p>
+    <dl class="meta">
+      <dt>코드</dt><dd class="code">{{ authorization.display_code }}</dd>
+      {% if authorization.device_model %}<dt>모델</dt><dd>{{ authorization.device_model }}</dd>{% endif %}
+      {% if authorization.app_version %}<dt>앱</dt><dd>{{ authorization.app_version }}</dd>{% endif %}
+    </dl>
+    <p class="muted small">TV 화면의 코드와 같은지 확인하세요. 연결하면 이 TV 가 내 악보와 내 앙상블의 악보를 받습니다.</p>
+    <form method="post" class="stack">{% csrf_token %}
+      <input type="hidden" name="code" value="{{ authorization.display_code }}">
+      <div class="field">
+        <label for="id_name">기기 이름</label>
+        <input type="text" id="id_name" name="name" value="{{ authorization.device_name|default:'TV' }}" maxlength="100">
+        <div class="help">예: 거실 TV, 합주실 TV</div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" type="submit" name="decision" value="approve">연결</button>
+        <button class="btn" type="submit" name="decision" value="deny">거절</button>
+      </div>
+    </form>
+  </div>
+  {% else %}
+  <p class="muted">TV 화면에 보이는 8글자 코드를 넣으세요. TV 의 QR 을 휴대폰으로 찍으면 코드가 채워져 있습니다.</p>
+  {% if error %}<ul class="messages"><li class="error">{{ error }}</li></ul>{% endif %}
+  <div class="box">
+    <form method="get" class="stack">
+      {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
+      <button class="btn primary" type="submit">확인</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

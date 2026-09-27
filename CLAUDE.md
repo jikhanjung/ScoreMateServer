@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-27) — 254 backend tests passing, 0.3.0 in production
+### Status (2026-09-27) — 275 backend tests passing, 0.4.0 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -24,8 +24,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | S5 | Deploy on dolfinid — API only, local file storage, fcmanager deploy contract (done ahead of S2) | ✅ devlog 056 |
 | Web | Django templates: login, scores, upload, ensembles/members/invites, join links, account | ✅ devlog 057 |
 | S2 | ScoreVersion + data migration, new-version upload / revert / delete (API + web) | ✅ devlog 058 |
-| S3 | Device · DeviceAuthorization · `/activate` (RFC 8628) | next |
-| S4 | Sync API (cursor, soft delete, download redirect) | |
+| S3 | Device · DeviceAuthorization · `/activate` (RFC 8628), instant revoke, 180-day device refresh | ✅ devlog 059 |
+| S4 | Sync API (cursor, soft delete, download redirect) | next |
 | S6 | (2nd) Google login, setlist sync | |
 
 ## Development Commands
@@ -128,6 +128,7 @@ backend/
   scoremateserver/   # settings (env vars), urls, celery
   core/              # auth, users, quota, referrals
   ensembles/         # Ensemble, Membership, Invite; services.py = membership/invite rules (API + web)
+  devices/           # TV linking (RFC 8628): Device, DeviceAuthorization, device-aware JWT auth + refresh
   web/               # web UI (Django templates, session auth) — uses the same services/permissions as the API
   scores/            # Score model (+ ensemble, part_name), readable_by/writable_by, services.py (create/delete + quota)
   setlists/          # Setlist and SetlistItem
@@ -155,7 +156,8 @@ All under `/api/v1/`:
 - `files/` - `upload-url/`, `upload-confirm/`, `upload-cancel/`, `download-url/`, `thumbnail/…`
 - `admin/` - admin API (`scoremate_admin`)
 - `ensembles/` - ensembles, `members/{user_id}/`, `invites/`, `invite/{code}/` preview, `join/`
-- Planned: score versions (S2), `device/` + web `/activate` (S3), `sync/` (S4)
+- `device/code`, `device/token` (RFC 8628, TV), `devices/` (+ `me/`); web `/activate/`, `/devices/`
+- Planned: `sync/` (S4)
 
 ## Environment Configuration
 See `.env.example`:

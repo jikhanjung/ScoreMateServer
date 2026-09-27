@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     # Local apps
     'core',
     'ensembles',
+    'devices',
     'scores',
     'setlists',
     'files',
@@ -200,7 +201,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # simplejwt JWTAuthentication + 해제된 TV 기기의 토큰 거부 (devices/auth.py)
+        'devices.auth.DeviceAwareJWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -220,6 +222,8 @@ REST_FRAMEWORK = {
         'anon': '100/hour',
         'user': '1000/hour',
         'invite': '30/hour',  # 초대 코드 미리 보기 · 가입 — 코드 맞히기 방지
+        'device_code': '30/hour',     # TV 코드 발급 (IP 당)
+        'device_token': '2000/hour',  # TV 가 5초마다 토큰을 묻는다 (IP 당, 같은 집의 TV 여러 대)
     },
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -264,7 +268,13 @@ SIMPLE_JWT = {
 
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+
+    # 해제된 기기 거부 + 기기 토큰은 회전해도 긴 수명 (devices/serializers.py)
+    'TOKEN_REFRESH_SERIALIZER': 'devices.serializers.DeviceAwareTokenRefreshSerializer',
 }
+
+# TV 기기 토큰의 refresh 수명 — TV 에서 다시 로그인할 일이 거의 없게. 해제하면 곧바로 막힌다
+DEVICE_REFRESH_TOKEN_DAYS = int(os.environ.get('DEVICE_REFRESH_TOKEN_DAYS', 180))
 
 # Custom User Model
 AUTH_USER_MODEL = 'core.User'

@@ -1,0 +1,36 @@
+{% extends 'web/base.html' %}
+{% block title %}TV{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>TV</h1><p class="muted">내 계정에 연결된 기기. 연결된 TV 는 내 악보와 내 앙상블의 악보를 받습니다.</p></div>
+  <a class="btn primary" href="{% url 'web:activate' %}">TV 연결</a>
+</div>
+{% if devices %}
+<div class="box table-wrap">
+  <table class="stacked">
+    <thead><tr><th>이름</th><th>모델 · 앱</th><th>마지막 접속</th><th>연결한 날</th><th></th></tr></thead>
+    <tbody>
+    {% for d in devices %}
+      <tr {% if not d.is_active %}class="muted"{% endif %}>
+        <td>{% if d.is_active %}
+          <form method="post" action="{% url 'web:device_rename' d.pk %}" class="row">{% csrf_token %}
+            <input type="text" name="name" value="{{ d.name }}" maxlength="100" aria-label="기기 이름">
+            <button class="btn sm" type="submit">저장</button>
+          </form>
+          {% else %}{{ d.name }} <span class="badge plain">해제됨</span>{% endif %}</td>
+        <td>{{ d.model|default:'—' }}{% if d.app_version %}<div class="muted small">{{ d.app_version }}</div>{% endif %}</td>
+        <td>{{ d.last_seen_at|date:'Y-m-d H:i'|default:'아직 없음' }}</td>
+        <td>{{ d.created_at|date:'Y-m-d' }}</td>
+        <td style="text-align:right">{% if d.is_active %}
+          <form method="post" action="{% url 'web:device_revoke' d.pk %}" class="inline">{% csrf_token %}
+            <button class="btn sm danger" type="submit" data-confirm="{{ d.name }} 연결을 해제할까요? 그 TV 는 다시 연결해야 악보를 받습니다.">해제</button>
+          </form>{% else %}<span class="small">{{ d.revoked_at|date:'Y-m-d' }} 해제</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="box empty">연결된 TV 가 없습니다. TV 앱에서 "연결"을 고르면 코드가 뜹니다 — 그 코드를 <a href="{% url 'web:activate' %}">여기</a>에 넣으세요.</div>
+{% endif %}
+{% endblock %}

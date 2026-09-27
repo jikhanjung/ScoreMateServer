@@ -33,6 +33,11 @@ urlpatterns = [
     path('ensembles/<int:pk>/invites/', views.invite_create, name='invite_create'),
     path('ensembles/<int:pk>/invites/<int:invite_id>/revoke/', views.invite_revoke, name='invite_revoke'),
 
+    path('activate/', views.activate, name='activate'),
+    path('devices/', views.device_list, name='devices'),
+    path('devices/<uuid:pk>/rename/', views.device_rename, name='device_rename'),
+    path('devices/<uuid:pk>/revoke/', views.device_revoke, name='device_revoke'),
+
     path('join/', views.join, name='join_form'),
     path('join/<str:code>/', views.join, name='join'),
 ]

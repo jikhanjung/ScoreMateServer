@@ -186,3 +186,14 @@ class NewVersionForm(forms.Form):
         if not self.user.can_upload(f.size):
             raise forms.ValidationError(f'저장 공간이 부족합니다 (남은 공간 {self.user.available_quota_mb}MB).')
         return f
+
+
+class ActivateForm(forms.Form):
+    code = forms.CharField(label='TV 에 보이는 코드', max_length=16,
+                           widget=forms.TextInput(attrs={'placeholder': 'BCDF-GHJK', 'autocapitalize': 'characters',
+                                                         'autocomplete': 'off', 'autofocus': True,
+                                                         'class': 'code', 'inputmode': 'text'}))
+
+
+class DeviceNameForm(forms.Form):
+    name = forms.CharField(label='기기 이름', max_length=100)

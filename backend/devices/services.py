@@ -156,3 +156,34 @@ def rename(device, name):
         device.name = name
         device.save(update_fields=['name'])
     return device
+
+
+def set_sync(device, mode, setlist_ids=None):
+    """이 TV 가 받을 것 — 웹(서버)에서만 정한다(TV 는 API 로 보기만). setlist_ids 는 그 사용자가 읽을 수 있는 것만 남긴다.
+
+    이미 고른 곡목은 그대로 두고(added_at 유지 — 다시 보내지 않게) 빠진 것만 지우고 새로 고른 것만 더한다.
+    """
+    from setlists.models import Setlist
+    from .models import DeviceSetlist
+
+    if mode not in dict(Device.SYNC_CHOICES):
+        raise ValueError(f'Unknown sync mode: {mode}')
+    with transaction.atomic():
+        device.sync_mode = mode
+        device.save(update_fields=['sync_mode'])
+        if setlist_ids is not None:
+            wanted = set(Setlist.objects.readable_by(device.user)
+                         .filter(pk__in=[int(i) for i in setlist_ids if str(i).isdigit()]).values_list('pk', flat=True))
+            current = set(device.setlist_links.values_list('setlist_id', flat=True))
+            DeviceSetlist.objects.filter(device=device, setlist_id__in=current - wanted).delete()
+            DeviceSetlist.objects.bulk_create([DeviceSetlist(device=device, setlist_id=i) for i in wanted - current])
+    return device
+
+
+def toggle_setlist(device, setlist, on):
+    """세트리스트 화면의 '보낼 TV' — 하나씩 켜고 끈다"""
+    from .models import DeviceSetlist
+    if on:
+        DeviceSetlist.objects.get_or_create(device=device, setlist=setlist)
+    else:
+        DeviceSetlist.objects.filter(device=device, setlist=setlist).delete()

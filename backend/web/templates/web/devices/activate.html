@@ -11,13 +11,22 @@
       {% if authorization.device_model %}<dt>모델</dt><dd>{{ authorization.device_model }}</dd>{% endif %}
       {% if authorization.app_version %}<dt>앱</dt><dd>{{ authorization.app_version }}</dd>{% endif %}
     </dl>
-    <p class="muted small">TV 화면의 코드와 같은지 확인하세요. 연결하면 이 TV 가 내 악보{% if ensembles_enabled %}와 내 앙상블의 악보{% endif %}를 받습니다.</p>
+    <p class="muted small">TV 화면의 코드와 같은지 확인하세요. 연결하면 이 TV 가 아래에서 고른 것을 받습니다.</p>
     <form method="post" class="stack">{% csrf_token %}
       <input type="hidden" name="code" value="{{ authorization.display_code }}">
       <div class="field">
         <label for="id_name">기기 이름</label>
         <input type="text" id="id_name" name="name" value="{{ authorization.device_name|default:'TV' }}" maxlength="100">
         <div class="help">예: 거실 TV, 합주실 TV</div>
+      </div>
+      <div class="field">
+        <label>이 TV 가 받을 것</label>
+        <label class="row"><input type="radio" name="sync_mode" value="setlists" checked> 고른 세트리스트의 곡만</label>
+        <div style="margin-left:1.6rem">
+          {% for s in setlists %}<label class="row small"><input type="checkbox" name="setlists" value="{{ s.pk }}"> {{ s.title }}</label>
+          {% empty %}<p class="muted small">세트리스트가 아직 없습니다 — 연결한 뒤 세트리스트를 만들고 "보낼 TV"로 고르세요.</p>{% endfor %}
+        </div>
+        <label class="row"><input type="radio" name="sync_mode" value="all"> 모든 악보</label>
       </div>
       <div class="actions">
         <button class="btn primary" type="submit" name="decision" value="approve">연결</button>

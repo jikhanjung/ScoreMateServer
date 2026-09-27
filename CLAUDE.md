@@ -27,6 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | S3 | Device · DeviceAuthorization · `/activate` (RFC 8628), instant revoke, 180-day device refresh | ✅ devlog 059 |
 | S4 | Sync API (cursor + full `ids` set instead of soft delete), download redirect, heartbeat | ✅ devlog 060 |
 | S6 | Ensemble setlists + sync, shared score analysis (per version, sha256-checked), Google login (OIDC, off until client id set) | ✅ devlog 061 |
+| — | Per-TV scope: selected setlists only (default) / all scores; chosen on the web only | ✅ devlog 062 |
 
 ## Development Commands
 

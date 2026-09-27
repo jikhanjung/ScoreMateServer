@@ -578,15 +578,42 @@ def activate(request):
         if device is None:
             messages.error(request, '이 코드는 이미 쓰였거나 만료됐습니다.')
             return redirect('web:activate')
+        device_services.set_sync(device, request.POST.get('sync_mode') or Device.SYNC_SETLISTS,
+                                 request.POST.getlist('setlists'))
         messages.success(request, f'"{device.name}" 을(를) 연결했습니다. 곧 TV 화면이 바뀝니다.')
         return redirect('web:devices')
-    return render(request, 'web/devices/activate.html', {'form': form, 'authorization': authorization})
+    return render(request, 'web/devices/activate.html', {
+        'form': form, 'authorization': authorization,
+        'setlists': Setlist.objects.readable_by(request.user).order_by('-updated_at'),
+    })
 
 
 @login_required
 def device_list(request):
-    devices = Device.objects.filter(user=request.user).order_by('revoked_at', '-last_seen_at', '-created_at')
-    return render(request, 'web/devices/list.html', {'devices': devices})
+    devices = list(Device.objects.filter(user=request.user).prefetch_related('setlist_links')
+                   .order_by('revoked_at', '-last_seen_at', '-created_at'))
+    for device in devices:
+        device.chosen = {link.setlist_id for link in device.setlist_links.all()}
+    return render(request, 'web/devices/list.html', {
+        'devices': devices, 'setlists': Setlist.objects.readable_by(request.user).order_by('-updated_at'),
+    })
+
+
+@login_required
+@require_POST
+def device_sync(request, pk):
+    """이 TV 가 받을 것 — 고른 세트리스트만 / 모든 악보"""
+    device = _my_device(request, pk)
+    mode = request.POST.get('sync_mode')
+    if mode not in dict(Device.SYNC_CHOICES):
+        return redirect('web:devices')
+    device_services.set_sync(device, mode, request.POST.getlist('setlists'))
+    if mode == Device.SYNC_ALL:
+        messages.success(request, f'"{device.name}" 은(는) 모든 악보를 받습니다.')
+    else:
+        n = device.setlist_links.count()
+        messages.success(request, f'"{device.name}" 은(는) 고른 세트리스트 {n}개의 곡만 받습니다. 빠진 악보는 TV 에서 정리됩니다.')
+    return redirect('web:devices')
 
 
 def _my_device(request, pk):
@@ -665,10 +692,26 @@ def setlist_detail(request, pk):
         pool = Score.objects.readable_by(request.user)
         pool = pool.filter(ensemble=setlist.ensemble) if setlist.ensemble_id else pool.filter(user=setlist.user)
         candidates = [s for s in pool.order_by('title', 'part_name') if s.id not in in_list]
+    devices = list(Device.objects.filter(user=request.user, revoked_at__isnull=True).order_by('name'))
+    linked = set(setlist.device_links.filter(device__in=devices).values_list('device_id', flat=True))
+    for device in devices:
+        device.sends = device.id in linked
     return render(request, 'web/setlists/detail.html', {
         'setlist': setlist, 'items': items, 'editable': setlist.can_edit(request.user), 'candidates': candidates,
-        'total_pages': sum(i.score.pages or 0 for i in items),
+        'total_pages': sum(i.score.pages or 0 for i in items), 'devices': devices,
     })
+
+
+@login_required
+@require_POST
+def setlist_devices(request, pk):
+    """이 세트리스트를 보낼 내 TV — 읽을 수 있는 세트리스트면 누구나 자기 TV 로 받을 수 있다"""
+    setlist = _readable_setlist(request, pk)
+    chosen = set(request.POST.getlist('devices'))
+    for device in Device.objects.filter(user=request.user, revoked_at__isnull=True):
+        device_services.toggle_setlist(device, setlist, str(device.pk) in chosen)
+    messages.success(request, '보낼 TV 를 저장했습니다.')
+    return redirect(reverse('web:setlist_detail', args=[pk]) + '#tv')
 
 
 @login_required

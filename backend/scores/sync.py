@@ -55,22 +55,54 @@ def decode_cursor(cursor):
         raise BadCursor('Invalid cursor') from exc
 
 
-def readable_with_effective_time(user):
+def device_setlists(user, device):
+    """이 기기로 보낼 세트리스트 — 고른 것 중 지금 읽을 수 있는 것"""
+    from setlists.models import Setlist
+    return Setlist.objects.readable_by(user).filter(device_links__device=device)
+
+
+def scoped_to_setlists(device):
+    """기기가 '고른 세트리스트만' 받는가"""
+    from devices.models import Device
+    return device is not None and device.sync_mode == Device.SYNC_SETLISTS
+
+
+def readable_in_scope(user, device=None):
+    """이 사람(기기)이 받을 악보 — 기기가 '고른 세트리스트만'이면 그 곡목들의 곡만"""
+    from setlists.models import SetlistItem
+    queryset = Score.objects.readable_by(user)
+    if scoped_to_setlists(device):
+        in_setlists = SetlistItem.objects.filter(setlist__in=device_setlists(user, device)).values('score_id')
+        queryset = queryset.filter(id__in=in_setlists)
+    return queryset
+
+
+def readable_with_effective_time(user, device=None):
+    """기준 시각 = max(updated_at, 내가 그 앙상블에 들어온 시각[, 곡목에 들어간 · 곡목을 이 기기로 고른 시각])"""
+    from setlists.models import SetlistItem
     my_join = Membership.objects.filter(ensemble=OuterRef('ensemble'), user=user).values('joined_at')[:1]
-    return (Score.objects.readable_by(user)
-            .annotate(effective=Greatest('updated_at', Coalesce(Subquery(my_join, output_field=DateTimeField()),
-                                                                'updated_at')))
+    effective = Greatest('updated_at', Coalesce(Subquery(my_join, output_field=DateTimeField()), 'updated_at'))
+    if scoped_to_setlists(device):
+        # 곡목에 곡을 넣거나 곡목을 새로 고르면 그 곡은 "새로 보이게 된 것" — 앙상블에 들어온 경우와 같은 방식
+        # filter 를 annotate 보다 먼저 — 같은 다대다 조인을 써서 이 기기의 added_at 만 본다(다른 기기가 고른 시각이 섞이지 않게)
+        entered = (SetlistItem.objects.filter(score=OuterRef('pk'), setlist__in=device_setlists(user, device),
+                                              setlist__device_links__device=device)
+                   .annotate(t=Greatest('created_at', 'setlist__device_links__added_at'))
+                   .order_by('-t').values('t')[:1])
+        effective = Greatest(effective, Coalesce(Subquery(entered, output_field=DateTimeField()), 'updated_at'))
+    return (readable_in_scope(user, device)
+            .annotate(effective=effective)
             .select_related('ensemble', 'current_version')
             .prefetch_related('current_version__analyses'))
 
 
-def changes(user, cursor=None, limit=None):
-    """→ dict(scores=[Score…], ids=[…], cursor=str|None, has_more=bool)"""
+def changes(user, cursor=None, limit=None, device=None):
+    """→ dict(scores=[Score…], ids=[…], cursor=str|None, has_more=bool). device 가 있으면 그 기기가 받을 범위"""
     limit = limit or settings.SYNC_PAGE_SIZE
     position = decode_cursor(cursor)
     horizon = timezone.now() - timedelta(seconds=settings.SYNC_LAG_SECONDS)
 
-    queryset = readable_with_effective_time(user).filter(effective__lte=horizon)
+    queryset = readable_with_effective_time(user, device).filter(effective__lte=horizon)
     if position is not None:
         moment, last_id = position
         queryset = queryset.filter(Q(effective__gt=moment) | Q(effective=moment, id__gt=last_id))
@@ -83,5 +115,5 @@ def changes(user, cursor=None, limit=None):
     else:
         next_cursor = cursor or None   # 바뀐 것이 없으면 그대로 (처음이면 아직 없음)
 
-    ids = sorted(Score.objects.readable_by(user).values_list('id', flat=True))
+    ids = sorted(readable_in_scope(user, device).values_list('id', flat=True))
     return {'scores': rows, 'ids': ids, 'cursor': next_cursor, 'has_more': has_more}

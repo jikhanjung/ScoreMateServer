@@ -31,6 +31,7 @@ urlpatterns = [
     path('setlists/<int:pk>/edit/', views.setlist_edit, name='setlist_edit'),
     path('setlists/<int:pk>/delete/', views.setlist_delete, name='setlist_delete'),
     path('setlists/<int:pk>/add/', views.setlist_add, name='setlist_add'),
+    path('setlists/<int:pk>/devices/', views.setlist_devices, name='setlist_devices'),
     path('setlists/<int:pk>/items/<int:item_id>/', views.setlist_item, name='setlist_item'),
 
     path('ensembles/', views.ensemble_list, name='ensembles'),
@@ -46,6 +47,7 @@ urlpatterns = [
     path('devices/', views.device_list, name='devices'),
     path('devices/<uuid:pk>/rename/', views.device_rename, name='device_rename'),
     path('devices/<uuid:pk>/revoke/', views.device_revoke, name='device_revoke'),
+    path('devices/<uuid:pk>/sync/', views.device_sync, name='device_sync'),
 
     path('join/', views.join, name='join_form'),
     path('join/<str:code>/', views.join, name='join'),

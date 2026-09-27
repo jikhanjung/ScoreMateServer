@@ -84,3 +84,7 @@
 - 그대로: API(TV 동기화 · 앙상블 API), 초대 링크(`/join/<code>/` — 초대 전용 가입이 이것에 기댄다), 앙상블 페이지 직접 주소
 - 다시 보이려면 `.env` 에 `WEB_ENSEMBLES=true` → `docker compose up -d --force-recreate`
 - 마이그레이션 없음
+
+### 0.7.0 (2026-09-27) — TV 마다 받을 것(세트리스트)
+- 🔴 **마이그레이션 있음** `devices.0003_device_sync_setlists` — 열 · 표 추가 + 데이터: **기존 기기는 `all`(모든 악보)** 로 둔다. 새 기기 기본은 `setlists`
+- 웹 TV 화면 · 세트리스트 "보낼 TV" · TV 연결 화면에서 고른다. TV 앱 변경 없음

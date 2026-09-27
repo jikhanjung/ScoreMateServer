@@ -11,7 +11,13 @@ from rest_framework.views import APIView
 from devices.auth import PerDeviceScopedRateThrottle
 from devices.models import Device
 from .serializers import SyncScoreSerializer
-from .sync import BadCursor, changes
+from .sync import BadCursor, changes, device_setlists, scoped_to_setlists
+
+
+def self_device(request):
+    """기기 토큰이면 그 기기(받을 범위를 정한다), 아니면 None — 웹 · 사용자 토큰은 볼 수 있는 것 전부"""
+    device_id = getattr(request.user, 'device_id', None)
+    return Device.objects.filter(pk=device_id).first() if device_id else None
 
 
 class ScoreSyncView(APIView):
@@ -25,8 +31,9 @@ class ScoreSyncView(APIView):
             if not limit.isdigit() or not 1 <= int(limit) <= settings.SYNC_PAGE_SIZE:
                 raise ValidationError({'limit': f'1..{settings.SYNC_PAGE_SIZE}'})
             limit = int(limit)
+        device = self_device(request)
         try:
-            result = changes(request.user, cursor=request.query_params.get('cursor') or None, limit=limit)
+            result = changes(request.user, cursor=request.query_params.get('cursor') or None, limit=limit, device=device)
         except BadCursor:
             raise ValidationError({'cursor': 'Invalid cursor. Start over without one.'})
 
@@ -58,8 +65,11 @@ class SetlistSyncView(APIView):
         from setlists.models import Setlist
         from .models import Score
 
-        setlists = list(Setlist.objects.readable_by(request.user).select_related('ensemble')
-                        .prefetch_related('items').order_by('id'))
+        device = self_device(request)
+        setlists = Setlist.objects.readable_by(request.user)
+        if scoped_to_setlists(device):
+            setlists = device_setlists(request.user, device)   # 이 TV 로 고른 곡목만
+        setlists = list(setlists.select_related('ensemble').prefetch_related('items').order_by('id'))
         readable = set(Score.objects.readable_by(request.user).values_list('id', flat=True))
         payload = []
         for setlist in setlists:

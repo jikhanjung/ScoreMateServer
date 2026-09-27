@@ -27,6 +27,7 @@ class MultiDeviceTest(TestCase):
         self.client.force_login(self.user)
         self.client.post(reverse('web:activate'), {'code': codes['user_code'], 'decision': 'approve'})
         tokens = codes_client.post('/api/v1/device/token', {'device_code': codes['device_code']}, format='json').data
+        Device.objects.filter(pk=tokens['device_id']).update(sync_mode=Device.SYNC_ALL)   # 이 파일은 '모든 악보' 기준
         tv = APIClient()
         tv.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}")
         return tv, tokens

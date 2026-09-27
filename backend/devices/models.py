@@ -36,7 +36,15 @@ def hash_device_code(device_code):
 
 
 class Device(models.Model):
-    """연결된 TV. 해제하면(revoked_at) 그 기기의 토큰이 곧바로 거부된다"""
+    """연결된 TV. 해제하면(revoked_at) 그 기기의 토큰이 곧바로 거부된다
+
+    무엇을 받나(sync_mode): 고른 세트리스트의 곡만(기본) 또는 볼 수 있는 악보 전부.
+    TV 는 동기화 응답의 ids 에 없는 악보를 정리하므로, 곡목에서 빠지면 TV 에서도 정리된다.
+    """
+    SYNC_SETLISTS = 'setlists'
+    SYNC_ALL = 'all'
+    SYNC_CHOICES = [(SYNC_SETLISTS, 'Selected setlists only'), (SYNC_ALL, 'All scores')]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='devices')
     name = models.CharField(max_length=100, help_text='e.g. "Living room TV"')
@@ -46,6 +54,8 @@ class Device(models.Model):
     last_seen_at = models.DateTimeField(null=True, blank=True)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    sync_mode = models.CharField(max_length=10, choices=SYNC_CHOICES, default=SYNC_SETLISTS)
+    sync_setlists = models.ManyToManyField('setlists.Setlist', through='DeviceSetlist', blank=True, related_name='+')
 
     class Meta:
         db_table = 'devices'
@@ -58,6 +68,17 @@ class Device(models.Model):
     @property
     def is_active(self):
         return self.revoked_at is None
+
+
+class DeviceSetlist(models.Model):
+    """이 TV 로 보낼 세트리스트. added_at — 고른 뒤 그 곡들이 동기화에 "새로 보이게 된 것"으로 온다"""
+    device = models.ForeignKey(Device, on_delete=models.CASCADE, related_name='setlist_links')
+    setlist = models.ForeignKey('setlists.Setlist', on_delete=models.CASCADE, related_name='device_links')
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'device_setlists'
+        constraints = [models.UniqueConstraint(fields=['device', 'setlist'], name='unique_device_setlist')]
 
 
 class DeviceAuthorization(models.Model):

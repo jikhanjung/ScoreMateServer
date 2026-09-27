@@ -1,16 +1,16 @@
 {% extends 'web/base.html' %}
 {% block title %}세트리스트{% endblock %}
 {% block content %}
-<div class="head"><div><h1>세트리스트</h1><p class="muted">연주회 · 합주 곡목. 앙상블 곡목은 멤버 모두의 TV 에 갑니다.</p></div></div>
+<div class="head"><div><h1>세트리스트</h1><p class="muted">연주회 · 합주 곡목{% if ensembles_enabled %}. 앙상블 곡목은 멤버 모두의 TV 에 갑니다{% endif %}.</p></div></div>
 {% if setlists %}
 <div class="box table-wrap">
   <table class="stacked">
-    <thead><tr><th>이름</th><th>어디</th><th>곡</th><th>고친 날</th></tr></thead>
+    <thead><tr><th>이름</th>{% if ensembles_enabled %}<th>어디</th>{% endif %}<th>곡</th><th>고친 날</th></tr></thead>
     <tbody>
     {% for s in setlists %}
       <tr>
         <td><a href="{% url 'web:setlist_detail' s.pk %}"><strong>{{ s.title }}</strong></a>{% if s.description %}<div class="muted small">{{ s.description|truncatechars:80 }}</div>{% endif %}</td>
-        <td>{% if s.ensemble %}<span class="badge">{{ s.ensemble.name }}</span>{% else %}<span class="badge plain">내 세트리스트</span>{% endif %}</td>
+        {% if ensembles_enabled %}<td>{% if s.ensemble %}<span class="badge">{{ s.ensemble.name }}</span>{% else %}<span class="badge plain">내 세트리스트</span>{% endif %}</td>{% endif %}
         <td>{{ s.n_items }}곡</td>
         <td class="small">{{ s.updated_at|date:'Y-m-d' }}</td>
       </tr>
@@ -25,7 +25,7 @@
 <div class="box" style="max-width:640px">
   <form method="post" class="stack">{% csrf_token %}
     {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
-    {% if not can_make_ensemble %}<p class="muted small">앙상블 곡목은 그 앙상블의 소유자나 리더가 만듭니다.</p>{% endif %}
+    {% if ensembles_enabled and not can_make_ensemble %}<p class="muted small">앙상블 곡목은 그 앙상블의 소유자나 리더가 만듭니다.</p>{% endif %}
     <button class="btn primary" type="submit">만들기</button>
   </form>
 </div>

@@ -166,6 +166,7 @@ See `.env.example`:
 - `DATABASE_URL`: optional; e.g. Postgres for the compose stack
 - `REDIS_URL`: optional; when set, tasks go through the broker to a worker
 - `REGISTRATION_OPEN`: `false` in production — only people arriving with a usable invite can register (and they join that ensemble)
+- `WEB_ENSEMBLES`: `false` by default (2026-09-27) — ensemble menus/selectors hidden on the web; API, invite links and direct URLs keep working. Web tests run with it on (conftest); hidden mode is `tests/test_web_ensembles_hidden.py`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: enable Google login on the web (redirect URI `/auth/google/callback/`)
 - `STORAGE_*`: MinIO/S3 configuration
 - `JWT_SIGNING_KEY`, `MAX_UPLOAD_MB`, `ALLOWED_MIME` (default `application/pdf`)

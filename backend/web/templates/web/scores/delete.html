@@ -5,7 +5,7 @@
   <h1>악보 지우기</h1>
   <div class="box">
     <p><strong>{{ score.title }}</strong>{% if score.part_name %} ({{ score.part_name }}){% endif %} 을(를) 지웁니다.</p>
-    {% if score.ensemble %}<p class="muted">"{{ score.ensemble.name }}" 멤버 모두에게서 사라집니다.</p>{% endif %}
+    {% if ensembles_enabled and score.ensemble %}<p class="muted">"{{ score.ensemble.name }}" 멤버 모두에게서 사라집니다.</p>{% endif %}
     <p class="muted">파일도 지워지고 되돌릴 수 없습니다.</p>
     <form method="post" class="actions">{% csrf_token %}
       <button class="btn danger solid" type="submit">지우기</button>

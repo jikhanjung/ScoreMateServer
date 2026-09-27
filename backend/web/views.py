@@ -186,7 +186,7 @@ def score_list(request):
         scores = scores.filter(ensemble_id=int(where))
     page = Paginator(scores, 24).get_page(request.GET.get('page'))
     _decorate(page.object_list, user)
-    ensembles = Ensemble.objects.filter(memberships__user=user).order_by('name')
+    ensembles = Ensemble.objects.filter(memberships__user=user).order_by('name') if settings.WEB_ENSEMBLES else []
     return render(request, 'web/scores/list.html', {
         'page': page, 'q': q, 'where': where, 'ensembles': ensembles,
         'can_upload_to_ensemble': managed_ensembles(user).exists(),
@@ -213,7 +213,7 @@ def score_upload(request):
     form = UploadForm(request.POST or None, request.FILES or None, user=user, initial=initial)
     context = {'form': form, 'max_mb': settings.MAX_UPLOAD_SIZE // (1024 * 1024), 'duplicates': []}
     if request.method == 'POST' and form.is_valid():
-        ensemble = form.cleaned_data['ensemble']
+        ensemble = form.cleaned_data.get('ensemble')
         items = list(form.items())
         # 같은 곳에 제목 · 파트가 같은 악보가 있으면 먼저 묻는다 — 대개 수정판을 새 악보로 올리는 경우(새 판이 맞다)
         matches = [(title, part, same_title_and_part(user, ensemble, title, part).first()) for _, title, part in items]
@@ -646,13 +646,13 @@ def setlist_list(request):
     if request.method == 'POST' and form.is_valid():
         setlist = Setlist.objects.create(user=request.user, title=form.cleaned_data['title'],
                                          description=form.cleaned_data['description'],
-                                         ensemble=form.cleaned_data['ensemble'])
+                                         ensemble=form.cleaned_data.get('ensemble'))
         messages.success(request, '세트리스트를 만들었습니다. 곡을 넣으세요.')
         return redirect('web:setlist_detail', pk=setlist.pk)
     setlists = (Setlist.objects.readable_by(request.user).select_related('ensemble')
                 .annotate(n_items=Count('items', distinct=True)).order_by('-updated_at'))
     return render(request, 'web/setlists/list.html', {'setlists': setlists, 'form': form,
-                                                      'can_make_ensemble': managed_ensembles(request.user).exists()})
+                                                      'can_make_ensemble': settings.WEB_ENSEMBLES and managed_ensembles(request.user).exists()})
 
 
 @login_required

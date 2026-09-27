@@ -2,9 +2,9 @@
   <div class="thumb">{% if score.thumb %}<img src="{{ score.thumb }}" alt="" loading="lazy">{% else %}<span class="ph">{% if score.pages %}{{ score.pages }}쪽{% else %}처리 중{% endif %}</span>{% endif %}</div>
   <div class="card-body">
     <div class="card-title">{{ score.title }}</div>
-    {% if score.part_name or show_ensemble and score.ensemble or score.current_version.number > 1 %}<div class="card-meta">
+    {% if score.part_name or ensembles_enabled and show_ensemble and score.ensemble or score.current_version.number > 1 %}<div class="card-meta">
       {% if score.part_name %}<span class="badge plain">{{ score.part_name }}</span>{% endif %}
-      {% if show_ensemble and score.ensemble %}<span class="badge">{{ score.ensemble.name }}</span>{% endif %}
+      {% if ensembles_enabled and show_ensemble and score.ensemble %}<span class="badge">{{ score.ensemble.name }}</span>{% endif %}
       {% if score.current_version.number > 1 %}<span class="badge plain">판 {{ score.current_version.number }}</span>{% endif %}
     </div>{% endif %}
     {% if score.composer %}<div class="card-sub">{{ score.composer }}</div>{% endif %}

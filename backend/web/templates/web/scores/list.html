@@ -2,16 +2,18 @@
 {% block title %}악보{% endblock %}
 {% block content %}
 <div class="head">
-  <div><h1>악보</h1><p class="muted">내 악보와 내가 속한 앙상블의 악보 {{ page.paginator.count }}개</p></div>
+  <div><h1>악보</h1><p class="muted">{% if ensembles_enabled %}내 악보와 내가 속한 앙상블의 악보{% else %}내 악보{% endif %} {{ page.paginator.count }}개</p></div>
   <a class="btn primary" href="{% url 'web:score_upload' %}">올리기</a>
 </div>
 <form method="get" class="row" style="margin-bottom:1rem">
   <input type="search" name="q" value="{{ q }}" placeholder="제목 · 작곡가 · 편성 · 파트" aria-label="검색">
+{% if ensembles_enabled %}
   <select name="ensemble" aria-label="어디의 악보">
     <option value="">전체</option>
     <option value="personal" {% if where == 'personal' %}selected{% endif %}>내 악보만</option>
     {% for e in ensembles %}<option value="{{ e.pk }}" {% if where == e.pk|stringformat:'s' %}selected{% endif %}>{{ e.name }}</option>{% endfor %}
   </select>
+  {% endif %}
   <button class="btn" type="submit">찾기</button>
 </form>
 {% if page.object_list %}

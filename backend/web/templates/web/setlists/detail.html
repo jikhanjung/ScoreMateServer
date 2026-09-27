@@ -6,7 +6,7 @@
     <h1>{{ setlist.title }}</h1>
     {% if setlist.description %}<p>{{ setlist.description }}</p>{% endif %}
     <p class="muted small">
-      {% if setlist.ensemble %}<a class="badge" href="{% url 'web:ensemble_detail' setlist.ensemble.pk %}">{{ setlist.ensemble.name }}</a>{% else %}<span class="badge plain">내 세트리스트</span>{% endif %}
+      {% if not ensembles_enabled %}{% elif setlist.ensemble %}<a class="badge" href="{% url 'web:ensemble_detail' setlist.ensemble.pk %}">{{ setlist.ensemble.name }}</a>{% else %}<span class="badge plain">내 세트리스트</span>{% endif %}
       {{ items|length }}곡{% if total_pages %} · {{ total_pages }}쪽{% endif %}
     </p>
   </div>
@@ -50,7 +50,7 @@
   {% if candidates %}
   <form method="post" action="{% url 'web:setlist_add' setlist.pk %}" class="stack">{% csrf_token %}
     <div class="field">
-      <label for="id_score">{% if setlist.ensemble %}{{ setlist.ensemble.name }} 의 악보{% else %}내 악보{% endif %}</label>
+      <label for="id_score">{% if ensembles_enabled and setlist.ensemble %}{{ setlist.ensemble.name }} 의 악보{% else %}내 악보{% endif %}</label>
       <select id="id_score" name="score" multiple size="{% if candidates|length > 8 %}8{% else %}{{ candidates|length }}{% endif %}">
         {% for s in candidates %}<option value="{{ s.pk }}">{{ s.title }}{% if s.part_name %} — {{ s.part_name }}{% endif %}</option>{% endfor %}
       </select>

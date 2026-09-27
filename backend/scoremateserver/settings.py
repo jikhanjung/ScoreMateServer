@@ -300,6 +300,9 @@ SESSION_COOKIE_AGE = 60 * 60 * 24 * 30   # 한 달 — 리허설 때마다 로�
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
 
+# 웹 화면에 앙상블 관련 메뉴 · 선택 · 표시를 보일지(2026-09-27 결정: 일단 숨김). API(TV) · 초대 링크 · 직접 주소는 그대로 동작한다
+WEB_ENSEMBLES = env_bool('WEB_ENSEMBLES', False)
+
 # 가입을 누구에게나 열지 (False 면 웹 · API 가입이 닫히고 초대 링크로 이미 가입한 사람만 쓴다)
 REGISTRATION_OPEN = env_bool('REGISTRATION_OPEN', True)
 

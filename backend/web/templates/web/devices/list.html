@@ -2,7 +2,7 @@
 {% block title %}TV{% endblock %}
 {% block content %}
 <div class="head">
-  <div><h1>TV</h1><p class="muted">내 계정에 연결된 기기. 연결된 TV 는 내 악보와 내 앙상블의 악보를 받습니다.</p></div>
+  <div><h1>TV</h1><p class="muted">내 계정에 연결된 기기. 연결된 TV 는 내 악보{% if ensembles_enabled %}와 내 앙상블의 악보{% endif %}를 받습니다.</p></div>
   <a class="btn primary" href="{% url 'web:activate' %}">TV 연결</a>
 </div>
 {% if devices %}

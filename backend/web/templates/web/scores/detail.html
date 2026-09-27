@@ -7,7 +7,7 @@
     <h1>{{ score.title }}</h1>
     <p>
       {% if score.part_name %}<span class="badge plain">{{ score.part_name }}</span>{% endif %}
-      {% if score.ensemble %}<a class="badge" href="{% url 'web:ensemble_detail' score.ensemble.pk %}">{{ score.ensemble.name }}</a>{% else %}<span class="badge plain">내 악보</span>{% endif %}
+      {% if not ensembles_enabled %}{% elif score.ensemble %}<a class="badge" href="{% url 'web:ensemble_detail' score.ensemble.pk %}">{{ score.ensemble.name }}</a>{% else %}<span class="badge plain">내 악보</span>{% endif %}
       {% if score.current_version %}<a class="badge plain" href="#versions">판 {{ score.current_version.number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</a>{% endif %}
     </p>
     <div class="actions">
@@ -66,7 +66,7 @@
   <form method="post" action="{% url 'web:version_upload' score.pk %}" enctype="multipart/form-data" class="stack" data-busy="올리는 중…">{% csrf_token %}
     {% with form=version_form %}{% for field in form %}{% include 'web/_field.html' %}{% endfor %}{% endwith %}
     <button class="btn primary" type="submit">새 판 올리기</button>
-    <p class="muted small">새 판이 곧바로 지금 쓰는 판이 됩니다{% if score.ensemble %} — "{{ score.ensemble.name }}" 멤버 모두에게{% endif %}. 예전 판은 남아 있어 되돌릴 수 있습니다.</p>
+    <p class="muted small">새 판이 곧바로 지금 쓰는 판이 됩니다{% if ensembles_enabled and score.ensemble %} — "{{ score.ensemble.name }}" 멤버 모두에게{% endif %}. 예전 판은 남아 있어 되돌릴 수 있습니다.</p>
   </form>
 </div>
 {% endif %}

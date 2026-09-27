@@ -11,7 +11,7 @@
       {% if authorization.device_model %}<dt>모델</dt><dd>{{ authorization.device_model }}</dd>{% endif %}
       {% if authorization.app_version %}<dt>앱</dt><dd>{{ authorization.app_version }}</dd>{% endif %}
     </dl>
-    <p class="muted small">TV 화면의 코드와 같은지 확인하세요. 연결하면 이 TV 가 내 악보와 내 앙상블의 악보를 받습니다.</p>
+    <p class="muted small">TV 화면의 코드와 같은지 확인하세요. 연결하면 이 TV 가 내 악보{% if ensembles_enabled %}와 내 앙상블의 악보{% endif %}를 받습니다.</p>
     <form method="post" class="stack">{% csrf_token %}
       <input type="hidden" name="code" value="{{ authorization.display_code }}">
       <div class="field">

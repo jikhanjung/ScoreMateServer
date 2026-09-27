@@ -91,6 +91,8 @@ class UploadForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.user = user
         self.fields['ensemble'].queryset = managed_ensembles(user)
+        if not settings.WEB_ENSEMBLES:   # 앙상블을 웹에서 숨긴 동안은 개인 악보로만
+            del self.fields['ensemble']
 
     def clean_files(self):
         files = self.cleaned_data['files']
@@ -213,3 +215,5 @@ class SetlistForm(forms.Form):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['ensemble'].queryset = managed_ensembles(user)
+        if not settings.WEB_ENSEMBLES:
+            del self.fields['ensemble']

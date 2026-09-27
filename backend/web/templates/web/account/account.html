@@ -11,7 +11,7 @@
   </dl>
   <div class="small">저장 공간 {{ user.used_quota_mb }}MB / {{ user.total_quota_mb }}MB</div>
   <div class="quota"><span style="width:{{ used_pct }}%"></span></div>
-  <p class="muted small">앙상블에 올린 악보도 올린 사람의 공간을 씁니다.</p>
+  {% if ensembles_enabled %}<p class="muted small">앙상블에 올린 악보도 올린 사람의 공간을 씁니다.</p>{% endif %}
 </div>
 <h2>{% if has_password %}비밀번호 바꾸기{% else %}비밀번호 정하기{% endif %}</h2>
 <div class="box" style="max-width:640px">

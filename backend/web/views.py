@@ -295,6 +295,21 @@ def score_file(request, pk, disposition, number=None):
 
 
 @login_required
+def version_musicxml(request, pk, number):
+    """그 판의 악보 인식 결과(MusicXML) 받기 — PDF 와 같은 권한 · 같은 짧은 서명 URL"""
+    from scores.omr import musicxml_of
+    score = _readable_score(request, pk)
+    version = _version_or_404(score, number)
+    analysis = musicxml_of(version)
+    if analysis is None:
+        raise Http404('No MusicXML for this version')
+    stem = (version.original_filename or score.title).rsplit('.', 1)[0]
+    url = get_storage().generate_presigned_download_url(
+        analysis.data['musicxml_key'], expiry=300, filename=f'{stem} (v{number}).musicxml')['url']
+    return HttpResponseRedirect(url)
+
+
+@login_required
 @require_POST
 def version_upload(request, pk):
     score = _writable_score(request, pk)

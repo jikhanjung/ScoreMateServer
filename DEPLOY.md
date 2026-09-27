@@ -98,3 +98,9 @@
 ### 0.7.2 (2026-09-27) — 상단 버전 표시
 - 웹 상단 "ScoreMate" 옆에 `v{VERSION}`(version.py — 배포마다 따라간다)
 - 마이그레이션 없음
+
+### 0.8.0 (2026-09-28) — 악보 인식(OMR) 레인
+- 새 관리 명령 `omr_pending` · `omr_ingest`, 웹 판 목록에 인식 결과 · **MusicXML** 받기. 결과는 `files/…/scores/{id}/omr/v{N}.musicxml` + 분석 `astra-musicxml`
+- 배포가 `scripts/astra_musicxml.py` · `scripts/omr_lane.sh` 를 이미지에서 꺼낸다(`_extract_and_deploy.sh` — **새 추출 규칙은 다음 배포부터**, 이번엔 한 번 `docker cp`)
+- 호스트 1회: `omr/venv`(music21 · pymupdf, 설치함) · `codex login --device-auth`(사람) · cron `*/10 … omr_lane.sh` — deploy/README.md §악보 인식
+- 마이그레이션 없음

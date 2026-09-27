@@ -27,7 +27,9 @@ deploy/
     scoremate.nginx.conf   호스트 nginx 사이트 원본 (TLS · 점검 페이지 · X-Accel internal location)
     maintenance.html       컨테이너 교체 중 nginx 가 503 으로 보여 줄 페이지
     .env.example           /srv/scoremate/.env 서식
+    omr_lane.sh            악보 인식(OMR) 레인 — 호스트 cron, 한 번에 판 하나 (§악보 인식)
 backend/scripts/backup_db.py   운영 hourly 백업 (이미지에 실려 /srv/scoremate/scripts 로 추출)
+backend/scripts/astra_musicxml.py  PDF → MusicXML (Codex CLI gpt-6-astra, 호스트에서 실행)
 ```
 
 ## 운영 레이아웃 (`/srv/scoremate`)
@@ -36,10 +38,11 @@ backend/scripts/backup_db.py   운영 hourly 백업 (이미지에 실려 /srv/sc
 |---|---|---|
 | `.env` (600) | IMAGE_TAG · HOST_PORT · SECRET_KEY · 관리자 | env_file |
 | `db/` | `db.sqlite3` (+ `-wal` `-shm`), 손상 센티넬 `INTEGRITY_FAIL` | `/app/hostdb` |
-| `files/` | 악보 PDF · 썸네일 (`{user_id}/uploads/…`, `{user_id}/scores/…`) | `/app/hostfiles` |
+| `files/` | 악보 PDF · 썸네일 · 인식 결과 MusicXML (`{user_id}/uploads/…`, `{user_id}/scores/…`, `…/scores/{id}/omr/v{N}.musicxml`) | `/app/hostfiles` |
+| `omr/` | 인식 레인: `venv/`(music21 · pymupdf) · `work/v{판 id}/`(조각 · 로그, 이어 하기용) · `lane.log` · `lane.lock` | — |
 | `backup/` | hourly `scoremate_YYYYMMDD_HH.sqlite3`(24) · `pre_deploy/`(20) · nginx tar · `backup.log` | — |
 | `maintenance/`, `acme/` | 점검 페이지 · Let's Encrypt webroot | — |
-| `scripts/backup_db.py`, `*.sh`, `docker-compose.yml`, `scoremate.nginx.conf` | 이미지에서 추출 | — |
+| `scripts/backup_db.py`, `scripts/astra_musicxml.py`, `scripts/omr_lane.sh`, `*.sh`, `docker-compose.yml`, `scoremate.nginx.conf` | 이미지에서 추출 | — |
 
 파일 받기: API 가 준 서명 URL(`/api/v1/files/blob/<token>/`) → Django 가 토큰만 확인하고 `X-Accel-Redirect: /_protected/<key>`
 → nginx 가 `/srv/scoremate/files/<key>` 를 직접 보낸다. 올리기는 같은 URL 에 PUT(Django 가 디스크에 쓴다, 한 번만).
@@ -93,3 +96,33 @@ nginx(www-data)가 `files/` 를 읽을 수 있어야 한다 — 컨테이너가 
 | pre-deploy | `deploy.sh` [4/7], 정지 후 cp | 20 |
 | hourly | dolfinid cron `backup_db.py` — 무결성 검사 후 채택, 실패 시 prune 안 함 + 센티넬 → healthz degraded | 24 |
 | daily 오프사이트 | m710q `~/scripts/backup-scoremate.sh` (정본 `system-operation/m710q/`) — 검증된 hourly 스냅샷 pull + `files/` rsync 하드링크 스냅샷 + NAS | 로컬 30일 · NAS 90일 |
+
+**올린 PDF(와 썸네일 · MusicXML)는 `files/` 에 있고 daily 오프사이트가 챙긴다** — pre-deploy · hourly 는 DB 만.
+m710q `~/backups/scoremate/current/files/`(미러) · `files_snapshots/monthly/YYYYMM_full` + `daily/YYYYMMDD`(하드링크, 한 번 쓰면 안 바뀌는 파일이라 싸다) ·
+NAS `scoremate_backup/current/files` + `files_snapshots`(-H). 2026-09-28 확인: PDF 6 · 표지 5 모두 미러에 있다.
+한계: 하루 한 번(05:25)이라 그날 올린 파일은 다음 새벽까지 운영 디스크에만 있다 — 필요하면 files 만 더 자주 rsync.
+
+## 악보 인식 (OMR, devlog P01)
+
+PDF → MusicXML 을 **운영 호스트의 cron** 이 만든다. 모델 호출(Codex CLI, `gpt-6-astra`, ChatGPT 로그인)은 호스트에서, 결과 저장은 컨테이너에서.
+
+```
+*/10 cron → scripts/omr_lane.sh
+  1. docker compose exec api manage.py omr_pending    인식할 판(지금 쓰는 판 · 해시 있음 · 인식 기록 없음) 하나
+  2. sha256 확인 후 omr/venv/bin/python scripts/astra_musicxml.py files/<key> omr/work/v<id>
+       2쪽씩 호출 → 조각마다 파트 구성 · 마디별 박 길이 검산(실패 시 오류를 알려 한 번 더) → 이어 붙이기
+  3. 결과 JSON | manage.py omr_ingest   → 판의 분석(analyzer=astra-musicxml) + files/…/omr/v<N>.musicxml
+```
+- 웹 악보 화면의 판 목록에 "악보 인식 · N파트 · M마디" + **MusicXML** 받기(PDF 와 같은 권한). 실패는 "악보 인식 실패"
+- 검산을 통과하지 못한 판은 실패로 기록하고 다시 부르지 않는다 → 다시 하려면 admin 에서 그 분석(ScoreAnalysis)을 지운다
+- 실행 자체가 안 된 경우(codex · 로그인 · 시간 초과)는 기록하지 않고 다음 cron 에서 다시, 같은 판이 3번 그러면 실패로 기록
+- 쪽당 6~7분(2쪽 호출 13분 안팎). 겹치지 않게 flock. 구독 한도는 이 호스트 사용자의 ChatGPT 계정
+
+설치(1회, 사람):
+```bash
+# codex 는 nvm node 에 있다 (cron 은 nvm 을 안 읽으므로 레인이 ~/.nvm/versions/node/*/bin 을 스스로 PATH 에 넣는다)
+codex login --device-auth            # 만료되면 codex logout 후 다시
+python3 -m venv /srv/scoremate/omr/venv && /srv/scoremate/omr/venv/bin/pip install music21 pymupdf
+( crontab -l; echo '*/10 * * * * /srv/scoremate/scripts/omr_lane.sh >> /srv/scoremate/omr/lane.log 2>&1' ) | crontab -
+```
+멈추기: 그 cron 줄을 지운다(주석 처리). 진행 확인: `tail -f /srv/scoremate/omr/lane.log`, `omr/work/v<id>/run.log`.

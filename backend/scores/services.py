@@ -106,6 +106,8 @@ def delete_version(score, version):
             raise VersionError('A score keeps at least one version. Delete the score instead.')
         was_current = locked.current_version_id == version.pk
         s3_key = version.s3_key
+        from .omr import stored_keys
+        extra_keys = stored_keys([version])
         if version.uploaded_by_id:
             get_user_model().objects.filter(pk=version.uploaded_by_id).update(
                 used_quota_mb=F('used_quota_mb') - size_mb(version.size_bytes))
@@ -114,6 +116,8 @@ def delete_version(score, version):
             _mirror(locked, locked.versions.order_by('-number').first())
     from tasks.file_tasks import delete_single_file
     delete_single_file.delay(s3_key)
+    for key in extra_keys:
+        delete_single_file.delay(key)
     if was_current:
         make_current(locked, locked.current_version)   # 썸네일을 그 판으로
 
@@ -129,6 +133,8 @@ def delete_score(score):
         refunds[score.user_id] = size_mb(score.size_bytes)
     s3_key, thumbnail_key, score_id = score.s3_key, score.thumbnail_key, score.id
     other_keys = [v.s3_key for v in versions if v.s3_key != s3_key]
+    from .omr import stored_keys
+    other_keys += stored_keys(versions)
     with transaction.atomic():
         User = get_user_model()
         for user_id, mb in refunds.items():

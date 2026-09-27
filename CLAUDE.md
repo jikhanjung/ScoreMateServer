@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-27) — 351 backend tests passing, 0.7.2 in production
+### Status (2026-09-28) — 359 backend tests passing, 0.8.0 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -29,6 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | S6 | Ensemble setlists + sync, shared score analysis (per version, sha256-checked), Google login (OIDC, off until client id set) | ✅ devlog 061 |
 | — | Per-TV scope: selected setlists only (default) / all scores; chosen on the web only | ✅ devlog 062 |
 | — | Web polish: tidy TV / setlist pickers (0.7.1), version next to the brand (0.7.2) | ✅ devlog 063 |
+| — | OMR lane: PDF → MusicXML via Codex CLI (gpt-6-astra) on the prod host cron, results as version analysis + file | ✅ devlog 064, plan P01 |
 
 ## Development Commands
 
@@ -132,7 +133,8 @@ backend/
   ensembles/         # Ensemble, Membership, Invite; services.py = membership/invite rules (API + web)
   devices/           # TV linking (RFC 8628): Device, DeviceAuthorization, device-aware JWT auth + refresh
   web/               # web UI (Django templates, session auth) — uses the same services/permissions as the API
-  scores/            # Score model (+ ensemble, part_name), readable_by/writable_by, services.py (create/delete + quota)
+  scores/            # Score model (+ ensemble, part_name), readable_by/writable_by, services.py (create/delete + quota), omr.py (OMR pending/ingest)
+  scripts/           # host-side scripts shipped in the image: backup_db.py, astra_musicxml.py (OMR, runs on the host)
   setlists/          # Setlist and SetlistItem
   files/             # presigned URL generation
   tasks/             # task definitions (pdf_info, thumbnail)

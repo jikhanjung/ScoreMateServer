@@ -22,6 +22,7 @@ urlpatterns = [
     path('scores/<int:pk>/versions/', views.version_upload, name='version_upload'),
     path('scores/<int:pk>/versions/<int:number>/view/', views.score_file, {'disposition': 'inline'}, name='version_view'),
     path('scores/<int:pk>/versions/<int:number>/download/', views.score_file, {'disposition': 'download'}, name='version_download'),
+    path('scores/<int:pk>/versions/<int:number>/musicxml/', views.version_musicxml, name='version_musicxml'),
     path('scores/<int:pk>/versions/<int:number>/current/', views.version_make_current, name='version_make_current'),
     path('scores/<int:pk>/versions/<int:number>/delete/', views.version_delete, name='version_delete'),
     path('scores/<int:pk>/delete/', views.score_delete, name='score_delete'),

@@ -177,7 +177,8 @@ class UploadTest(WebTestBase):
         response = self.client.post(reverse('web:score_upload'), {'files': pdf_file('La Gazza Ladra.pdf'), 'title': ''})
         score = Score.objects.get(user=self.member)
         self.assertRedirects(response, reverse('web:score_detail', args=[score.pk]))
-        self.assertEqual(score.title, 'La Gazza Ladra')
+        # 제목을 비우면 PDF 문서 제목('La Gazza ladra Overture - Full Score')에서 — 파일 이름보다 낫다
+        self.assertEqual((score.title, score.part_name), ('La Gazza ladra Overture', 'Full Score'))
         self.assertIsNone(score.ensemble)
         self.assertGreater(score.pages or 0, 0)                     # 요청 안에서 처리됐다
         self.assertTrue((self.files_root / score.s3_key).is_file())

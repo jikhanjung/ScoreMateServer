@@ -178,7 +178,7 @@ def score_list(request):
     where = request.GET.get('ensemble', '').strip()
     if q:
         for word in q.split():
-            scores = scores.filter(Q(title__icontains=word) | Q(composer__icontains=word) |
+            scores = scores.filter(Q(title__icontains=word) | Q(composer__icontains=word) | Q(arranger__icontains=word) |
                                    Q(instrumentation__icontains=word) | Q(part_name__icontains=word))
     if where == 'personal':
         scores = scores.filter(ensemble__isnull=True)
@@ -233,7 +233,8 @@ def score_upload(request):
                 continue
             created.append(create_score(
                 user=user, s3_key=key, size_bytes=uploaded.size, title=title, original_filename=uploaded.name,
-                composer=form.cleaned_data['composer'], instrumentation=form.cleaned_data['instrumentation'],
+                composer=form.cleaned_data['composer'], arranger=form.cleaned_data['arranger'],
+                instrumentation=form.cleaned_data['instrumentation'],
                 tags=form.tag_list(), note=form.cleaned_data['note'], ensemble=ensemble, part_name=part,
             ))
         parts = []
@@ -356,7 +357,32 @@ def score_edit(request, pk):
         form.save()
         messages.success(request, '저장했습니다.')
         return redirect('web:score_detail', pk=score.pk)
-    return render(request, 'web/scores/edit.html', {'form': form, 'score': score})
+    return render(request, 'web/scores/edit.html', {'form': form, 'score': score, 'suggestions': _suggestions(score)})
+
+
+def _suggestions(score):
+    """고치기 화면의 제안 — PDF 문서 속성, 악보 인식(Astra)이 첫 쪽에서 읽은 것. [(출처, {필드: 값})]"""
+    from scores import omr, pdfmeta
+    found = []
+    version = score.current_version
+    try:
+        meta = pdfmeta.read(get_storage().read_bytes(score.s3_key)) if score.s3_key else {}
+    except Exception:  # noqa: BLE001 — 파일을 못 읽어도 화면은 연다
+        meta = {}
+    guess = pdfmeta.suggest(meta)
+    pdf = {k: guess[k] for k in ('title', 'part_name') if guess.get(k)}
+    if guess.get('author'):
+        pdf['arranger'] = guess['author']   # 작성자는 대개 편곡 · 조판한 사람 — 제안일 뿐
+    if pdf:
+        found.append(('PDF 문서 정보', pdf))
+    analysis = next((a for a in version.analyses.all() if a.analyzer == omr.ANALYZER), None) if version else None
+    read = (analysis.data or {}).get('metadata') if analysis else None
+    if isinstance(read, dict):
+        fields = {k: str(read[k]).strip() for k in ('title', 'composer', 'arranger', 'instrumentation', 'part_name')
+                  if read.get(k) and str(read[k]).strip()}
+        if fields:
+            found.append(('악보 인식이 첫 쪽에서 읽은 것', fields))
+    return found
 
 
 @login_required

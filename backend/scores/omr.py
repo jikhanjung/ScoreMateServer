@@ -81,15 +81,18 @@ def measure_summary(xml_text):
     return summary
 
 
-def ingest(version, *, sha256, status, musicxml='', run=None, problems=None):
+def ingest(version, *, sha256, status, musicxml='', run=None, problems=None, metadata=None):
     """호스트 결과 → 분석 행. sha256 은 호스트가 읽은 PDF 의 것 — 그 사이 판이 바뀌었으면 받지 않는다"""
     from .services import save_analysis
 
     if (sha256 or '').lower() != version.content_hash:
         raise OmrError('sha256 does not match this version (the file changed while it was being read).')
     run = run or {}
+    # 첫 쪽에서 읽은 곡 정보(제목 · 작곡 · 편곡 …) — 인식이 실패해도 남긴다. 고치기 화면의 제안
+    metadata = {k: str(v)[:500] if not isinstance(v, list) else [str(x)[:100] for x in v[:60]]
+                for k, v in (metadata or {}).items() if isinstance(k, str)} if isinstance(metadata, dict) else {}
     if status == STATUS_FAILED:
-        data = {'status': STATUS_FAILED, 'problems': list(problems or [])[:50], 'run': run}
+        data = {'status': STATUS_FAILED, 'problems': list(problems or [])[:50], 'run': run, 'metadata': metadata}
         with transaction.atomic():
             ScoreAnalysis.objects.update_or_create(
                 version=version, analyzer=ANALYZER,
@@ -105,7 +108,7 @@ def ingest(version, *, sha256, status, musicxml='', run=None, problems=None):
     key = musicxml_key(version)
     get_storage().write_bytes(key, raw, 'application/vnd.recordare.musicxml+xml')
     data = {'status': STATUS_OK, 'musicxml_key': key, 'musicxml_sha256': hashlib.sha256(raw).hexdigest(),
-            'musicxml_bytes': len(raw), **summary, 'run': run}
+            'musicxml_bytes': len(raw), **summary, 'run': run, 'metadata': metadata}
     analysis, _ = save_analysis(version.score, user=version.score.user, analyzer=ANALYZER,
                                 analyzer_version=ANALYZER_VERSION, sha256=sha256, data=data, version=version)
     ScoreAnalysis.objects.filter(pk=analysis.pk).update(uploaded_by=None)   # 사람이 올린 것이 아니다

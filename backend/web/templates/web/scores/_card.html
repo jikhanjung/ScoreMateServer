@@ -7,6 +7,6 @@
       {% if ensembles_enabled and show_ensemble and score.ensemble %}<span class="badge">{{ score.ensemble.name }}</span>{% endif %}
       {% if score.current_version.number > 1 %}<span class="badge plain">판 {{ score.current_version.number }}</span>{% endif %}
     </div>{% endif %}
-    {% if score.composer %}<div class="card-sub">{{ score.composer }}</div>{% endif %}
+    {% if score.composer or score.arranger %}<div class="card-sub">{{ score.composer }}{% if score.composer and score.arranger %} · {% endif %}{% if score.arranger %}편곡 {{ score.arranger }}{% endif %}</div>{% endif %}
   </div>
 </a>

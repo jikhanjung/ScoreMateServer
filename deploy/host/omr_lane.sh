@@ -65,7 +65,9 @@ from pathlib import Path
 status, vid, sha, work = sys.argv[1], int(sys.argv[2]), sys.argv[3], Path(sys.argv[4])
 result = json.loads((work / 'result.json').read_text()) if (work / 'result.json').exists() else {}
 bundle = {'version_id': vid, 'sha256': sha, 'status': status, 'run': result.get('run', {}),
-          'problems': result.get('problems', [])}
+          'problems': result.get('problems', []), 'metadata': result.get('metadata', {})}
+if not bundle['metadata'] and (work / 'metadata.json').exists():
+    bundle['metadata'] = json.loads((work / 'metadata.json').read_text())
 if status == 'ok':
     bundle['musicxml'] = (work / 'score.musicxml').read_text(encoding='utf-8')
 else:

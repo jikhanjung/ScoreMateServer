@@ -106,7 +106,7 @@ class ScoreSerializer(EnsembleFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = Score
         fields = [
-            'id', 'title', 'composer', 'instrumentation', 
+            'id', 'title', 'composer', 'arranger', 'instrumentation', 
             's3_key', 'size_bytes', 'size_mb', 'file_size', 'mime', 
             'pages', 'page_count', 'tags', 'note', 'thumbnail_key', 
             'has_thumbnail', 'thumbnail_url', 'content_hash',
@@ -155,7 +155,7 @@ class ScoreListSerializer(EnsembleFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = Score
         fields = [
-            'id', 'title', 'composer', 'instrumentation', 
+            'id', 'title', 'composer', 'arranger', 'instrumentation', 
             'size_bytes', 'size_mb', 'file_size', 'pages', 'page_count', 'tags', 
             'thumbnail_key', 'has_thumbnail', 'thumbnail_url',
             'created_at', 'updated_at'
@@ -188,7 +188,7 @@ class ScoreCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Score
         fields = [
-            'id', 'user', 'title', 'composer', 'instrumentation', 
+            'id', 'user', 'title', 'composer', 'arranger', 'instrumentation', 
             's3_key', 'size_bytes', 'mime', 'tags', 'note', 'content_hash',
             'ensemble', 'part_name'
         ]
@@ -267,7 +267,7 @@ class SyncScoreSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Score
-        fields = ['id', 'title', 'composer', 'instrumentation', 'part_name', 'tags', 'note',
+        fields = ['id', 'title', 'composer', 'arranger', 'instrumentation', 'part_name', 'tags', 'note',
                   'ensemble', 'version', 'download_url', 'updated_at']
         read_only_fields = fields
 

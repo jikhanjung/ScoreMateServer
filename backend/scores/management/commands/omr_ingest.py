@@ -1,5 +1,5 @@
 """호스트가 만든 인식 결과를 받는다 — 표준 입력 JSON:
-{"version_id": 12, "sha256": "…", "status": "ok"|"failed", "musicxml": "…", "run": {…}, "problems": […]}"""
+{"version_id": 12, "sha256": "…", "status": "ok"|"failed", "musicxml": "…", "run": {…}, "problems": […], "metadata": {…}}"""
 import json
 import sys
 
@@ -18,7 +18,7 @@ class Command(BaseCommand):
             version = ScoreVersion.objects.select_related('score').get(pk=bundle['version_id'])
             analysis = omr.ingest(version, sha256=bundle.get('sha256'), status=bundle.get('status'),
                                   musicxml=bundle.get('musicxml') or '', run=bundle.get('run'),
-                                  problems=bundle.get('problems'))
+                                  problems=bundle.get('problems'), metadata=bundle.get('metadata'))
         except (ValueError, KeyError, ScoreVersion.DoesNotExist) as exc:
             raise CommandError(f'OMR ingest failed: {exc}') from exc
         if analysis is None:

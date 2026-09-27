@@ -2,6 +2,19 @@
 {% block title %}고치기 · {{ score.title }}{% endblock %}
 {% block content %}
 <div class="head"><div><h1>고치기</h1><p class="muted"><a href="{% url 'web:score_detail' score.pk %}">{{ score.title }}</a></p></div></div>
+{% if suggestions %}
+<div class="box" style="max-width:640px" id="suggestions">
+  <h2>찾은 정보</h2>
+  <p class="muted small">PDF 에서 찾은 값입니다. "채우기"를 누르면 아래 칸에 들어갑니다 — 저장해야 바뀝니다.</p>
+  {% for source, fields in suggestions %}
+  <div class="option" data-suggestion>
+    <div class="row" style="justify-content:space-between"><strong class="small">{{ source }}</strong>
+      <button class="btn sm" type="button" data-fill>채우기</button></div>
+    <dl class="small">{% for name, value in fields.items %}<dt data-name="{{ name }}">{% if name == 'title' %}제목{% elif name == 'part_name' %}파트{% elif name == 'composer' %}작곡{% elif name == 'arranger' %}편곡{% elif name == 'instrumentation' %}편성{% else %}{{ name }}{% endif %}</dt><dd data-value="{{ name }}">{{ value }}</dd>{% endfor %}</dl>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 <div class="box" style="max-width:640px">
   <form method="post" class="stack">{% csrf_token %}
     {% include 'web/_form_errors.html' %}
@@ -9,4 +22,15 @@
     <div class="actions"><button class="btn primary" type="submit">저장</button><a class="btn" href="{% url 'web:score_detail' score.pk %}">취소</a></div>
   </form>
 </div>
+<script>
+// 제안 채우기 — 제안에 있는 칸만 바꾼다(저장은 사람이)
+document.querySelectorAll('[data-suggestion]').forEach(function (box) {
+  box.querySelector('[data-fill]').addEventListener('click', function () {
+    box.querySelectorAll('dd[data-value]').forEach(function (dd) {
+      var input = document.getElementById('id_' + dd.dataset.value);
+      if (input) { input.value = dd.textContent.trim(); }
+    });
+  });
+});
+</script>
 {% endblock %}

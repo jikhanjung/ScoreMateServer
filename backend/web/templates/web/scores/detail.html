@@ -19,7 +19,8 @@
       {% endif %}
     </div>
     <dl class="meta">
-      {% if score.composer %}<dt>작곡 · 편곡</dt><dd>{{ score.composer }}</dd>{% endif %}
+      {% if score.composer %}<dt>작곡</dt><dd>{{ score.composer }}</dd>{% endif %}
+      {% if score.arranger %}<dt>편곡</dt><dd>{{ score.arranger }}</dd>{% endif %}
       {% if score.instrumentation %}<dt>편성</dt><dd>{{ score.instrumentation }}</dd>{% endif %}
       <dt>쪽수</dt><dd>{{ score.pages|default:'처리 중' }}</dd>
       <dt>크기</dt><dd>{{ score.size_bytes|filesizeformat }}</dd>

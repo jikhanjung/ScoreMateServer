@@ -29,13 +29,13 @@ def start_processing(score):
 
 
 def create_score(*, user, s3_key, size_bytes, title, mime='application/pdf', original_filename='',
-                 composer='', instrumentation='', tags=None, note='', ensemble=None, part_name='',
+                 composer='', arranger='', instrumentation='', tags=None, note='', ensemble=None, part_name='',
                  charge_quota=True):
     """파일이 이미 저장소에 있는 악보를 만든다. 앙상블 권한은 호출자가 먼저 확인한다"""
     with transaction.atomic():
         score = Score.objects.create(
             user=user, title=title, original_filename=original_filename or '',
-            composer=composer or '', instrumentation=instrumentation or '',
+            composer=composer or '', arranger=arranger or '', instrumentation=instrumentation or '',
             s3_key=s3_key, size_bytes=size_bytes, mime=mime or 'application/pdf',
             tags=tags or [], note=note or '', ensemble=ensemble, part_name=part_name or '',
         )

@@ -75,9 +75,10 @@ class UploadForm(forms.Form):
     ensemble = forms.ModelChoiceField(label='올릴 곳', queryset=Ensemble.objects.none(), required=False,
                                       empty_label='내 악보 (나만 보기)')
     title = forms.CharField(label='제목', max_length=255, required=False,
-                            help_text='비우면 파일 이름. 여러 파일에 제목을 주면 각 파일 이름이 파트가 됩니다 (예: 블타바 + "Guitar 1.pdf").')
+                            help_text='비우면 PDF 문서 제목(없으면 파일 이름). 여러 파일에 제목을 주면 각 파일 이름이 파트가 됩니다 (예: 블타바 + "Guitar 1.pdf").')
     part_name = forms.CharField(label='파트', max_length=100, required=False, help_text='예: 총보, Guitar 1')
-    composer = forms.CharField(label='작곡 · 편곡', max_length=255, required=False)
+    composer = forms.CharField(label='작곡', max_length=255, required=False)
+    arranger = forms.CharField(label='편곡', max_length=255, required=False)
     instrumentation = forms.CharField(label='편성', max_length=255, required=False)
     tags = forms.CharField(label='태그', max_length=500, required=False, help_text='쉼표로 나눕니다.')
     note = forms.CharField(label='메모', required=False, widget=forms.Textarea(attrs={'rows': 3}))
@@ -111,7 +112,9 @@ class UploadForm(forms.Form):
         return files
 
     def items(self):
-        """(파일, 제목, 파트) — 여러 파일이면 제목이 곡 이름, 파일 이름이 파트"""
+        """(파일, 제목, 파트) — 여러 파일이면 제목이 곡 이름, 파일 이름이 파트.
+        제목을 비우면 PDF 문서 제목("곡 - Full Score" 면 곡 · 파트로 나눈다), 그것도 없으면 파일 이름"""
+        from scores import pdfmeta
         files = self.cleaned_data['files']
         title = self.cleaned_data['title'].strip()
         part = self.cleaned_data['part_name'].strip()
@@ -119,8 +122,13 @@ class UploadForm(forms.Form):
             stem = Path(f.name).stem
             if len(files) > 1 and title:
                 yield f, title, part or stem
-            else:
-                yield f, title or stem, part
+                continue
+            if title:
+                yield f, title, part
+                continue
+            guess = pdfmeta.suggest(pdfmeta.read(f.read()))
+            f.seek(0)
+            yield f, guess.get('title') or stem, part or guess.get('part_name', '')
 
     def tag_list(self):
         return [t.strip() for t in self.cleaned_data['tags'].split(',') if t.strip()][:30]
@@ -131,8 +139,8 @@ class ScoreEditForm(forms.ModelForm):
 
     class Meta:
         model = Score
-        fields = ['title', 'part_name', 'composer', 'instrumentation', 'note']
-        labels = {'title': '제목', 'part_name': '파트', 'composer': '작곡 · 편곡', 'instrumentation': '편성', 'note': '메모'}
+        fields = ['title', 'part_name', 'composer', 'arranger', 'instrumentation', 'note']
+        labels = {'title': '제목', 'part_name': '파트', 'composer': '작곡', 'arranger': '편곡', 'instrumentation': '편성', 'note': '메모'}
         widgets = {'note': forms.Textarea(attrs={'rows': 4})}
 
     def __init__(self, *args, **kwargs):

@@ -49,6 +49,20 @@ Rules:
 Return JSON: musicxml (the whole document as a string), first_measure and last_measure (measure numbers you used),
 notes (uncertainties, page by page)."""
 
+META_SCHEMA = {'type': 'object', 'additionalProperties': False,
+               'required': ['title', 'subtitle', 'composer', 'arranger', 'lyricist', 'instrumentation', 'part_name',
+                            'parts', 'notes'],
+               'properties': {k: {'type': 'string'} for k in ('title', 'subtitle', 'composer', 'arranger', 'lyricist',
+                                                              'instrumentation', 'part_name', 'notes')} |
+               {'parts': {'type': 'array', 'items': {'type': 'string'}}}}
+
+META_PROMPT = """The attached image is the first page of a printed music score. Read the header and the staff labels and
+return JSON with exactly what is PRINTED (empty string when absent — never guess from general knowledge):
+title, subtitle, composer, arranger (incl. "arr." / "편곡"), lyricist, instrumentation (e.g. "Guitar ensemble",
+"Piano solo", "String quartet" — describe the parts you see), part_name ("Full Score" if all parts are shown together,
+otherwise the single part printed, e.g. "Violin I"), parts (the staff names in order), notes.
+Inspect the attached image directly. Do not read other files, run commands, or use external tools."""
+
 FIRST_CONTEXT = """- These are the first pages. Use the instrument names printed at the left as part names, part ids P1, P2, …
   in score order. Number measures as printed (a pickup measure is 0)."""
 
@@ -75,9 +89,9 @@ def run(command, prompt, timeout):
         raise
 
 
-def call_astra(images, prompt, workdir, effort, timeout):
+def call_astra(images, prompt, workdir, effort, timeout, schema=SCHEMA):
     workdir.mkdir(parents=True, exist_ok=True)
-    (workdir / 'schema.json').write_text(json.dumps(SCHEMA))
+    (workdir / 'schema.json').write_text(json.dumps(schema))
     (workdir / 'prompt.txt').write_text(prompt, encoding='utf-8')
     response = workdir / 'response.json'
     response.unlink(missing_ok=True)
@@ -226,6 +240,15 @@ def main():
     log = args.outdir / 'log.jsonl'
     args.outdir.mkdir(parents=True, exist_ok=True)
 
+    # 곡 정보(제목 · 작곡 · 편곡 …) — 첫 쪽만, 가볍게. 서버 고치기 화면의 제안이 된다
+    meta_file = args.outdir / 'metadata.json'
+    if not meta_file.exists():
+        images = render(pdf, [1], args.outdir, args.dpi)
+        meta, elapsed, _ = call_astra(images, META_PROMPT, args.outdir / 'chunks' / '000_metadata', 'medium',
+                                      args.timeout, META_SCHEMA)
+        meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding='utf-8')
+        print(f'metadata: {elapsed}s {meta.get("title")!r} / {meta.get("composer")!r} / {meta.get("arranger")!r}', flush=True)
+
     merged = None
     for index, pages in enumerate(chunks, 1):
         workdir = args.outdir / 'chunks' / f'{index:03d}_p{pages[0]}-{pages[-1]}'
@@ -290,7 +313,10 @@ def write_result(args, status, problems, log):
            'calls': len(entries), 'elapsed_seconds': round(sum(e.get('elapsed', 0) for e in entries), 1),
            'usage': usage,
            'notes': [f"pages {e['pages'][0]}-{e['pages'][-1]}: {e['notes']}" for e in entries if e.get('notes')][-40:]}
-    (args.outdir / 'result.json').write_text(json.dumps({'status': status, 'problems': problems, 'run': run},
+    meta_file = args.outdir / 'metadata.json'
+    metadata = json.loads(meta_file.read_text()) if meta_file.exists() else {}
+    (args.outdir / 'result.json').write_text(json.dumps({'status': status, 'problems': problems, 'run': run,
+                                                         'metadata': metadata},
                                                         ensure_ascii=False, indent=1), encoding='utf-8')
 
 

@@ -51,6 +51,7 @@ class Score(models.Model):
         help_text="Original filename when uploaded"
     )
     composer = models.CharField(max_length=255, blank=True)
+    arranger = models.CharField(max_length=255, blank=True)
     instrumentation = models.CharField(max_length=255, blank=True)
     pages = models.IntegerField(null=True, blank=True)
     s3_key = models.CharField(max_length=500)

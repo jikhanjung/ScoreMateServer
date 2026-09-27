@@ -85,23 +85,44 @@ def login_view(request):
                 return redirect(_safe_next(request, reverse('web:scores')))
             cache.set(key, cache.get(key, 0) + 1, LOGIN_FAIL_WINDOW)
             form.add_error(None, '이메일 또는 비밀번호가 맞지 않습니다.')
+    invite = _registration_invite(request)
     return render(request, 'web/login.html', {'form': form, 'next': request.GET.get('next', ''),
-                                              'registration_open': settings.REGISTRATION_OPEN})
+                                              'can_register': settings.REGISTRATION_OPEN or invite is not None,
+                                              'invite': invite})
+
+
+def _registration_invite(request):
+    """?invite= 또는 초대 링크로 가는 next 에서 쓸 수 있는 초대"""
+    code = (request.POST.get('invite') or request.GET.get('invite')
+            or ensemble_services.invite_code_from_next(request.POST.get('next') or request.GET.get('next')))
+    return ensemble_services.registration_invite(code)
 
 
 def register_view(request):
-    if not settings.REGISTRATION_OPEN:
-        raise Http404('Registration is closed')
+    """가입. REGISTRATION_OPEN=false(초대 전용)면 쓸 수 있는 초대 링크로 온 사람만 — 가입하면 그 앙상블에 들어간다"""
     if request.user.is_authenticated:
         return redirect('web:scores')
+    invite = _registration_invite(request)
+    if not settings.REGISTRATION_OPEN and invite is None:
+        return render(request, 'web/register_closed.html', status=403)
+
     form = RegisterForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         user = User.objects.create_user(email=form.cleaned_data['email'], username=form.cleaned_data['username'],
                                         password=form.cleaned_data['password1'])
         login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        if invite is not None:
+            try:
+                ensemble, _ = ensemble_services.join(user, invite.code)
+            except ensemble_services.RuleError:
+                # 그 사이 인원이 찼거나 취소됐다 — 계정은 만들어졌으니 알리기만
+                messages.error(request, '가입했지만 초대 링크가 그 사이 만료됐습니다. 새 링크를 받아 여세요.')
+                return redirect('web:scores')
+            messages.success(request, f'가입했습니다. "{ensemble.name}" 에 들어왔습니다.')
+            return redirect('web:ensemble_detail', pk=ensemble.pk)
         messages.success(request, '가입했습니다. 초대 링크가 있으면 열어서 앙상블에 들어가세요.')
         return redirect(_safe_next(request, reverse('web:scores')))
-    return render(request, 'web/register.html', {'form': form, 'next': request.GET.get('next', '')})
+    return render(request, 'web/register.html', {'form': form, 'next': request.GET.get('next', ''), 'invite': invite})
 
 
 @require_POST

@@ -11,10 +11,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     """Serializer for user registration"""
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
+    # 초대 전용(REGISTRATION_OPEN=false)일 때 필요 — 가입하면 그 앙상블에 들어간다
+    invite_code = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=32)
     
     class Meta:
         model = User
-        fields = ('email', 'username', 'password', 'password_confirm', 'plan')
+        fields = ('email', 'username', 'password', 'password_confirm', 'plan', 'invite_code')
         extra_kwargs = {
             'plan': {'default': 'solo'},
         }
@@ -43,6 +45,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         """Create a new user with validated data"""
         # Remove password_confirm from validated_data
         validated_data.pop('password_confirm', None)
+        validated_data.pop('invite_code', None)   # 뷰가 가입 뒤 합류에 쓴다
         
         # Create user using create_user to ensure proper password hashing
         user = User.objects.create_user(**validated_data)

@@ -3,11 +3,13 @@
 {% block content %}
 <div class="narrow">
   <h1>가입</h1>
+  {% if invite %}<p class="muted">가입하면 <strong>{{ invite.ensemble.name }}</strong> 에 들어갑니다.</p>{% endif %}
   <div class="box">
     <form method="post" class="stack">{% csrf_token %}
       {% include 'web/_form_errors.html' %}
       {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
       <input type="hidden" name="next" value="{{ next }}">
+      {% if invite %}<input type="hidden" name="invite" value="{{ invite.code }}">{% endif %}
       <button class="btn primary" type="submit">가입</button>
     </form>
   </div>

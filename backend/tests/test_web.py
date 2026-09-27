@@ -8,6 +8,7 @@ from pathlib import Path
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from ensembles.models import Ensemble, Invite, Membership
 from files.utils import load_blob_token
@@ -87,13 +88,17 @@ class AuthTest(WebTestBase):
         self.assertContains(response, '비밀번호가 서로 다릅니다')
 
     @override_settings(REGISTRATION_OPEN=False)
-    def test_registration_closed_everywhere(self):
-        self.assertEqual(self.client.get(reverse('web:register')).status_code, 404)
+    def test_registration_closed_without_invite(self):
+        response = self.client.get(reverse('web:register'))
+        self.assertContains(response, '초대받은 분만', status_code=403)
+        self.assertEqual(self.client.post(reverse('web:register'), {
+            'email': 'x@example.com', 'username': 'x', 'password1': 'a-Long-pass-9', 'password2': 'a-Long-pass-9'}).status_code, 403)
         self.assertNotContains(self.client.get(reverse('web:login')), reverse('web:register'))
         api = self.client.post('/api/v1/auth/register/', {'email': 'x@example.com', 'username': 'x',
                                                           'password': 'a-Long-pass-9', 'password_confirm': 'a-Long-pass-9'},
                                content_type='application/json')
         self.assertEqual(api.status_code, 403)
+        self.assertFalse(Score.objects.model._meta.apps.get_model('core', 'User').objects.filter(email='x@example.com').exists())
 
     def test_logout_needs_post(self):
         self.as_user(self.member)
@@ -310,3 +315,75 @@ class CsrfTest(WebTestBase):
             self.assertContains(client.get(reverse(name, args=args)), 'csrfmiddlewaretoken', msg_prefix=name)
         # 토큰 없는 POST 는 막힌다
         self.assertEqual(client.post(reverse('web:ensembles'), {'name': 'x'}).status_code, 403)
+
+
+@override_settings(REGISTRATION_OPEN=False)
+class InviteOnlyRegistrationTest(WebTestBase):
+    """초대 전용: 쓸 수 있는 초대 링크로 온 사람만 가입하고, 가입하면 그 앙상블에 들어간다"""
+
+    def setUp(self):
+        super().setUp()
+        self.invite = Invite.objects.create(ensemble=self.ensemble, created_by=self.owner, max_uses=1)
+        self.join_url = reverse('web:join', args=[self.invite.code])
+
+    def register(self, **extra):
+        data = {'email': 'newbie@example.com', 'username': 'newbie', 'password1': 'a-Long-pass-9',
+                'password2': 'a-Long-pass-9', **extra}
+        return self.client.post(reverse('web:register') + f'?next={self.join_url}', data)
+
+    def test_invite_link_flow(self):
+        # 초대 링크 → 로그인 화면에 가입 링크와 초대받은 앙상블
+        response = self.client.get(self.join_url, follow=True)
+        self.assertContains(response, 'Guitar Ensemble')
+        self.assertContains(response, reverse('web:register'))
+        # 가입 화면
+        response = self.client.get(reverse('web:register'), {'next': self.join_url})
+        self.assertContains(response, '가입하면')
+        self.assertContains(response, 'Guitar Ensemble')
+        # 가입 → 곧바로 멤버
+        response = self.register(next=self.join_url)
+        self.assertRedirects(response, reverse('web:ensemble_detail', args=[self.ensemble.pk]))
+        User = Score.objects.model._meta.apps.get_model('core', 'User')
+        newbie = User.objects.get(email='newbie@example.com')
+        self.assertEqual(self.ensemble.role_of(newbie), 'member')
+        self.invite.refresh_from_db()
+        self.assertEqual(self.invite.uses, 1)
+
+    def test_invite_param(self):
+        response = self.client.post(reverse('web:register'), {
+            'email': 'n2@example.com', 'username': 'n2', 'password1': 'a-Long-pass-9', 'password2': 'a-Long-pass-9',
+            'invite': self.invite.code.lower()})
+        self.assertRedirects(response, reverse('web:ensemble_detail', args=[self.ensemble.pk]))
+
+    def test_used_up_or_revoked_invite_cannot_register(self):
+        self.invite.uses = 1
+        self.invite.save()
+        self.assertEqual(self.register().status_code, 403)
+        self.invite.uses = 0
+        self.invite.revoked_at = timezone.now()
+        self.invite.save()
+        self.assertEqual(self.register().status_code, 403)
+        User = Score.objects.model._meta.apps.get_model('core', 'User')
+        self.assertFalse(User.objects.filter(email='newbie@example.com').exists())
+
+    def test_api_register_with_invite(self):
+        payload = {'email': 'api@example.com', 'username': 'apiuser', 'password': 'a-Long-pass-9',
+                   'password_confirm': 'a-Long-pass-9'}
+        self.assertEqual(self.client.post('/api/v1/auth/register/', payload, content_type='application/json').status_code, 403)
+        bad = self.client.post('/api/v1/auth/register/', {**payload, 'invite_code': 'NOSUCHCODE'}, content_type='application/json')
+        self.assertEqual(bad.status_code, 400)
+        ok = self.client.post('/api/v1/auth/register/', {**payload, 'invite_code': self.invite.code},
+                              content_type='application/json')
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(ok.json()['ensemble'], {'id': self.ensemble.pk, 'name': 'Guitar Ensemble'})
+        User = Score.objects.model._meta.apps.get_model('core', 'User')
+        self.assertTrue(self.ensemble.is_member(User.objects.get(email='api@example.com')))
+        # 한 명짜리 초대는 이제 소진 — 다음 사람은 계정도 만들어지지 않는다
+        again = self.client.post('/api/v1/auth/register/', {**payload, 'email': 'api2@example.com', 'username': 'api2',
+                                                             'invite_code': self.invite.code}, content_type='application/json')
+        self.assertEqual(again.status_code, 400)
+        self.assertFalse(User.objects.filter(email='api2@example.com').exists())
+
+    def test_existing_users_still_log_in(self):
+        response = self.client.post(reverse('web:login'), {'email': self.member.email, 'password': 'testpass123'})
+        self.assertRedirects(response, reverse('web:scores'))

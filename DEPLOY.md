@@ -52,3 +52,8 @@
 - 🔴 **마이그레이션 있음** `devices.0002_device_last_synced_at` (열 추가 — 가산, 되돌리기 안전)
 - 새 API: `/api/v1/sync/scores/`, `/api/v1/scores/{id}/download/`, `/api/v1/devices/me/heartbeat/`
 - 선택 `.env`: `SYNC_PAGE_SIZE`(200), `SYNC_LAG_SECONDS`(5)
+
+### 0.5.1 (2026-09-27) — 초대 전용 가입
+- `/srv/scoremate/.env` 에 `REGISTRATION_OPEN=false` 추가(운영 결정). 초대 링크(`/join/<code>/`)로 온 사람만 가입하고, 가입하면 그 앙상블에 들어간다.
+  API 가입은 `invite_code` 가 있어야 한다. 기존 계정 로그인은 그대로
+- 마이그레이션 없음

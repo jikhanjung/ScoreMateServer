@@ -12,7 +12,8 @@
       <button class="btn primary" type="submit">로그인</button>
     </form>
   </div>
-  {% if registration_open %}
+  {% if invite %}<p class="muted small" style="margin-top:1rem">"{{ invite.ensemble.name }}" 에 초대받았습니다.</p>{% endif %}
+  {% if can_register %}
   <p class="muted small" style="margin-top:1rem">계정이 없으면 <a href="{% url 'web:register' %}{% if next %}?next={{ next|urlencode }}{% endif %}">가입</a></p>
   {% endif %}
 </div>

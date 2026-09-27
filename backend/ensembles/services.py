@@ -130,3 +130,20 @@ def join(user, code):
         Membership.objects.create(ensemble=ensemble, user=user)
         Invite.objects.filter(pk=invite.pk).update(uses=F('uses') + 1)
     return ensemble, True
+
+
+def registration_invite(code):
+    """가입에 쓸 수 있는 초대, 없으면 None — REGISTRATION_OPEN=false 면 이것이 있어야 가입할 수 있다"""
+    if not code:
+        return None
+    try:
+        return find_usable_invite(code)
+    except RuleError:
+        return None
+
+
+def invite_code_from_next(next_url):
+    """로그인 · 가입의 next 가 초대 링크(/join/<code>/)면 그 코드"""
+    import re
+    match = re.fullmatch(r'/join/([A-Za-z0-9-]+)/?', (next_url or '').split('?')[0])
+    return match.group(1) if match else None

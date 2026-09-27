@@ -29,12 +29,28 @@ class UserRegistrationView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         """Create a new user and return JWT tokens"""
         from django.conf import settings
-        from rest_framework.exceptions import PermissionDenied
-        if not settings.REGISTRATION_OPEN:  # 웹 가입과 같은 스위치
-            raise PermissionDenied('Registration is closed.')
+        from django.db import transaction
+        from rest_framework.exceptions import PermissionDenied, ValidationError
+        from ensembles import services as ensemble_services
+
+        # 초대 전용(REGISTRATION_OPEN=false)이면 쓸 수 있는 초대 코드가 있어야 한다 — 웹 가입과 같은 규칙
+        code = (request.data.get('invite_code') or '').strip()
+        invite = ensemble_services.registration_invite(code)
+        if code and invite is None:
+            raise ValidationError({'invite_code': 'Invalid or expired invite code.'})
+        if not settings.REGISTRATION_OPEN and invite is None:
+            raise PermissionDenied('Registration is by invitation only.')
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        with transaction.atomic():
+            user = serializer.save()
+            ensemble = None
+            if invite is not None:
+                try:
+                    ensemble, _ = ensemble_services.join(user, code)
+                except ensemble_services.RuleError:
+                    transaction.set_rollback(True)   # 그 사이 만료 — 계정도 만들지 않는다
+                    raise ValidationError({'invite_code': 'Invalid or expired invite code.'})
         
         # Generate JWT tokens for the new user
         refresh = RefreshToken.for_user(user)
@@ -44,7 +60,8 @@ class UserRegistrationView(generics.CreateAPIView):
             'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
-            }
+            },
+            'ensemble': {'id': ensemble.pk, 'name': ensemble.name} if ensemble else None,
         }, status=status.HTTP_201_CREATED)
 
 

@@ -44,22 +44,6 @@
 <div class="box empty">아직 곡이 없습니다.</div>
 {% endif %}
 
-<h2 id="tv">보낼 TV</h2>
-<div class="box" style="max-width:640px">
-  {% if devices %}
-  <form method="post" action="{% url 'web:setlist_devices' setlist.pk %}" class="stack">{% csrf_token %}
-    <div>
-    {% for d in devices %}
-    <label class="choice"><input type="checkbox" name="devices" value="{{ d.pk }}" {% if d.sends %}checked{% endif %}> {{ d.name }}
-      {% if d.sync_mode == 'all' %}<span class="muted small">지금은 모든 악보를 받는 중 · <a href="{% url 'web:devices' %}#sync-{{ d.pk }}">바꾸기</a></span>{% endif %}</label>
-    {% endfor %}
-    </div>
-    <p class="muted small">고른 TV 는 다음 동기화 때 이 곡목과 그 악보를 받습니다. 곡을 빼면 TV 에서도 정리됩니다.</p>
-    <button class="btn" type="submit">저장</button>
-  </form>
-  {% else %}<p class="muted">연결된 TV 가 없습니다. <a href="{% url 'web:activate' %}">TV 연결</a></p>{% endif %}
-</div>
-
 {% if editable %}
 <h2>곡 넣기</h2>
 <div class="box" style="max-width:640px">

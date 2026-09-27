@@ -3,7 +3,7 @@
 {% block content %}
 <div class="narrow">
   <h1>로그인</h1>
-  <p class="muted">{% if ensembles_enabled %}앙상블 악보를 올리고 받아 보는 곳입니다.{% else %}악보를 올리고 TV 로 받아 보는 곳입니다.{% endif %}</p>
+  <p class="muted">{% if ensembles_enabled %}앙상블 악보를 올리고 받아 보는 곳입니다.{% else %}악보를 올리고 TV · 태블릿으로 받아 보는 곳입니다.{% endif %}</p>
   <div class="box">
     <form method="post" class="stack">{% csrf_token %}
       {% include 'web/_form_errors.html' %}

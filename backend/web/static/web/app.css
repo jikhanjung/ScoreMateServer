@@ -144,7 +144,6 @@ details > summary { cursor: pointer; color: var(--accent); }
 .option:has(> .choice input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .option .hint { color: var(--muted); font-size: .8rem; margin: .1rem 0 0 1.6rem; }
 .checklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0 1rem; margin: .35rem 0 .1rem 1.6rem; }
-.option.all-selected .checklist { opacity: .45; }
 
 /* TV 카드 */
 .device { max-width: 760px; }

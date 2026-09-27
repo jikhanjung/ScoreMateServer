@@ -32,7 +32,6 @@ urlpatterns = [
     path('setlists/<int:pk>/edit/', views.setlist_edit, name='setlist_edit'),
     path('setlists/<int:pk>/delete/', views.setlist_delete, name='setlist_delete'),
     path('setlists/<int:pk>/add/', views.setlist_add, name='setlist_add'),
-    path('setlists/<int:pk>/devices/', views.setlist_devices, name='setlist_devices'),
     path('setlists/<int:pk>/items/<int:item_id>/', views.setlist_item, name='setlist_item'),
 
     path('ensembles/', views.ensemble_list, name='ensembles'),

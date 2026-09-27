@@ -1,9 +1,9 @@
 {% extends 'web/base.html' %}
-{% block title %}TV{% endblock %}
+{% block title %}연결 기기{% endblock %}
 {% block content %}
 <div class="head">
-  <div><h1>TV</h1><p class="muted">연결한 TV 마다 받을 것을 고릅니다 — 고른 세트리스트의 곡만, 또는 모든 악보.</p></div>
-  <a class="btn primary" href="{% url 'web:activate' %}">TV 연결</a>
+  <div><h1>연결 기기</h1><p class="muted">연결한 기기마다 받을 세트리스트를 고릅니다 — 기기는 고른 세트리스트의 곡만 받습니다.</p></div>
+  <a class="btn primary" href="{% url 'web:activate' %}">기기 연결</a>
 </div>
 
 {% for d in devices %}{% if d.is_active %}
@@ -17,7 +17,7 @@
       </div>
     </div>
     <form method="post" action="{% url 'web:device_revoke' d.pk %}">{% csrf_token %}
-      <button class="btn sm danger" type="submit" data-confirm="{{ d.name }} 연결을 해제할까요? 그 TV 는 다시 연결해야 악보를 받습니다.">해제</button>
+      <button class="btn sm danger" type="submit" data-confirm="{{ d.name }} 연결을 해제할까요? 그 기기는 다시 연결해야 악보를 받습니다.">해제</button>
     </form>
   </div>
 
@@ -29,27 +29,21 @@
     </form>
   </details>
 
-  <form method="post" action="{% url 'web:device_sync' d.pk %}" data-sync-form>{% csrf_token %}
-    <h3>받는 것</h3>
-    <div class="option">
-      <label class="choice"><input type="radio" name="sync_mode" value="setlists" {% if d.sync_mode == 'setlists' %}checked{% endif %}> <strong>고른 세트리스트의 곡만</strong></label>
-      {% if setlists %}
-      <div class="checklist">
-        {% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}" {% if s.pk in d.chosen %}checked{% endif %}> {{ s.title }}</label>{% endfor %}
-      </div>
-      {% else %}<p class="hint">세트리스트가 아직 없습니다 — <a href="{% url 'web:setlists' %}">만들기</a></p>{% endif %}
+  <form method="post" action="{% url 'web:device_sync' d.pk %}">{% csrf_token %}
+    <h3>받을 세트리스트</h3>
+    {% if d.sync_mode == 'all' %}<p class="hint">지금은 예전 설정대로 모든 악보를 받고 있습니다. 세트리스트를 고르고 저장하면 고른 곡만 받습니다.</p>{% endif %}
+    {% if setlists %}
+    <div class="checklist">
+      {% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}" {% if s.pk in d.chosen %}checked{% endif %}> {{ s.title }}</label>{% endfor %}
     </div>
-    <div class="option">
-      <label class="choice"><input type="radio" name="sync_mode" value="all" {% if d.sync_mode == 'all' %}checked{% endif %}> <strong>모든 악보</strong></label>
-    </div>
+    {% else %}<p class="hint">세트리스트가 아직 없습니다 — <a href="{% url 'web:setlists' %}">만들기</a></p>{% endif %}
     <div class="row" style="margin-top:.8rem; justify-content:space-between">
-      <span class="muted small">목록에서 빠진 악보는 다음 동기화 때 TV 에서 정리됩니다.</span>
+      <span class="muted small">목록에서 빠진 악보는 다음 동기화 때 기기에서 정리됩니다.</span>
       <button class="btn primary sm" type="submit">저장</button>
     </div>
-  </form>
 </section>
 {% endif %}{% empty %}
-<div class="box empty">연결된 TV 가 없습니다. TV 앱에서 "연결"을 고르면 코드가 뜹니다 — 그 코드를 <a href="{% url 'web:activate' %}">여기</a>에 넣으세요.</div>
+<div class="box empty">연결된 기기가 없습니다. 기기의 ScoreMate 앱에서 "연결"을 고르면 코드가 뜹니다 — 그 코드를 <a href="{% url 'web:activate' %}">여기</a>에 넣으세요.</div>
 {% endfor %}
 
 {% if revoked %}
@@ -61,13 +55,4 @@
 </div>
 {% endif %}
 
-<script>
-// "모든 악보"를 고르면 세트리스트 목록을 흐리게 — 저장되는 값은 같다(서버는 모드만 본다)
-document.querySelectorAll('[data-sync-form]').forEach(function (form) {
-  var first = form.querySelector('.option');
-  function update() { first.classList.toggle('all-selected', form.querySelector('input[value=all]').checked); }
-  form.querySelectorAll('input[name=sync_mode]').forEach(function (r) { r.addEventListener('change', update); });
-  update();
-});
-</script>
 {% endblock %}

@@ -84,7 +84,7 @@ class UploadForm(forms.Form):
     # 같은 제목 · 파트가 이미 있을 때만 보인다(뷰가 알림과 함께) — 비어 있으면 묻는다
     duplicates = forms.ChoiceField(
         label='같은 제목 · 파트의 악보가 있을 때', required=False, widget=forms.RadioSelect,
-        choices=[('version', '새 판으로 올리기 (권장) — 멤버 TV 에 같은 파일 자리로 들어간다'),
+        choices=[('version', '새 판으로 올리기 (권장) — 멤버 기기에 같은 파일 자리로 들어간다'),
                  ('separate', '새 악보로 따로 올리기')])
 
     def __init__(self, *args, user=None, **kwargs):
@@ -196,7 +196,7 @@ class NewVersionForm(forms.Form):
 
 
 class ActivateForm(forms.Form):
-    code = forms.CharField(label='TV 에 보이는 코드', max_length=16,
+    code = forms.CharField(label='기기에 보이는 코드', max_length=16,
                            widget=forms.TextInput(attrs={'placeholder': 'BCDF-GHJK', 'autocapitalize': 'characters',
                                                          'autocomplete': 'off', 'autofocus': True,
                                                          'class': 'code', 'inputmode': 'text'}))

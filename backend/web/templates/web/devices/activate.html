@@ -1,35 +1,29 @@
 {% extends 'web/base.html' %}
-{% block title %}TV 연결{% endblock %}
+{% block title %}기기 연결{% endblock %}
 {% block content %}
 <div class="narrow">
-  <h1>TV 연결</h1>
+  <h1>기기 연결</h1>
   {% if authorization %}
   <div class="box">
-    <p>이 TV 를 <strong>{{ user.username }}</strong> 계정에 연결할까요?</p>
+    <p>이 기기를 <strong>{{ user.username }}</strong> 계정에 연결할까요?</p>
     <dl class="meta">
       <dt>코드</dt><dd class="code">{{ authorization.display_code }}</dd>
       {% if authorization.device_model %}<dt>모델</dt><dd>{{ authorization.device_model }}</dd>{% endif %}
       {% if authorization.app_version %}<dt>앱</dt><dd>{{ authorization.app_version }}</dd>{% endif %}
     </dl>
-    <p class="muted small">TV 화면의 코드와 같은지 확인하세요. 연결하면 이 TV 가 아래에서 고른 것을 받습니다.</p>
+    <p class="muted small">기기 화면의 코드와 같은지 확인하세요. 연결하면 이 기기가 아래에서 고른 세트리스트를 받습니다.</p>
     <form method="post" class="stack">{% csrf_token %}
       <input type="hidden" name="code" value="{{ authorization.display_code }}">
       <div class="field">
         <label for="id_name">기기 이름</label>
         <input type="text" id="id_name" name="name" value="{{ authorization.device_name|default:'TV' }}" maxlength="100">
-        <div class="help">예: 거실 TV, 합주실 TV</div>
+        <div class="help">예: 거실 TV, 합주실 TV, 내 태블릿</div>
       </div>
       <div class="field">
-        <label>이 TV 가 받을 것</label>
-        <div class="option">
-          <label class="choice"><input type="radio" name="sync_mode" value="setlists" checked> <strong>고른 세트리스트의 곡만</strong></label>
-          {% if setlists %}
-          <div class="checklist">{% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}"> {{ s.title }}</label>{% endfor %}</div>
-          {% else %}<p class="hint">세트리스트가 아직 없습니다 — 연결한 뒤 만들고 "보낼 TV"로 고르세요.</p>{% endif %}
-        </div>
-        <div class="option">
-          <label class="choice"><input type="radio" name="sync_mode" value="all"> <strong>모든 악보</strong></label>
-        </div>
+        <label>이 기기가 받을 세트리스트</label>
+        {% if setlists %}
+        <div class="checklist">{% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}"> {{ s.title }}</label>{% endfor %}</div>
+        {% else %}<p class="hint">세트리스트가 아직 없습니다 — 연결한 뒤 세트리스트를 만들고 "연결 기기" 화면에서 고르세요.</p>{% endif %}
       </div>
       <div class="actions">
         <button class="btn primary" type="submit" name="decision" value="approve">연결</button>
@@ -38,7 +32,7 @@
     </form>
   </div>
   {% else %}
-  <p class="muted">TV 화면에 보이는 8글자 코드를 넣으세요. TV 의 QR 을 휴대폰으로 찍으면 코드가 채워져 있습니다.</p>
+  <p class="muted">기기 화면에 보이는 8글자 코드를 넣으세요. 화면의 QR 을 휴대폰으로 찍으면 코드가 채워져 있습니다.</p>
   {% if error %}<ul class="messages"><li class="error">{{ error }}</li></ul>{% endif %}
   <div class="box">
     <form method="get" class="stack">

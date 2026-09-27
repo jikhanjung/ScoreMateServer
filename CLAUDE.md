@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-28) — 359 backend tests passing, 0.8.0 in production
+### Status (2026-09-28) — 360 backend tests passing, 0.8.1 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | S3 | Device · DeviceAuthorization · `/activate` (RFC 8628), instant revoke, 180-day device refresh | ✅ devlog 059 |
 | S4 | Sync API (cursor + full `ids` set instead of soft delete), download redirect, heartbeat | ✅ devlog 060 |
 | S6 | Ensemble setlists + sync, shared score analysis (per version, sha256-checked), Google login (OIDC, off until client id set) | ✅ devlog 061 |
-| — | Per-TV scope: selected setlists only (default) / all scores; chosen on the web only | ✅ devlog 062 |
+| — | Per-device scope: selected setlists only (web offers no "all scores" since 0.8.1); chosen on the web "연결 기기" page only | ✅ devlog 062, 065 |
 | — | Web polish: tidy TV / setlist pickers (0.7.1), version next to the brand (0.7.2) | ✅ devlog 063 |
 | — | OMR lane: PDF → MusicXML via Codex CLI (gpt-6-astra) on the prod host cron, results as version analysis + file | ✅ devlog 064, plan P01 |
 

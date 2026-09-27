@@ -179,11 +179,3 @@ def set_sync(device, mode, setlist_ids=None):
             DeviceSetlist.objects.bulk_create([DeviceSetlist(device=device, setlist_id=i) for i in wanted - current])
     return device
 
-
-def toggle_setlist(device, setlist, on):
-    """세트리스트 화면의 '보낼 TV' — 하나씩 켜고 끈다"""
-    from .models import DeviceSetlist
-    if on:
-        DeviceSetlist.objects.get_or_create(device=device, setlist=setlist)
-    else:
-        DeviceSetlist.objects.filter(device=device, setlist=setlist).delete()

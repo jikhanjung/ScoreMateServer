@@ -30,6 +30,16 @@
 <div class="box empty">아직 악보가 없습니다.{% if mine.is_manager %} <a href="{% url 'web:score_upload' %}?ensemble={{ ensemble.pk }}">올리기</a>{% endif %}</div>
 {% endif %}
 
+<h2>곡목 ({{ setlists|length }})</h2>
+{% if setlists %}
+<div class="box table-wrap">
+  <table>
+    <tbody>{% for s in setlists %}<tr><td><a href="{% url 'web:setlist_detail' s.pk %}"><strong>{{ s.title }}</strong></a></td><td class="muted small">{{ s.n_items }}곡 · {{ s.updated_at|date:'Y-m-d' }}</td></tr>{% endfor %}</tbody>
+  </table>
+</div>
+{% endif %}
+{% if mine.is_manager %}<p><a class="btn sm" href="{% url 'web:setlists' %}?ensemble={{ ensemble.pk }}#new">새 곡목 만들기</a></p>{% elif not setlists %}<div class="box empty">아직 곡목이 없습니다.</div>{% endif %}
+
 <h2>멤버 ({{ members|length }})</h2>
 <div class="box table-wrap">
   <table class="stacked">

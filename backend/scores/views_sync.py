@@ -40,3 +40,34 @@ class ScoreSyncView(APIView):
         })
         response['Cache-Control'] = 'no-store'
         return response
+
+
+class SetlistSyncView(APIView):
+    """GET /api/v1/sync/setlists/ — 볼 수 있는 세트리스트 전부(개수가 적다 — 커서 없이 통째로, TV 는 바꿔 끼운다)
+
+    항목은 곡 순서대로 score_id 만 — 악보 자체는 /sync/scores 로 받는다. 읽을 수 없게 된 악보의 항목은 빠진다.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from setlists.models import Setlist
+        from .models import Score
+
+        setlists = list(Setlist.objects.readable_by(request.user).select_related('ensemble')
+                        .prefetch_related('items').order_by('id'))
+        readable = set(Score.objects.readable_by(request.user).values_list('id', flat=True))
+        payload = []
+        for setlist in setlists:
+            items = sorted(setlist.items.all(), key=lambda i: (i.order_index or 0, i.id))
+            payload.append({
+                'id': setlist.id,
+                'title': setlist.title,
+                'description': setlist.description,
+                'ensemble': {'id': setlist.ensemble_id, 'name': setlist.ensemble.name} if setlist.ensemble_id else None,
+                'updated_at': setlist.updated_at,
+                'items': [{'score_id': i.score_id, 'position': n, 'notes': i.notes}
+                          for n, i in enumerate((i for i in items if i.score_id in readable), start=1)],
+            })
+        response = Response({'setlists': payload})
+        response['Cache-Control'] = 'no-store'
+        return response

@@ -1,0 +1,78 @@
+{% extends 'web/base.html' %}
+{% block title %}{{ setlist.title }}{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>{{ setlist.title }}</h1>
+    {% if setlist.description %}<p>{{ setlist.description }}</p>{% endif %}
+    <p class="muted small">
+      {% if setlist.ensemble %}<a class="badge" href="{% url 'web:ensemble_detail' setlist.ensemble.pk %}">{{ setlist.ensemble.name }}</a>{% else %}<span class="badge plain">내 세트리스트</span>{% endif %}
+      {{ items|length }}곡{% if total_pages %} · {{ total_pages }}쪽{% endif %}
+    </p>
+  </div>
+</div>
+
+{% if items %}
+<div class="box table-wrap">
+  <table class="stacked">
+    <thead><tr><th>#</th><th>곡</th><th>메모</th><th></th></tr></thead>
+    <tbody>
+    {% for item in items %}
+      <tr id="item-{{ item.pk }}">
+        <td><strong>{{ forloop.counter }}</strong></td>
+        <td><a href="{% url 'web:score_detail' item.score.pk %}">{{ item.score.title }}</a>
+          {% if item.score.part_name %}<span class="badge plain">{{ item.score.part_name }}</span>{% endif %}
+          <div class="muted small">{{ item.score.composer }}{% if item.score.pages %} · {{ item.score.pages }}쪽{% endif %}</div></td>
+        <td>{% if editable %}
+          <form method="post" action="{% url 'web:setlist_item' setlist.pk item.pk %}" class="row">{% csrf_token %}
+            <input type="hidden" name="action" value="notes">
+            <input type="text" name="notes" value="{{ item.notes }}" placeholder="예: 앙코르, 2절 반복 없이" aria-label="메모">
+            <button class="btn sm" type="submit">저장</button>
+          </form>{% else %}{{ item.notes|default:'' }}{% endif %}</td>
+        <td style="text-align:right">{% if editable %}
+          <div class="actions" style="justify-content:flex-end">
+            {% if not forloop.first %}<form method="post" action="{% url 'web:setlist_item' setlist.pk item.pk %}" class="inline">{% csrf_token %}<button class="btn sm" name="action" value="up" aria-label="위로">▲</button></form>{% endif %}
+            {% if not forloop.last %}<form method="post" action="{% url 'web:setlist_item' setlist.pk item.pk %}" class="inline">{% csrf_token %}<button class="btn sm" name="action" value="down" aria-label="아래로">▼</button></form>{% endif %}
+            <form method="post" action="{% url 'web:setlist_item' setlist.pk item.pk %}" class="inline">{% csrf_token %}<button class="btn sm danger" name="action" value="remove">빼기</button></form>
+          </div>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="box empty">아직 곡이 없습니다.</div>
+{% endif %}
+
+{% if editable %}
+<h2>곡 넣기</h2>
+<div class="box" style="max-width:640px">
+  {% if candidates %}
+  <form method="post" action="{% url 'web:setlist_add' setlist.pk %}" class="stack">{% csrf_token %}
+    <div class="field">
+      <label for="id_score">{% if setlist.ensemble %}{{ setlist.ensemble.name }} 의 악보{% else %}내 악보{% endif %}</label>
+      <select id="id_score" name="score" multiple size="{% if candidates|length > 8 %}8{% else %}{{ candidates|length }}{% endif %}">
+        {% for s in candidates %}<option value="{{ s.pk }}">{{ s.title }}{% if s.part_name %} — {{ s.part_name }}{% endif %}</option>{% endfor %}
+      </select>
+      <div class="help">여러 곡을 고를 수 있습니다(Ctrl/⌘ 또는 길게 누르기). 끝에 붙습니다.</div>
+    </div>
+    <button class="btn primary" type="submit">넣기</button>
+  </form>
+  {% else %}<p class="muted">넣을 수 있는 악보를 모두 넣었습니다.</p>{% endif %}
+</div>
+
+<h2>정보</h2>
+<div class="box" style="max-width:640px">
+  <form method="post" action="{% url 'web:setlist_edit' setlist.pk %}" class="stack">{% csrf_token %}
+    <div class="field"><label for="id_title">이름</label><input type="text" id="id_title" name="title" value="{{ setlist.title }}" maxlength="255" required></div>
+    <div class="field"><label for="id_description">설명</label><textarea id="id_description" name="description" rows="2">{{ setlist.description }}</textarea></div>
+    <button class="btn" type="submit">저장</button>
+  </form>
+</div>
+<div class="box danger-zone" style="max-width:640px">
+  <form method="post" action="{% url 'web:setlist_delete' setlist.pk %}">{% csrf_token %}
+    <button class="btn danger" type="submit" data-confirm="{{ setlist.title }} 을(를) 지울까요? 악보는 지워지지 않습니다.">세트리스트 지우기</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

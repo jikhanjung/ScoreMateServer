@@ -21,6 +21,7 @@ from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from devices import services as device_services
@@ -29,11 +30,12 @@ from ensembles import services as ensemble_services
 from ensembles.models import Ensemble, Membership, Invite
 from files.utils import LocalStorageHandler, generate_upload_s3_key, get_storage
 from scores.models import Score
+from setlists.models import Setlist, SetlistItem
 from scores.serializers import thumbnail_url
 from scores.services import VersionError, add_version, create_score, delete_score, delete_version, make_current
 
 from .forms import (
-    ActivateForm, DeviceNameForm, EnsembleForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, NewVersionForm, RegisterForm, ScoreEditForm,
+    ActivateForm, DeviceNameForm, EnsembleForm, SetlistForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, NewVersionForm, RegisterForm, ScoreEditForm,
     UploadForm,
     managed_ensembles,
 )
@@ -394,8 +396,9 @@ def ensemble_detail(request, pk):
         for invite in ensemble.invites.select_related('created_by')[:20]:
             invite.url = request.build_absolute_uri(reverse('web:join', args=[invite.code]))
             invites.append(invite)
+    setlists = ensemble.setlists.annotate(n_items=Count('items', distinct=True)).order_by('-updated_at')
     return render(request, 'web/ensembles/detail.html', {
-        'ensemble': ensemble, 'mine': mine, 'scores': scores, 'songs': list(songs.values()),
+        'ensemble': ensemble, 'mine': mine, 'scores': scores, 'songs': list(songs.values()), 'setlists': setlists,
         'members': members, 'invites': invites,
         'role_labels': ROLE_LABELS, 'role_choices': Membership.ROLE_CHOICES,
         'edit_form': EnsembleForm(instance=ensemble), 'invite_form': InviteForm(),
@@ -578,3 +581,122 @@ def device_revoke(request, pk):
     device_services.revoke(device)
     messages.success(request, f'"{device.name}" 연결을 해제했습니다. 그 TV 는 더는 악보를 받지 못합니다.')
     return redirect('web:devices')
+
+
+# --- 세트리스트 (연주회 곡목) — 권한은 Setlist.objects.readable_by/writable_by, Setlist.can_edit/can_include ---
+
+def _readable_setlist(request, pk):
+    return get_object_or_404(Setlist.objects.readable_by(request.user).select_related('ensemble', 'user'), pk=pk)
+
+
+def _writable_setlist(request, pk):
+    setlist = _readable_setlist(request, pk)
+    if not setlist.can_edit(request.user):
+        raise PermissionDenied('Only ensemble owners and leaders can change this setlist.')
+    return setlist
+
+
+def _ordered_items(setlist, user):
+    """곡 순서대로, 읽을 수 있는 악보만"""
+    readable = set(Score.objects.readable_by(user).values_list('id', flat=True))
+    items = [i for i in setlist.items.select_related('score', 'score__current_version') if i.score_id in readable]
+    return sorted(items, key=lambda i: (i.order_index or 0, i.id))
+
+
+def _renumber(setlist, items):
+    for n, item in enumerate(items, start=1):
+        if item.order_index != n:
+            SetlistItem.objects.filter(pk=item.pk).update(order_index=n)
+    Setlist.objects.filter(pk=setlist.pk).update(updated_at=timezone.now())
+
+
+@login_required
+def setlist_list(request):
+    form = SetlistForm(request.POST or None, user=request.user, initial={'ensemble': request.GET.get('ensemble')})
+    if request.method == 'POST' and form.is_valid():
+        setlist = Setlist.objects.create(user=request.user, title=form.cleaned_data['title'],
+                                         description=form.cleaned_data['description'],
+                                         ensemble=form.cleaned_data['ensemble'])
+        messages.success(request, '세트리스트를 만들었습니다. 곡을 넣으세요.')
+        return redirect('web:setlist_detail', pk=setlist.pk)
+    setlists = (Setlist.objects.readable_by(request.user).select_related('ensemble')
+                .annotate(n_items=Count('items', distinct=True)).order_by('-updated_at'))
+    return render(request, 'web/setlists/list.html', {'setlists': setlists, 'form': form,
+                                                      'can_make_ensemble': managed_ensembles(request.user).exists()})
+
+
+@login_required
+def setlist_detail(request, pk):
+    setlist = _readable_setlist(request, pk)
+    items = _ordered_items(setlist, request.user)
+    candidates = []
+    if setlist.can_edit(request.user):
+        in_list = {i.score_id for i in items}
+        pool = Score.objects.readable_by(request.user)
+        pool = pool.filter(ensemble=setlist.ensemble) if setlist.ensemble_id else pool.filter(user=setlist.user)
+        candidates = [s for s in pool.order_by('title', 'part_name') if s.id not in in_list]
+    return render(request, 'web/setlists/detail.html', {
+        'setlist': setlist, 'items': items, 'editable': setlist.can_edit(request.user), 'candidates': candidates,
+        'total_pages': sum(i.score.pages or 0 for i in items),
+    })
+
+
+@login_required
+@require_POST
+def setlist_edit(request, pk):
+    setlist = _writable_setlist(request, pk)
+    title = request.POST.get('title', '').strip()
+    if title:
+        setlist.title = title[:255]
+        setlist.description = request.POST.get('description', '').strip()
+        setlist.save(update_fields=['title', 'description', 'updated_at'])
+        messages.success(request, '저장했습니다.')
+    return redirect('web:setlist_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def setlist_delete(request, pk):
+    setlist = _writable_setlist(request, pk)
+    ensemble_id = setlist.ensemble_id
+    setlist.delete()
+    messages.success(request, '세트리스트를 지웠습니다. 악보는 그대로입니다.')
+    return redirect(reverse('web:ensemble_detail', args=[ensemble_id]) if ensemble_id else reverse('web:setlists'))
+
+
+@login_required
+@require_POST
+def setlist_add(request, pk):
+    setlist = _writable_setlist(request, pk)
+    added = 0
+    for score_id in request.POST.getlist('score'):
+        score = Score.objects.readable_by(request.user).filter(pk=score_id).first() if score_id.isdigit() else None
+        if score is None or not setlist.can_include(score):
+            continue
+        _, created = SetlistItem.objects.get_or_create(setlist=setlist, score=score)
+        added += created
+    _renumber(setlist, _ordered_items(setlist, request.user))
+    messages.success(request, f'{added}곡을 넣었습니다.')
+    return redirect('web:setlist_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def setlist_item(request, pk, item_id):
+    """위 · 아래 · 빼기 · 메모"""
+    setlist = _writable_setlist(request, pk)
+    items = _ordered_items(setlist, request.user)
+    index = next((n for n, i in enumerate(items) if i.pk == item_id), None)
+    if index is None:
+        raise Http404('No such item')
+    action = request.POST.get('action')
+    if action == 'up' and index > 0:
+        items[index - 1], items[index] = items[index], items[index - 1]
+    elif action == 'down' and index < len(items) - 1:
+        items[index + 1], items[index] = items[index], items[index + 1]
+    elif action == 'remove':
+        items.pop(index).delete()
+    elif action == 'notes':
+        SetlistItem.objects.filter(pk=item_id).update(notes=request.POST.get('notes', '').strip()[:2000])
+    _renumber(setlist, items)
+    return redirect(reverse('web:setlist_detail', args=[pk]) + f'#item-{item_id}')

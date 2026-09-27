@@ -5,6 +5,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 from django.db import transaction, models
 from django.db.models import F
 from django.shortcuts import get_object_or_404
@@ -25,9 +26,20 @@ class SetlistViewSet(viewsets.ModelViewSet):
     """ViewSet for managing setlists"""
     permission_classes = [IsAuthenticated]
     
+    # 쓰기 — 내 세트리스트, 또는 앙상블 세트리스트의 owner · leader
+    WRITE_ACTIONS = {'update', 'partial_update', 'destroy', 'add_item', 'add_items',
+                     'update_item', 'remove_item', 'reorder_items', 'duplicate'}
+
     def get_queryset(self):
-        """Return setlists for the current user only"""
-        return Setlist.objects.filter(user=self.request.user).prefetch_related('items__score')
+        """내 세트리스트 + 내가 멤버인 앙상블의 세트리스트"""
+        return (Setlist.objects.readable_by(self.request.user)
+                .select_related('ensemble').prefetch_related('items__score'))
+
+    def get_object(self):
+        setlist = super().get_object()
+        if self.action in self.WRITE_ACTIONS and not setlist.can_edit(self.request.user):
+            raise PermissionDenied('Only ensemble owners and leaders can change this setlist.')
+        return setlist
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action"""
@@ -100,12 +112,11 @@ class SetlistViewSet(viewsets.ModelViewSet):
                 )['max_order'] or 0
                 
                 for i, score_id in enumerate(score_ids):
-                    # Validate score exists and belongs to user
-                    try:
-                        score = Score.objects.get(id=score_id, user=request.user)
-                    except Score.DoesNotExist:
+                    # 읽을 수 있고 이 세트리스트에 넣을 수 있는 악보
+                    score = Score.objects.readable_by(request.user).filter(id=score_id).first()
+                    if score is None or not setlist.can_include(score):
                         return Response(
-                            {'error': f'Score {score_id} not found'}, 
+                            {'error': f'Score {score_id} not found'},
                             status=status.HTTP_404_NOT_FOUND
                         )
                     
@@ -229,7 +240,7 @@ class SetlistViewSet(viewsets.ModelViewSet):
                     )
         
         # Return updated setlist
-        serializer = SetlistSerializer(setlist)
+        serializer = SetlistSerializer(setlist, context={'request': request})
         return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
@@ -241,6 +252,7 @@ class SetlistViewSet(viewsets.ModelViewSet):
         new_title = f"{original_setlist.title} (Copy)"
         new_setlist = Setlist.objects.create(
             user=request.user,
+            ensemble=original_setlist.ensemble,   # 앙상블 곡목은 앙상블 안에서 복사
             title=new_title,
             description=original_setlist.description
         )
@@ -256,5 +268,5 @@ class SetlistViewSet(viewsets.ModelViewSet):
                     notes=item.notes
                 )
         
-        serializer = SetlistSerializer(new_setlist)
+        serializer = SetlistSerializer(new_setlist, context={'request': request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)

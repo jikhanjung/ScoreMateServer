@@ -1,10 +1,32 @@
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
+from ensembles.models import Membership
 from scores.models import Score
+
+
+class SetlistQuerySet(models.QuerySet):
+    """악보와 같은 접근 범위 — 내 세트리스트 + 내가 멤버인 앙상블의 세트리스트(쓰기는 owner · leader)"""
+
+    def readable_by(self, user):
+        return self.filter(Q(ensemble__isnull=True, user=user) | Q(ensemble__memberships__user=user))
+
+    def writable_by(self, user):
+        return self.filter(
+            Q(ensemble__isnull=True, user=user) |
+            Q(ensemble__memberships__user=user, ensemble__memberships__role__in=Membership.MANAGER_ROLES)
+        )
 
 
 class Setlist(models.Model):
     """Collection of scores organized for performance"""
+    ensemble = models.ForeignKey(
+        'ensembles.Ensemble',
+        on_delete=models.CASCADE,   # 연주회 곡목은 앙상블의 것 — 앙상블을 지우면 함께
+        null=True,
+        blank=True,
+        related_name='setlists',
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -15,6 +37,8 @@ class Setlist(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+    objects = SetlistQuerySet.as_manager()
+
     class Meta:
         db_table = 'setlists'
         ordering = ['-updated_at']
@@ -24,6 +48,17 @@ class Setlist(models.Model):
     
     def __str__(self):
         return self.title
+
+    def can_edit(self, user):
+        if self.ensemble_id is None:
+            return self.user_id == user.id
+        return self.ensemble.can_manage(user)
+
+    def can_include(self, score):
+        """앙상블 세트리스트에는 그 앙상블의 악보만, 내 세트리스트에는 내가 올린 악보만"""
+        if self.ensemble_id is not None:
+            return score.ensemble_id == self.ensemble_id
+        return score.user_id == self.user_id
     
     @property
     def item_count(self):

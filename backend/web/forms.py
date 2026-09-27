@@ -197,3 +197,14 @@ class ActivateForm(forms.Form):
 
 class DeviceNameForm(forms.Form):
     name = forms.CharField(label='기기 이름', max_length=100)
+
+
+class SetlistForm(forms.Form):
+    title = forms.CharField(label='이름', max_length=255, widget=forms.TextInput(attrs={'placeholder': '예: 2026 가을 연주회'}))
+    description = forms.CharField(label='설명', required=False, widget=forms.Textarea(attrs={'rows': 2}))
+    ensemble = forms.ModelChoiceField(label='어디의 곡목', queryset=Ensemble.objects.none(), required=False,
+                                      empty_label='내 세트리스트 (나만 보기)')
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['ensemble'].queryset = managed_ensembles(user)

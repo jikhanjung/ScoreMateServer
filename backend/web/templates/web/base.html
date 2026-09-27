@@ -15,6 +15,7 @@
     <nav class="nav">
       <a href="{% url 'web:scores' %}" class="{% if url_name == 'scores' or url_name == 'score_detail' or url_name == 'score_edit' %}on{% endif %}">악보</a>
       <a href="{% url 'web:ensembles' %}" class="{% if 'ensemble' in url_name %}on{% endif %}">앙상블</a>
+      <a href="{% url 'web:setlists' %}" class="{% if 'setlist' in url_name %}on{% endif %}">세트리스트</a>
       <a href="{% url 'web:score_upload' %}" class="{% if url_name == 'score_upload' %}on{% endif %}">올리기</a>
       <a href="{% url 'web:devices' %}" class="{% if url_name == 'devices' or url_name == 'activate' %}on{% endif %}">TV</a>
     </nav>

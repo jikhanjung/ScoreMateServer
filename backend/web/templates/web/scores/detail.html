@@ -49,6 +49,10 @@
     <button class="btn sm" type="button" data-prev aria-label="앞 쪽">‹</button>
     <span class="small" data-counter></span>
     <button class="btn sm" type="button" data-next aria-label="다음 쪽">›</button>
+    <span class="page-viewer-fit" role="group" aria-label="맞춤">
+      <button class="btn sm" type="button" data-fit="width" aria-pressed="false" title="너비 맞춤 (W)">너비 맞춤</button>
+      <button class="btn sm" type="button" data-fit="height" aria-pressed="false" title="높이 맞춤 (H) — 한 쪽이 한 화면에">높이 맞춤</button>
+    </span>
     <button class="btn sm" type="button" data-close aria-label="닫기">닫기</button>
   </div>
   <img data-image alt="">
@@ -102,16 +106,33 @@
   var links = Array.prototype.slice.call(document.querySelectorAll('[data-pages] a'));
   var image = viewer.querySelector('[data-image]'), counter = viewer.querySelector('[data-counter]');
   var current = 0, preload = new Image();
+  var bar = viewer.querySelector('.page-viewer-bar'), fitButtons = viewer.querySelectorAll('[data-fit]');
+  // 맞춤: 너비(세로로 스크롤) · 높이(한 쪽이 한 화면에). 고른 것은 이 브라우저에 기억 — 처음엔 가로 화면이면 높이, 세로 화면이면 너비
+  var fit = null;
+  try { fit = localStorage.getItem('scoremate.pageFit'); } catch (e) {}
+  if (fit !== 'width' && fit !== 'height') fit = window.innerWidth > window.innerHeight ? 'height' : 'width';
+  function setFit(value) {
+    fit = value;
+    viewer.classList.toggle('fit-width', fit === 'width');
+    viewer.classList.toggle('fit-height', fit === 'height');
+    fitButtons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.fit === fit)); });
+    try { localStorage.setItem('scoremate.pageFit', fit); } catch (e) {}
+  }
+  function measureBar() { viewer.style.setProperty('--bar-h', bar.offsetHeight + 'px'); }
+  fitButtons.forEach(function (b) { b.addEventListener('click', function () { setFit(b.dataset.fit); }); });
+  window.addEventListener('resize', measureBar);
+  setFit(fit);
   function show(index) {
     if (index < 0 || index >= links.length) return;
     current = index;
+    viewer.scrollTop = 0;
     image.src = links[index].href;
     image.alt = (index + 1) + '쪽';
     counter.textContent = (index + 1) + ' / ' + links.length;
     if (index + 1 < links.length) preload.src = links[index + 1].href;
   }
   links.forEach(function (link, index) {
-    link.addEventListener('click', function (event) { event.preventDefault(); show(index); viewer.showModal(); });
+    link.addEventListener('click', function (event) { event.preventDefault(); show(index); viewer.showModal(); measureBar(); });
   });
   viewer.querySelector('[data-prev]').addEventListener('click', function () { show(current - 1); });
   viewer.querySelector('[data-next]').addEventListener('click', function () { show(current + 1); });
@@ -123,6 +144,8 @@
   viewer.addEventListener('keydown', function (event) {
     if (event.key === 'ArrowLeft' || event.key === 'PageUp') { show(current - 1); event.preventDefault(); }
     if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') { show(current + 1); event.preventDefault(); }
+    if (event.key === 'w' || event.key === 'W') setFit('width');
+    if (event.key === 'h' || event.key === 'H') setFit('height');
   });
 })();
 </script>

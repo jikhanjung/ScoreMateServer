@@ -30,6 +30,8 @@ class ScorePagesTest(WebTestBase):
         self.assertContains(response, f'쪽 ({self.score.pages})')
         self.assertContains(response, 'class="page-thumb"', count=self.score.pages)
         self.assertContains(response, reverse('web:score_page', args=[self.score.pk, self.score.pages]))
+        self.assertContains(response, 'data-fit="width"')    # 너비 맞춤 · 높이 맞춤
+        self.assertContains(response, 'data-fit="height"')
 
     def test_page_is_rendered_once_and_redirected(self):
         with patch('scores.pages.render', wraps=pages.render) as render:

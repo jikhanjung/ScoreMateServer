@@ -166,9 +166,14 @@ details > summary { cursor: pointer; color: var(--accent); }
 .page-thumb img { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1.414; object-fit: contain; background: #fff;
   border: 1px solid var(--line); border-radius: 4px; }
 .page-thumb:hover img, .page-thumb:focus-visible img { border-color: var(--accent); }
-.page-viewer { width: min(100vw, 1100px); max-width: 100vw; height: 100vh; max-height: 100vh; margin: 0 auto; padding: 0;
-  border: 0; background: var(--bg); color: var(--text); }
+.page-viewer { width: 100vw; max-width: 100vw; height: 100vh; height: 100dvh; max-height: none; margin: 0; padding: 0;
+  border: 0; background: var(--bg); color: var(--text); overflow: auto; }
 .page-viewer::backdrop { background: rgba(0, 0, 0, .7); }
 .page-viewer-bar { position: sticky; top: 0; display: flex; gap: .5rem; align-items: center; justify-content: center;
   padding: .5rem; background: var(--bg); border-bottom: 1px solid var(--line); }
-.page-viewer img { display: block; width: 100%; height: auto; background: #fff; cursor: pointer; }
+.page-viewer-bar { flex-wrap: wrap; z-index: 1; }
+.page-viewer-fit { display: inline-flex; gap: .25rem; }
+.page-viewer-fit .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.page-viewer img { display: block; margin: 0 auto; background: #fff; cursor: pointer; }
+.page-viewer.fit-width img { width: 100%; height: auto; }                                  /* 가로를 채우고 세로로 스크롤 */
+.page-viewer.fit-height img { width: auto; max-width: none; height: calc(100dvh - var(--bar-h, 3rem)); } /* 한 쪽이 한 화면에 */

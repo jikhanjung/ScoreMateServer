@@ -310,7 +310,8 @@ class SyncScoreSerializer(serializers.ModelSerializer):
         return {
             'url': request.build_absolute_uri(path) if request else path,
             'sha256': data.get('layout_sha256'), 'size_bytes': data.get('layout_bytes'),
-            'filename': layout_filename(obj, v), 'format_version': int(analysis.analyzer_version),
+            'filename': layout_filename(obj, v), 'analyzer_version': analysis.analyzer_version,
+            'pdf_sha256': v.content_hash or None,
             'measures': data.get('measure_count'), 'systems': data.get('system_count'),
             'updated_at': analysis.updated_at,
         }

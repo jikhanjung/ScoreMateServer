@@ -17,7 +17,12 @@ from .models import ScoreAnalysis, ScoreVersion
 logger = logging.getLogger(__name__)
 
 ANALYZER = 'score-layout'
-ANALYZER_VERSION = str(score_layout.FORMAT_VERSION)
+# 분석기 버전 = 서버 분석 코드 판(SERVER_REVISION) + 기준으로 옮긴 앱 score/ 커밋(APP_COMMIT). 둘 중 하나가 바뀌면 바뀐다 →
+# 레인이 모든 판을 다시 분석하고, 기기는 동기화 응답의 layout.analyzer_version 이 바뀐 것을 보고 다시 받는다
+# (앱이 DB 마이그레이션으로 분석 캐시를 비워 오던 것을 대신한다 — TV 요청)
+SERVER_REVISION = 2             # 서버 분석 코드(scores/score_layout.py)를 고칠 때마다 1씩 올린다
+APP_COMMIT = '9557497'           # MrgqPdfViewer app/src/main/java/com/mrgq/pdfviewer/score/ (2026-09-28)
+ANALYZER_VERSION = f'{SERVER_REVISION}+app.{APP_COMMIT}'
 
 
 def layout_key(version):
@@ -26,7 +31,9 @@ def layout_key(version):
 
 def analyze_version(version, pdf_bytes=None):
     """그 판의 PDF 를 분석해 파일 · 분석 행으로 남긴다. 해시가 아직 없으면 하지 않는다. 분석 행을 돌려준다"""
-    from .services import save_analysis
+    from django.db import transaction
+    from django.utils import timezone
+    from .models import Score
 
     if not version.content_hash:
         return None
@@ -37,6 +44,7 @@ def analyze_version(version, pdf_bytes=None):
         return None
     pages = score_layout.analyze(pdf_bytes)
     document = score_layout.to_document(pages, version.content_hash)
+    document.update(analyzer=ANALYZER, analyzer_version=ANALYZER_VERSION, app_commit=APP_COMMIT)
     raw = json.dumps(document, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
     key = layout_key(version)
     storage.write_bytes(key, raw, 'application/json')
@@ -50,9 +58,12 @@ def analyze_version(version, pdf_bytes=None):
             'page_count': document['page_count'], 'system_count': document['system_count'],
             'measure_count': document['measure_count'], 'time_signatures': signatures[:50], 'labels': labels[:50],
             'source': score_layout.SOURCE}
-    analysis, _ = save_analysis(version.score, user=version.score.user, analyzer=ANALYZER,
-                                analyzer_version=ANALYZER_VERSION, sha256=version.content_hash, data=data, version=version)
-    ScoreAnalysis.objects.filter(pk=analysis.pk).update(uploaded_by=None)
+    data.update(analyzer_version=ANALYZER_VERSION, app_commit=APP_COMMIT)
+    with transaction.atomic():
+        analysis, _ = ScoreAnalysis.objects.update_or_create(
+            version=version, analyzer=ANALYZER,
+            defaults={'analyzer_version': ANALYZER_VERSION, 'data': data, 'uploaded_by': None, 'device': None})
+        Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())   # 기기가 다음 동기화에 알아채게
     return analysis
 
 
@@ -69,7 +80,7 @@ def layout_filename(score, version):
 
 
 def missing(limit=None):
-    """분석 파일이 없는 판(해시 있음)"""
-    done = ScoreAnalysis.objects.filter(analyzer=ANALYZER).values('version_id')
+    """분석 파일이 없거나 옛 분석기 버전인 판(해시 있음)"""
+    done = ScoreAnalysis.objects.filter(analyzer=ANALYZER, analyzer_version=ANALYZER_VERSION).values('version_id')
     versions = ScoreVersion.objects.select_related('score').exclude(content_hash='').exclude(pk__in=done).order_by('pk')
     return list(versions[:limit] if limit else versions)

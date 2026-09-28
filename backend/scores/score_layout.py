@@ -13,6 +13,7 @@ PyMuPDF 는 앱의 PdfBox 처럼 문서 열기 · 스트림 압축 해제 · XOb
 """
 import math
 import re
+import struct
 from dataclasses import dataclass, field, replace
 
 import fitz  # PyMuPDF
@@ -81,15 +82,55 @@ class PageLayout:
     time_signatures: list = field(default_factory=list)
 
 
+_F32 = struct.Struct('f')
+
+
 def f32(v):
-    """앱은 Float(32비트)로 계산한다 — 반올림 경계에서 같은 값을 내려고 한 번 거친다"""
-    import struct
-    return struct.unpack('f', struct.pack('f', v))[0]
+    """앱은 Float(32비트)로 계산한다 — **Float 연산 하나마다** 이것을 거친다: f32(a op b) 는 Kotlin 의 a op b 와 같다
+    (두 float 의 + - * / 를 double 로 한 뒤 float 로 반올림하면 float 로 바로 한 것과 같다). 넘치면 무한대(Kotlin 과 같이)"""
+    try:
+        return _F32.unpack(_F32.pack(v))[0]
+    except OverflowError:
+        return math.copysign(math.inf, v)
 
 
 def round1(v):
-    """Kotlin Math.round(v * 10f) / 10f — 반올림은 .5 에서 위로(floor(x + 0.5))"""
-    return math.floor(f32(v * 10) + 0.5) / 10
+    """Kotlin Math.round(v * 10f) / 10f — Float 결과. Math.round 는 .5 에서 위로, NaN 은 0, Int 범위로 자른다"""
+    x = f32(f32(v) * f32(10.0))
+    if math.isnan(x):
+        n = 0
+    elif x >= 2147483647:
+        n = 2147483647
+    elif x <= -2147483648:
+        n = -2147483648
+    else:
+        n = math.floor(x + 0.5)
+    return f32(f32(n) / f32(10.0))
+
+
+# Kotlin Char.isWhitespace (JVM: Character.isWhitespace || isSpaceChar) — 파이썬 isspace 와는 U+0085 만 다르다
+_KT_WHITESPACE = ''.join(c for c in map(chr, range(0x3001)) if c.isspace() and c != '\x85')
+
+
+def kt_trim(s):
+    """Kotlin String.trim()"""
+    return s.strip(_KT_WHITESPACE)
+
+
+def kt_length(s):
+    """Kotlin String.length — UTF-16 코드 단위 수 (BMP 밖 글자는 2)"""
+    return len(s) + sum(1 for c in s if ord(c) > 0xFFFF)
+
+
+def kt_json_float(v):
+    """Float 를 JSON 에 — Kotlin Float.toString 처럼 그 Float 로 되돌아오는 가장 짧은 십진수"""
+    if not isinstance(v, float) or not math.isfinite(v):
+        return v
+    for digits in range(1, 10):
+        s = float(f'{v:.{digits}g}')
+        if f32(s) == v:
+            return s
+    return v
 
 
 # --------------------------------------------------------------------------------------------- 해석기
@@ -113,7 +154,7 @@ class ContentInterpreter:
         self.collect_text = collect_text
         self.boxes, self.texts = [], []
         self.operands = []
-        self.name = None
+        self.name_span = None        # Kotlin nameStart/nameEnd — 이름은 쓸 때 **그때의 content** 에서 푼다
         self.ctm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         self.saved = []
         self.floor = 0
@@ -168,27 +209,43 @@ class ContentInterpreter:
             elif b == 0x2F:                                   # /name
                 end = _regular_end(content, i + 1)
                 if array_depth == 0 and dict_depth == 0:
-                    self.name = _decode_name(content[i + 1:end])
+                    self.name_span = (i + 1, end)
                 i = end
             else:
                 end = max(_regular_end(content, i), i + 1)
                 if array_depth > 0 or dict_depth > 0:
                     i = end
                 elif b in b'0123456789-+.':
-                    self._push_number(content[i:end])
+                    self._push_number(content, i, end)
                     i = end
                 else:
                     i = self._operator(content, i, end, resolver, depth)
 
-    def _push_number(self, token):
-        try:
-            value = f32(float(token))
-        except ValueError:
-            m = re.match(rb'^[+-]?\d*\.?\d*', token)      # Kotlin 과 같이 앞의 숫자 부분만
-            text = m.group(0) if m else b''
-            if not re.search(rb'\d', text):
-                return
-            value = f32(float(text.rstrip(b'.') or b'0'))
+    def _push_number(self, content, start, end):
+        """Kotlin pushNumber 그대로 — 부호, 정수부, '.' 뒤 소수부만 double 로 쌓아 Float 로. 지수 · 나머지 글자는 무시"""
+        j = start
+        negative = False
+        sign = content[j]
+        if sign == 0x2D or sign == 0x2B:
+            negative = sign == 0x2D
+            j += 1
+        value = 0.0
+        digits = False
+        while j < end and 0x30 <= content[j] <= 0x39:
+            value = value * 10 + (content[j] - 0x30)
+            digits = True
+            j += 1
+        if j < end and content[j] == 0x2E:
+            j += 1
+            scale = 0.1
+            while j < end and 0x30 <= content[j] <= 0x39:
+                value += (content[j] - 0x30) * scale
+                scale *= 0.1
+                digits = True
+                j += 1
+        if not digits:
+            return                                        # "-" 같은 깨진 토큰은 무시
+        value = f32(-value if negative else value)
         if len(self.operands) == MAX_OPERANDS:
             self.operands.pop(0)
         self.operands.append(value)
@@ -224,29 +281,29 @@ class ContentInterpreter:
                 self._concat(*[self._op(k) for k in (6, 5, 4, 3, 2, 1)])
             elif token == b're' and count >= 4:
                 x, y, w, h = self._op(4), self._op(3), self._op(2), self._op(1)
-                for px, py in ((x, y), (x + w, y), (x + w, y + h), (x, y + h)):
+                for px, py in ((x, y), (f32(x + w), y), (f32(x + w), f32(y + h)), (x, f32(y + h))):
                     self._add_point(px, py)
             elif token in (b'f*', b'B*', b'b*'):
                 self._finish_path()
             elif token == b'Do':
-                self._draw_xobject(resolver, depth)
+                self._draw_xobject(content, resolver, depth)
             elif token == b'BI':
                 nxt = _skip_inline_image(content, end)
             elif self.collect_text and token == b'BT':
                 self.text_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
                 self.line_matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
             elif self.collect_text and token[:1] == b'T':
-                self._text_operator(token[1:2], resolver)
+                self._text_operator(content, token[1:2], resolver)
         self.operands = []
-        self.name = None
+        self.name_span = None
         self.text_bytes = bytearray()
         return nxt
 
-    def _text_operator(self, c1, resolver):
+    def _text_operator(self, content, c1, resolver):
         count = len(self.operands)
         if c1 == b'f':
-            if count >= 1 and self.name is not None:
-                self.font_name = self.name
+            if count >= 1 and self.name_span is not None:
+                self.font_name = _decode_name(content, *self.name_span)
                 self.font_size = self._op(1)
         elif c1 == b'd':
             if count >= 2:
@@ -270,8 +327,8 @@ class ContentInterpreter:
     # -- 경로 --
     def _add_point(self, x, y):
         m = self.ctm
-        px = f32(m[0] * x + m[2] * y + m[4] - self.origin_x)
-        py = f32(m[1] * x + m[3] * y + m[5] - self.origin_y)
+        px = f32(f32(f32(f32(m[0] * x) + f32(m[2] * y)) + m[4]) - self.origin_x)
+        py = f32(f32(f32(f32(m[1] * x) + f32(m[3] * y)) + m[5]) - self.origin_y)
         if self.points is None:
             self.points = [px, py, px, py]
         else:
@@ -286,8 +343,9 @@ class ContentInterpreter:
 
     def _concat(self, a, b, c, d, e, f):
         a2, b2, c2, d2, e2, f2 = self.ctm
-        self.ctm = [f32(a * a2 + b * c2), f32(a * b2 + b * d2), f32(c * a2 + d * c2), f32(c * b2 + d * d2),
-                    f32(e * a2 + f * c2 + e2), f32(e * b2 + f * d2 + f2)]
+        self.ctm = [f32(f32(a * a2) + f32(b * c2)), f32(f32(a * b2) + f32(b * d2)),
+                    f32(f32(c * a2) + f32(d * c2)), f32(f32(c * b2) + f32(d * d2)),
+                    f32(f32(f32(e * a2) + f32(f * c2)) + e2), f32(f32(f32(e * b2) + f32(f * d2)) + f2)]
 
     def _save(self):
         self.saved.append(list(self.ctm))
@@ -296,21 +354,19 @@ class ContentInterpreter:
         if len(self.saved) > self.floor:
             self.ctm = self.saved.pop()
 
-    def _draw_xobject(self, resolver, depth):
-        if resolver is None or self.name is None or depth >= MAX_FORM_DEPTH:
+    def _draw_xobject(self, content, resolver, depth):
+        if resolver is None or self.name_span is None or depth >= MAX_FORM_DEPTH:
             return
-        form = resolver.form(self.name)
+        form = resolver.form(_decode_name(content, *self.name_span))
         if form is None:
             return
-        content, matrix, inner = form
+        form_content, matrix, inner = form
         outer_floor = self.floor
         self._save()
         self.floor = len(self.saved)
         self._concat(*matrix)
-        saved_operands, saved_name = self.operands, self.name
-        self.operands, self.name = [], None
-        self._interpret(content, inner or resolver, depth + 1)
-        self.operands, self.name = saved_operands, saved_name
+        # Kotlin 과 같이 피연산자 · 이름 · 텍스트 버퍼를 비우지 않고 폼 내용을 시작한다 (Do 뒤에 _operator 가 비운다)
+        self._interpret(form_content, inner if inner is not None else resolver, depth + 1)
         del self.saved[self.floor:]
         self.floor = outer_floor
         self._restore()
@@ -318,8 +374,8 @@ class ContentInterpreter:
     # -- 텍스트 --
     def _move_text(self, tx, ty):
         lm = self.line_matrix
-        lm[4] = f32(lm[4] + tx * lm[0] + ty * lm[2])
-        lm[5] = f32(lm[5] + tx * lm[1] + ty * lm[3])
+        lm[4] = f32(lm[4] + f32(f32(tx * lm[0]) + f32(ty * lm[2])))
+        lm[5] = f32(lm[5] + f32(f32(tx * lm[1]) + f32(ty * lm[3])))
         self.text_matrix = list(lm)
 
     def _next_line(self):
@@ -329,14 +385,14 @@ class ContentInterpreter:
         if not self.collect_text or self.font_name is None or not self.text_bytes or resolver is None:
             return
         text = resolver.decode_text(self.font_name, bytes(self.text_bytes))
-        if not text:
+        if text is None:
             return
         tm, m = self.text_matrix, self.ctm
         tx, ty = tm[4], tm[5]
-        x = f32(m[0] * tx + m[2] * ty + m[4] - self.origin_x)
-        y = f32(m[1] * tx + m[3] * ty + m[5] - self.origin_y)
-        vx, vy = tm[2] * self.font_size, tm[3] * self.font_size
-        size = f32(math.hypot(m[0] * vx + m[2] * vy, m[1] * vx + m[3] * vy))
+        x = f32(f32(f32(f32(m[0] * tx) + f32(m[2] * ty)) + m[4]) - self.origin_x)
+        y = f32(f32(f32(f32(m[1] * tx) + f32(m[3] * ty)) + m[5]) - self.origin_y)
+        vx, vy = f32(tm[2] * self.font_size), f32(tm[3] * self.font_size)
+        size = f32(math.hypot(f32(f32(m[0] * vx) + f32(m[2] * vy)), f32(f32(m[1] * vx) + f32(m[3] * vy))))
         self.texts.append(TextRun(text, x, y, size))
 
     def _read_literal(self, content, start):
@@ -467,8 +523,33 @@ def _skip_inline_image(content, start):
     return n
 
 
-def _decode_name(raw):
-    return re.sub(rb'#([0-9A-Fa-f]{2})', lambda m: bytes([int(m.group(1), 16)]), raw).decode('latin-1')
+def _kt_hex_int(two):
+    """Kotlin String.toIntOrNull(16) — 두 글자, 앞의 + · - 부호도 받는다"""
+    sign, body = 1, two
+    if two[:1] in ('-', '+'):
+        sign, body = (-1 if two[0] == '-' else 1), two[1:]
+    if not body or any(c not in '0123456789abcdefABCDEF' for c in body):
+        return None
+    return sign * int(body, 16)
+
+
+def _decode_name(content, start, end):
+    """Kotlin decodeName — 이름의 #xx 이스케이프를 푼다 (/Fm#201 → "Fm 1"). 범위가 content 밖이면 Kotlin 처럼 예외"""
+    if end > len(content):
+        raise IndexError('name span outside content')
+    out = []
+    j = start
+    while j < end:
+        c = content[j]
+        if c == 0x23 and j + 2 < end:
+            value = _kt_hex_int(content[j + 1:j + 3].decode('latin-1'))
+            if value is not None:
+                out.append(chr(value & 0xFFFF))            # Int.toChar() — 하위 16비트
+                j += 3
+                continue
+        out.append(chr(c))
+        j += 1
+    return ''.join(out)
 
 
 # --------------------------------------------------------------------------------------------- 리소스 (PdfBoxContent.kt)
@@ -527,23 +608,31 @@ def _parse_cmap(data):
 
 
 class Resources:
-    """PdfBoxXObjects 와 같은 역할 — Form XObject(내용 · 행렬 · 리소스)와 글꼴 해독. 폼에 리소스가 없으면 바깥 것을 쓴다"""
+    """PdfBoxXObjects 와 같은 역할 — Form XObject(내용 · 행렬 · 리소스)와 글꼴 해독.
+    owner_xref = /Resources 를 가진 객체(없으면 None — 리소스 없음). 폼에 리소스가 있으면 **그것만**, 없으면 바깥 것을 쓴다
+    (Kotlin: PdfBoxXObjects(form.resources ?: resources) — 섞지 않는다)"""
 
-    def __init__(self, doc, owner_xref, parent=None):
-        self.doc, self.owner, self.parent = doc, owner_xref, parent
+    def __init__(self, doc, owner_xref):
+        self.doc, self.owner = doc, owner_xref
         self.fonts = {}
 
-    def _key(self, path):
-        for owner in (self.owner,):
-            kind, value = self.doc.xref_get_key(owner, path)
-            if kind != 'null':
-                return kind, value
-        return 'null', None
+    @classmethod
+    def for_page(cls, doc, page):
+        """PDPage.getResources — /Resources 는 페이지 트리에서 상속된다"""
+        xref = page.xref
+        for _ in range(64):
+            if doc.xref_get_key(xref, 'Resources')[0] != 'null':
+                return cls(doc, xref)
+            kind, parent = doc.xref_get_key(xref, 'Parent')
+            if kind != 'xref':
+                break
+            xref = int(parent.split()[0])
+        return cls(doc, None)
 
     def _resource(self, category, name):
-        kind, value = self._key(f'Resources/{category}/{name}')
-        if kind == 'null' and self.parent is not None:
-            return self.parent._resource(category, name)
+        if self.owner is None:
+            return None
+        kind, value = self.doc.xref_get_key(self.owner, f'Resources/{category}/{name}')
         if kind == 'xref':
             return int(value.split()[0])
         return None
@@ -560,10 +649,10 @@ class Resources:
             return None
         kind, value = self.doc.xref_get_key(xref, 'Matrix')
         matrix = [float(v) for v in re.findall(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', value)] if kind == 'array' else []
-        if len(matrix) != 6:
-            matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        # PdfBox Matrix.createMatrix: 숫자 6개 이상이면 앞의 6개, 아니면 단위 행렬
+        matrix = matrix[:6] if len(matrix) >= 6 else [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
         has_own = self.doc.xref_get_key(xref, 'Resources')[0] != 'null'
-        inner = Resources(self.doc, xref, self) if has_own else self
+        inner = Resources(self.doc, xref) if has_own else self
         return content, [f32(v) for v in matrix], inner
 
     def decode_text(self, font_name, data):
@@ -625,21 +714,47 @@ class Resources:
         return mapping, sorted(set(lengths), reverse=True), simple
 
 
+def _inherited(doc, xref, key):
+    """PDPageTree.getInheritableAttribute — 페이지에서 Parent 를 따라 처음 있는 값 (kind, value), 간접 참조는 푼다"""
+    for _ in range(64):
+        kind, value = doc.xref_get_key(xref, key)
+        if kind != 'null':
+            if kind == 'xref':
+                value = doc.xref_object(int(value.split()[0]), compressed=True).strip()
+                kind = 'array' if value.startswith('[') else 'other'
+            return kind, value
+        parent_kind, parent = doc.xref_get_key(xref, 'Parent')
+        if parent_kind != 'xref':
+            break
+        xref = int(parent.split()[0])
+    return 'null', None
+
+
+def _rectangle(kind, value):
+    """PDRectangle(COSArray) — Float 4개(모자라면 0), 좌하단 = min · 우상단 = max. 배열이 아니면 None"""
+    if kind != 'array':
+        return None
+    v = ([f32(float(n)) for n in re.findall(r'[-+]?\d*\.?\d+', value)] + [0.0] * 4)[:4]
+    return [min(v[0], v[2]), min(v[1], v[3]), max(v[0], v[2]), max(v[1], v[3])]
+
+
 def _page_box(doc, page):
-    for key in ('CropBox', 'MediaBox'):
-        xref = page.xref
-        for _ in range(10):                      # 상속(Parent) 따라가기
-            kind, value = doc.xref_get_key(xref, key)
-            if kind == 'array':
-                numbers = [float(v) for v in re.findall(r'[-+]?\d*\.?\d+', value)]
-                if len(numbers) == 4:
-                    return numbers
-            parent_kind, parent = doc.xref_get_key(xref, 'Parent')
-            if parent_kind != 'xref':
-                break
-            xref = int(parent.split()[0])
-    rect = page.rect
-    return [0.0, 0.0, rect.width, rect.height]
+    """PDPage.getCropBox — CropBox 를 MediaBox 로 자른 것, CropBox 가 없으면 MediaBox, 그것도 없으면 LETTER(612×792)"""
+    media = _rectangle(*_inherited(doc, page.xref, 'MediaBox')) or [0.0, 0.0, 612.0, 792.0]
+    crop = _rectangle(*_inherited(doc, page.xref, 'CropBox'))
+    if crop is None:
+        return media
+    return [max(media[0], crop[0]), max(media[1], crop[1]), min(media[2], crop[2]), min(media[3], crop[3])]
+
+
+def _page_rotation(doc, page):
+    """PDPage.getRotation — 상속되는 /Rotate 의 intValue 가 90 의 배수면 0~270, 아니면 0"""
+    kind, value = _inherited(doc, page.xref, 'Rotate')
+    try:
+        angle = int(float(value)) if kind in ('int', 'float') else 0
+    except ValueError:
+        angle = 0
+    return (angle % 360 + 360) % 360 if angle % 90 == 0 else 0
 
 
 def page_content(doc, page):
@@ -648,32 +763,34 @@ def page_content(doc, page):
 
 
 # --------------------------------------------------------------------------------------------- StaffSystemDetector
+# Float 연산은 Kotlin 과 같게 한 번마다 f32 — 비교의 경계(± 허용치, 반올림)에서 앱과 같은 판정을 내려고.
 
-STAFF_LINE_MAX_HEIGHT = 1.5
-STAFF_LINE_MIN_WIDTH = 80
-VERTICAL_MAX_WIDTH = 2
-VERTICAL_MIN_HEIGHT = 6
-LINE_CLUSTER_TOL = 2
-STAFF_MAX_SPAN = 28
-SYSTEM_GAP = 55
-BAR_END_TOL = 1.5
-NOTEHEAD_TOL = 4.5
-BAR_CLUSTER_TOL = 3
-MIN_MEASURE_WIDTH = 15
-LEFT_EDGE_TOL = 4
-SEGMENT_Y_TOL = 0.3
-SEGMENT_GAP_TOL = 1
+STAFF_LINE_MAX_HEIGHT = f32(1.5)
+STAFF_LINE_MIN_WIDTH = f32(80.0)
+VERTICAL_MAX_WIDTH = f32(2.0)
+VERTICAL_MIN_HEIGHT = f32(6.0)
+LINE_CLUSTER_TOL = f32(2.0)
+STAFF_MAX_SPAN = f32(28.0)
+SYSTEM_GAP = f32(55.0)
+BAR_END_TOL = f32(1.5)
+NOTEHEAD_TOL = f32(4.5)
+BAR_CLUSTER_TOL = f32(3.0)
+MIN_MEASURE_WIDTH = f32(15.0)
+LEFT_EDGE_TOL = f32(4.0)
+SEGMENT_Y_TOL = f32(0.3)
+SEGMENT_GAP_TOL = f32(1.0)
 SMUFL_NOTEHEADS = range(0xE0A0, 0xE100)
-SMUFL_HEAD_CENTER = 0.15
+SMUFL_HEAD_CENTER = f32(0.15)
 
 
 def cluster(values, tol):
+    """정렬 후 인접 간격이 tol 이하인 값끼리 묶어 평균 (Kotlin: Iterable<Float>.average() 는 double 합 → toFloat)"""
     if not values:
         return []
     ordered = sorted(values)
     out, group = [], [ordered[0]]
     for v in ordered[1:]:
-        if v - group[-1] <= tol:
+        if f32(v - group[-1]) <= tol:
             group.append(v)
         else:
             out.append(f32(sum(group) / len(group)))
@@ -683,6 +800,7 @@ def cluster(values, tol):
 
 
 def _merge_segments(segments):
+    """(cy, x0, x1) — 같은 높이(±SEGMENT_Y_TOL)에서 끝이 이어진(SEGMENT_GAP_TOL 이하) 가로 조각을 하나로"""
     if not segments:
         return []
     out = []
@@ -690,13 +808,13 @@ def _merge_segments(segments):
     i = 0
     while i < len(ordered):
         j = i
-        while j + 1 < len(ordered) and ordered[j + 1][0] - ordered[i][0] <= SEGMENT_Y_TOL:
+        while j + 1 < len(ordered) and f32(ordered[j + 1][0] - ordered[i][0]) <= SEGMENT_Y_TOL:
             j += 1
         row = sorted(ordered[i:j + 1], key=lambda s: s[1])
         cur = row[0]
         for seg in row[1:]:
-            if seg[1] - cur[2] <= SEGMENT_GAP_TOL:
-                cur = (f32((cur[0] + seg[0]) / 2), cur[1], max(cur[2], seg[2]))
+            if f32(seg[1] - cur[2]) <= SEGMENT_GAP_TOL:
+                cur = (f32(f32(cur[0] + seg[0]) / 2), cur[1], max(cur[2], seg[2]))
             else:
                 out.append(cur)
                 cur = seg
@@ -708,19 +826,19 @@ def _merge_segments(segments):
 def detect_systems(boxes, page_height, texts=()):
     horizontals, verticals, heads = [], [], []
     for b in boxes:
-        w, h = f32(b.width), f32(b.height)
+        w, h = f32(b.x1 - b.x0), f32(b.y1 - b.y0)
         if b.curved:
             if 4 < w < 9 and 3 < h < 7:
-                heads.append((f32((b.x0 + b.x1) / 2), f32((b.y0 + b.y1) / 2)))
+                heads.append((f32(f32(b.x0 + b.x1) / 2), f32(f32(b.y0 + b.y1) / 2)))
             continue
         if h < STAFF_LINE_MAX_HEIGHT and w > 0:
-            horizontals.append((f32((b.y0 + b.y1) / 2), b.x0, b.x1))
+            horizontals.append((f32(f32(b.y0 + b.y1) / 2), b.x0, b.x1))
         elif w < VERTICAL_MAX_WIDTH and h > VERTICAL_MIN_HEIGHT:
-            verticals.append((f32((b.x0 + b.x1) / 2), b.y0, b.y1))
+            verticals.append((f32(f32(b.x0 + b.x1) / 2), b.y0, b.y1))
     for t in texts:
-        if len(t.text) == 1 and ord(t.text) in SMUFL_NOTEHEADS:
-            heads.append((f32(t.x + t.size * SMUFL_HEAD_CENTER), t.y))
-    staff_lines = [s for s in _merge_segments(horizontals) if s[2] - s[1] > STAFF_LINE_MIN_WIDTH]
+        if kt_length(t.text) == 1 and ord(t.text) in SMUFL_NOTEHEADS:
+            heads.append((f32(t.x + f32(t.size * SMUFL_HEAD_CENTER)), t.y))
+    staff_lines = [s for s in _merge_segments(horizontals) if f32(s[2] - s[1]) > STAFF_LINE_MIN_WIDTH]
     if not staff_lines:
         return []
     centers = cluster([s[0] for s in staff_lines], LINE_CLUSTER_TOL)
@@ -728,7 +846,7 @@ def detect_systems(boxes, page_height, texts=()):
     i = 0
     while i + 5 <= len(centers):
         g = centers[i:i + 5]
-        if g[4] - g[0] < STAFF_MAX_SPAN:
+        if f32(g[4] - g[0]) < STAFF_MAX_SPAN:
             staves.append((g[0], g[4]))
             i += 5
         else:
@@ -738,47 +856,50 @@ def detect_systems(boxes, page_height, texts=()):
     staves.sort()
 
     def connected(lower, upper):
-        return any(v[1] <= lower[1] + BAR_END_TOL and v[2] >= upper[0] - BAR_END_TOL for v in verticals)
+        # 보표 사이를 잇는 세로선 — 위 보표(높은 y)의 아랫선부터 아래 보표의 윗선까지 덮는다
+        return any(v[1] <= f32(lower[1] + BAR_END_TOL) and v[2] >= f32(upper[0] - BAR_END_TOL) for v in verticals)
     pairs = list(zip(staves, staves[1:]))
     use_connectors = any(connected(lo, up) for lo, up in pairs)
     groups, current = [], [staves[0]]
     for lower, upper in pairs:
-        same = connected(lower, upper) if use_connectors else upper[0] - lower[1] <= SYSTEM_GAP
+        same = connected(lower, upper) if use_connectors else f32(upper[0] - lower[1]) <= SYSTEM_GAP
         if same:
             current.append(upper)
         else:
             groups.append(current)
             current = [upper]
     groups.append(current)
-    groups.sort(key=lambda g: -g[0][0])
+    groups.sort(key=lambda g: -g[0][0])                          # 페이지 위(큰 y)부터, 안정 정렬
 
     def has_head_at(x, y):
-        return any(abs(hx - x) < NOTEHEAD_TOL and abs(hy - y) < NOTEHEAD_TOL for hx, hy in heads)
+        return any(abs(f32(hx - x)) < NOTEHEAD_TOL and abs(f32(hy - y)) < NOTEHEAD_TOL for hx, hy in heads)
     return [_build_system(g, staff_lines, verticals, page_height, has_head_at) for g in groups]
 
 
 def _build_system(system, staff_lines, verticals, page_height, has_head_at):
     top_pdf, bottom_pdf = system[-1][1], system[0][0]
-    system_lines = [l for l in staff_lines if any(abs(l[0] - st) < 2 or abs(l[0] - sb) < 2 for st, sb in system)]
-    x_left = min(l[1] for l in system_lines)
-    x_right = max(l[2] for l in system_lines)
+    system_lines = [ln for ln in staff_lines
+                    if any(abs(f32(ln[0] - st)) < 2 or abs(f32(ln[0] - sb)) < 2 for st, sb in system)]
+    x_left = min(ln[1] for ln in system_lines)
+    x_right = max(ln[2] for ln in system_lines)
     tops = [s[1] for s in system]
     bottoms = [s[0] for s in system]
 
     def near(v, targets):
-        return any(abs(v - t) <= BAR_END_TOL for t in targets)
+        return any(abs(f32(v - t)) <= BAR_END_TOL for t in targets)
     candidates = [v for v in verticals if near(v[2], tops) and (near(v[1], bottoms) or near(v[1], tops))]
     per_staff = []
     for st, sb in system:
-        xs = [v[0] for v in candidates if v[1] <= st + BAR_END_TOL and v[2] >= sb - BAR_END_TOL
+        xs = [v[0] for v in candidates if v[1] <= f32(st + BAR_END_TOL) and v[2] >= f32(sb - BAR_END_TOL)
               and not (has_head_at(v[0], st) or has_head_at(v[0], sb))]
         per_staff.append(sorted(xs))
 
     def staff_count(x):
-        return sum(1 for xs in per_staff if any(abs(v - x) <= BAR_CLUSTER_TOL for v in xs))
+        return sum(1 for xs in per_staff if any(abs(f32(v - x)) <= BAR_CLUSTER_TOL for v in xs))
     bars = []
     all_x = [x for xs in per_staff for x in xs]
     if all_x:
+        # 보표 3개 이하면 전부, 그보다 많으면 하나 빠져도 된다
         needed = len(system) if len(system) <= 3 else len(system) - 1
         for cx in cluster(all_x, BAR_CLUSTER_TOL):
             if staff_count(cx) >= needed:
@@ -786,27 +907,31 @@ def _build_system(system, staff_lines, verticals, page_height, has_head_at):
     if bars:
         merged = [bars[0]]
         for b in bars[1:]:
-            if b - merged[-1] < MIN_MEASURE_WIDTH:
+            if f32(b - merged[-1]) < MIN_MEASURE_WIDTH:
                 if staff_count(b) > staff_count(merged[-1]):
                     merged[-1] = b
             else:
                 merged.append(b)
         bars = merged
-    if bars and x_right - bars[-1] >= MIN_MEASURE_WIDTH:
+    # 끝 마디선이 안 잡혔으면 오선 오른쪽 끝을 경계로 — 남은 폭이 마디 하나가 될 만큼일 때만
+    if bars and f32(x_right - bars[-1]) >= MIN_MEASURE_WIDTH:
         bars.append(round1(x_right))
-    bounds = [round1(x_left)] + [b for b in bars if b > x_left + LEFT_EDGE_TOL]
+    left_edge = f32(x_left + LEFT_EDGE_TOL)
+    bounds = [round1(x_left)] + [b for b in bars if b > left_edge]
     return SystemLayout(
-        top=round1(page_height - top_pdf), bottom=round1(page_height - bottom_pdf),
+        top=round1(f32(page_height - top_pdf)), bottom=round1(f32(page_height - bottom_pdf)),
         left=round1(x_left), right=round1(x_right),
-        staff_bands=[(round1(page_height - sb), round1(page_height - st)) for st, sb in reversed(system)],
+        staff_bands=[(round1(f32(page_height - sb)), round1(f32(page_height - st))) for st, sb in reversed(system)],
         barlines=bounds)
 
 
 # --------------------------------------------------------------------------------------------- StaffLabelDetector
 
-LABEL_LEFT_TOL = 1
-GLYPH_WIDTH = 0.55
-WORD_GAP = 0.25
+LABEL_LEFT_TOL = f32(1.0)
+GLYPH_WIDTH = f32(0.55)
+WORD_GAP = f32(0.25)
+DIGITS_ONLY = re.compile(r'[\d\s]+', re.ASCII)       # Java 정규식의 \d \s 는 ASCII 만
+WHITESPACE_RUN = re.compile(r'\s+', re.ASCII)
 
 
 def attach_labels(runs, systems, page_height):
@@ -819,17 +944,17 @@ def _labels(runs, system, page_height):
         return []
     pieces = [[] for _ in bands]
     for run in runs:
-        text = run.text.strip()
-        if not text or run.x >= system.left - LABEL_LEFT_TOL:
+        text = kt_trim(run.text)
+        if not text or run.x >= f32(system.left - LABEL_LEFT_TOL):
             continue
-        y = page_height - run.y
-        center = y - run.size / 3
-        best, best_distance = -1, float('inf')
+        y = f32(page_height - run.y)                   # 기준선, 위→아래
+        center = f32(y - f32(run.size / 3))            # 글자 가운데는 글꼴 크기의 1/3 위
+        best, best_distance = -1, 3.4028234663852886e38   # Float.MAX_VALUE
         for k, (top, bottom) in enumerate(bands):
-            height = bottom - top
-            if center < top - height or center > bottom + height:
+            height = f32(bottom - top)
+            if center < f32(top - height) or center > f32(bottom + height):
                 continue
-            distance = abs(center - (top + bottom) / 2)
+            distance = abs(f32(center - f32(f32(top + bottom) / 2)))
             if distance < best_distance:
                 best, best_distance = k, distance
         if best >= 0:
@@ -840,7 +965,7 @@ def _labels(runs, system, page_height):
 def _join(items):
     lines, line_y = [], float('nan')
     for y, run in sorted(items, key=lambda item: item[0]):
-        if not lines or y - line_y > run.size / 2:
+        if not lines or f32(y - line_y) > f32(run.size / 2):
             lines.append([])
             line_y = y
         lines[-1].append(run)
@@ -849,53 +974,62 @@ def _join(items):
         ordered = sorted(line, key=lambda r: r.x)
         out = ''
         for i, run in enumerate(ordered):
-            text = run.text.strip()
+            text = kt_trim(run.text)
             if i > 0:
                 prev = ordered[i - 1]
-                prev_text = prev.text.strip()
-                spaced = (run.x - (prev.x + prev.size * GLYPH_WIDTH) > prev.size * WORD_GAP
-                          if len(prev_text) == 1 and len(text) == 1 else True)
+                prev_text = kt_trim(prev.text)
+                if kt_length(prev_text) == 1 and kt_length(text) == 1:
+                    spaced = f32(run.x - f32(prev.x + f32(prev.size * GLYPH_WIDTH))) > f32(prev.size * WORD_GAP)
+                else:
+                    spaced = True
                 if spaced:
                     out += ' '
             out += text
         texts.append(out)
-    joined = ' '.join(t for t in texts if not re.fullmatch(r'[\d\s]+', t))
-    joined = re.sub(r'\s+', ' ', joined).strip()
+    joined = kt_trim(WHITESPACE_RUN.sub(' ', ' '.join(t for t in texts if not DIGITS_ONLY.fullmatch(t))))
     return joined or None
 
 
 # --------------------------------------------------------------------------------------------- TimeSignatureDetector
 
-TS_X_TOL = 3
-MIN_SEPARATION = 0.25
-MAX_SEPARATION = 0.8
+TS_X_TOL = f32(3.0)
+MIN_SEPARATION = f32(0.25)
+MAX_SEPARATION = f32(0.8)
 DENOMINATORS = {1, 2, 4, 8, 16, 32}
+DIGITS = re.compile(r'\d{1,2}', re.ASCII)
 SMUFL_DIGIT_0 = 0xE080
-MERGE_GAP = 0.6
-BASELINE_TOL = 0.5
+MERGE_GAP = f32(0.6)
+BASELINE_TOL = f32(0.5)
 SYMBOLS = {'c': (4, 4), 'C': (2, 2), '': (4, 4), '': (2, 2)}
-SYMBOL_MIN_SIZE = 0.6
+SYMBOL_MIN_SIZE = f32(0.6)
 
 
 def _normalize(text):
+    """SMuFL 박자 숫자를 일반 숫자로. 다른 글자는 그대로"""
     return ''.join(chr(ord('0') + ord(c) - SMUFL_DIGIT_0) if SMUFL_DIGIT_0 <= ord(c) <= SMUFL_DIGIT_0 + 9 else c
                    for c in text)
 
 
+def _is_single_digit(text):
+    """Kotlin text.length == 1 && text[0].isDigit() — isDigit 는 유니코드 Nd (= str.isdecimal)"""
+    return kt_length(text) == 1 and text.isdecimal()
+
+
 def _merge_digits(runs):
-    singles = sorted([r for r in runs if len(r.text) == 1 and r.text.isdigit()], key=lambda r: (r.y, r.x))
-    others = [r for r in runs if not (len(r.text) == 1 and r.text.isdigit())]
+    singles = sorted([r for r in runs if _is_single_digit(r.text)], key=lambda r: (r.y, r.x))
+    others = [r for r in runs if not _is_single_digit(r.text)]
     merged, group = [], []
 
     def flush():
         nonlocal group
         if group:
             merged.append(group[0] if len(group) == 1 else
-                          TextRun(''.join(r.text for r in group), (group[0].x + group[-1].x) / 2, group[0].y, group[0].size))
+                          TextRun(''.join(r.text for r in group), f32(f32(group[0].x + group[-1].x) / 2),
+                                  group[0].y, group[0].size))
         group = []
     for r in singles:
         last = group[-1] if group else None
-        if last is not None and (abs(r.y - last.y) > BASELINE_TOL or r.x - last.x > r.size * MERGE_GAP):
+        if last is not None and (abs(f32(r.y - last.y)) > BASELINE_TOL or f32(r.x - last.x) > f32(r.size * MERGE_GAP)):
             flush()
         group.append(r)
     flush()
@@ -903,15 +1037,16 @@ def _merge_digits(runs):
 
 
 def detect_time_signatures(runs, systems, page_height):
-    normalized = _merge_digits([replace(r, text=_normalize(r.text)) if any(ord(c) >= SMUFL_DIGIT_0 for c in r.text) else r
-                                for r in runs])
+    # Kotlin: text.any { c.code >= 0xE080 } — UTF-16 코드 단위라 BMP 밖 글자(서로게이트)는 해당하지 않는다
+    normalized = _merge_digits([replace(r, text=_normalize(r.text))
+                                if any(SMUFL_DIGIT_0 <= ord(c) <= 0xFFFF for c in r.text) else r for r in runs])
     digits = []
     for run in normalized:
-        t = run.text.strip()
-        if re.fullmatch(r'\d{1,2}', t):
-            digits.append((int(t), run.x, page_height - run.y))
-    symbols = [(SYMBOLS[run.text.strip()], run.x, page_height - run.y, run.size)
-               for run in runs if run.text.strip() in SYMBOLS]
+        t = kt_trim(run.text)
+        if DIGITS.fullmatch(t):
+            digits.append((int(t), run.x, f32(page_height - run.y)))
+    symbols = [(SYMBOLS[kt_trim(run.text)], run.x, f32(page_height - run.y), run.size)
+               for run in runs if kt_trim(run.text) in SYMBOLS]
     if not digits and not symbols:
         return []
     marks = []
@@ -921,40 +1056,46 @@ def detect_time_signatures(runs, systems, page_height):
         needed = max(1, (len(system.staff_bands) + 1) // 2)
         accepted = []
         for candidate in sorted((c for lst in per_staff for c in lst), key=lambda c: c[0]):
-            if any(abs(a[0] - candidate[0]) <= TS_X_TOL for a in accepted):
+            if any(abs(f32(a[0] - candidate[0])) <= TS_X_TOL for a in accepted):
                 continue
-            staves = sum(1 for lst in per_staff if any(abs(c[0] - candidate[0]) <= TS_X_TOL and c[1] == candidate[1]
-                                                       and c[2] == candidate[2] for c in lst))
+            staves = sum(1 for lst in per_staff
+                         if any(abs(f32(c[0] - candidate[0])) <= TS_X_TOL and c[1] == candidate[1] and c[2] == candidate[2]
+                                for c in lst))
             if staves >= needed:
                 accepted.append(candidate)
         marks += [TimeSignatureMark(system_index, a[0], a[1], a[2]) for a in accepted]
     return marks
 
 
+def _in_system_x(x, system):
+    return f32(system.left - TS_X_TOL) <= x <= f32(system.right + TS_X_TOL)
+
+
 def _symbols_in_staff(symbols, top, bottom, system):
-    height = bottom - top
+    height = f32(bottom - top)
     if height <= 0:
         return []
+    half = f32(height / 2)
     return [(x, n, d) for (n, d), x, y, size in symbols
-            if size >= height * SYMBOL_MIN_SIZE and top - height / 2 <= y <= bottom + height / 2
-            and system.left - TS_X_TOL <= x <= system.right + TS_X_TOL]
+            if size >= f32(height * SYMBOL_MIN_SIZE) and f32(top - half) <= y <= f32(bottom + half)
+            and _in_system_x(x, system)]
 
 
 def _candidates_in_staff(digits, top, bottom, system):
-    height = bottom - top
+    height = f32(bottom - top)
     if height <= 0:
         return []
-    near = [d for d in digits if top - height <= d[2] <= bottom + height
-            and system.left - TS_X_TOL <= d[1] <= system.right + TS_X_TOL]
+    near = [d for d in digits if f32(top - height) <= d[2] <= f32(bottom + height) and _in_system_x(d[1], system)]
+    low, high = f32(height * MIN_SEPARATION), f32(height * MAX_SEPARATION)
     out = []
     for ui, upper in enumerate(near):
         for li, lower in enumerate(near):
             if ui == li:
                 continue
-            separation = lower[2] - upper[2]
-            if abs(upper[1] - lower[1]) <= TS_X_TOL and height * MIN_SEPARATION <= separation <= height * MAX_SEPARATION \
+            separation = f32(lower[2] - upper[2])
+            if abs(f32(upper[1] - lower[1])) <= TS_X_TOL and low <= separation <= high \
                     and 1 <= upper[0] <= 32 and lower[0] in DENOMINATORS:
-                out.append(((upper[1] + lower[1]) / 2, upper[0], lower[0]))
+                out.append((f32(f32(upper[1] + lower[1]) / 2), upper[0], lower[0]))
     return out
 
 
@@ -968,10 +1109,10 @@ def analyze(source):
         for index, page in enumerate(doc):
             llx, lly, urx, ury = _page_box(doc, page)
             width, height = f32(urx - llx), f32(ury - lly)
-            if page.rotation % 360:
+            if _page_rotation(doc, page) % 360 != 0:
                 pages.append(PageLayout(index, width, height, []))
                 continue
-            interpreter = ContentInterpreter(f32(llx), f32(lly)).run(page_content(doc, page), Resources(doc, page.xref))
+            interpreter = ContentInterpreter(llx, lly).run(page_content(doc, page), Resources.for_page(doc, page))
             systems = attach_labels(interpreter.texts, detect_systems(interpreter.boxes, height, interpreter.texts), height)
             pages.append(PageLayout(index, width, height, systems,
                                     detect_time_signatures(interpreter.texts, systems, height)))
@@ -1008,8 +1149,7 @@ def to_staves(pages):
 
 def to_document(pages, sha256=''):
     """저장할 JSON — 쪽별 원자료 + 앱 DB 행(measures = ScoreMeasure, staves = ScoreStaff, pdfFileId 는 앱이 붙인다)"""
-    def num(v):
-        return round(v, 3) if isinstance(v, float) else v
+    num = kt_json_float          # 앱의 Float 값 그대로 (그 Float 로 되돌아오는 가장 짧은 십진수)
     measures = [{k: num(v) for k, v in m.items()} for m in to_measures(pages)]
     return {
         'format': FORMAT, 'format_version': FORMAT_VERSION, 'source': SOURCE, 'pdf_sha256': sha256,
@@ -1017,8 +1157,9 @@ def to_document(pages, sha256=''):
         'system_count': sum(len(p.systems) for p in pages),
         'pages': [{
             'pageIndex': p.page_index, 'widthPt': num(p.width_pt), 'heightPt': num(p.height_pt),
-            'systems': [{'top': s.top, 'bottom': s.bottom, 'left': s.left, 'right': s.right,
-                         'staffBands': [[t, b] for t, b in s.staff_bands], 'barlines': s.barlines,
+            'systems': [{'top': num(s.top), 'bottom': num(s.bottom), 'left': num(s.left), 'right': num(s.right),
+                         'staffBands': [[num(t), num(b)] for t, b in s.staff_bands],
+                         'barlines': [num(x) for x in s.barlines],
                          'staffLabels': s.staff_labels} for s in p.systems],
             'timeSignatures': [{'systemIndex': m.system_index, 'x': num(m.x), 'numerator': m.numerator,
                                 'denominator': m.denominator} for m in p.time_signatures],

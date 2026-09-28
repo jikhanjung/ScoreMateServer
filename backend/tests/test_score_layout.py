@@ -141,8 +141,8 @@ class LayoutFileTest(WebTestBase):
         tv = APIClient()
         tv.credentials(HTTP_AUTHORIZATION=f"Bearer {device_services.issue_tokens(device)['access_token']}")
         info = tv.get('/api/v1/sync/scores/').data['scores'][0]['layout']
-        self.assertEqual((info['measures'], info['systems'], info['filename'], info['format_version']),
-                         (81, 26, 'Moldau0607.layout.json', score_layout.FORMAT_VERSION))
+        self.assertEqual((info['measures'], info['systems'], info['filename'], info['analyzer_version'], info['pdf_sha256']),
+                         (81, 26, 'Moldau0607.layout.json', layouts.ANALYZER_VERSION, self.version.content_hash))
         body = b''.join(Client().get(tv.get(info['url'])['Location']).streaming_content)
         self.assertEqual(hashlib.sha256(body).hexdigest(), info['sha256'])
 
@@ -160,6 +160,15 @@ class LayoutFileTest(WebTestBase):
         self.score.refresh_from_db()
         delete_score(self.score)
         self.assertFalse((self.files_root / key).exists())
+
+    def test_new_analyzer_version_reanalyzes(self):
+        """분석기 버전이 바뀌면 레인이 다시 분석하고 기기에 다시 온다(TV 는 analyzer_version 으로 판단)"""
+        ScoreAnalysis.objects.filter(analyzer=layouts.ANALYZER).update(analyzer_version='0+app.old')
+        self.assertEqual([v.pk for v in layouts.missing()], [self.version.pk])
+        layouts.analyze_version(self.version)
+        self.assertEqual(layouts.missing(), [])
+        document = json.loads((self.files_root / layouts.layout_key(self.version)).read_text())
+        self.assertEqual((document['analyzer_version'], document['app_commit']), (layouts.ANALYZER_VERSION, layouts.APP_COMMIT))
 
     def test_detail_shows_layout_summary(self):
         page = self.client.get(reverse('web:score_detail', args=[self.score.pk]))

@@ -209,3 +209,11 @@
 - 상세 화면 "보표 분석: N시스템 · M마디 · 박자표"(악보 인식 마디 수와 다르면 함께)
 - 마이그레이션 없음
 
+### 0.10.1 (2026-09-28) — 보표 · 마디 분석: 앱 단위 테스트까지 맞춤 · 분석기 버전
+- 앱 단위 테스트 64개(StaffSystemDetector 16 · StaffLabelDetector 7 · TimeSignatureDetector 12 · PathContentInterpreter 29)를 서버로 옮겼다 — 모두 통과
+- Kotlin 을 한 줄씩 대조해 경계 동작을 맞췄다: 매 연산 32비트 실수 · 숫자 읽기(지수 없음) · 이름 `#xx` · UTF-16 글자 수 · ASCII `\d \s` ·
+  폼 리소스 · 페이지 리소스 상속 · CropBox(MediaBox 로 자르기) · 회전. 테스트 PDF 결과는 같다(1e-3 안)
+- 분석기 버전 `analyzer_version = SERVER_REVISION + app.<앱 score/ 커밋>` → **`2+app.9557497`**. 동기화 `layout` 에 `analyzer_version` · `pdf_sha256`.
+  버전이 바뀌면 레인이 모든 판을 다시 분석한다(이번 배포 뒤 4개 다시)
+- 마이그레이션 없음
+

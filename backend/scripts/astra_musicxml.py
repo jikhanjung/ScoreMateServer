@@ -226,7 +226,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('pdf', type=Path)
     parser.add_argument('outdir', type=Path)
-    parser.add_argument('--chunk', type=int, default=2, help='pages per call')
+    parser.add_argument('--chunk', type=int, default=1, help='pages per call (1 — 2 쪽 호출은 느리고 깨지기 쉬웠다, devlog 064)')
     parser.add_argument('--effort', default='high', choices=('low', 'medium', 'high', 'xhigh', 'max'))
     parser.add_argument('--dpi', type=int, default=200)
     parser.add_argument('--timeout', type=float, default=3600)
@@ -255,9 +255,11 @@ def main():
         pages = queue.pop(0)
         name = f'p{pages[0]:03d}-{pages[-1]:03d}'
         workdir = args.outdir / 'chunks' / name
-        done = finished_chunk(args.outdir, pages)
+        done, end = finished_from(args.outdir, pages[0])
         if done is not None:
+            # 이미 끝난 조각 — 쪽 수가 지금 설정과 달라도(예전 두 쪽 조각) 그대로 쓰고 그만큼 건너뛴다
             chunk = ET.parse(done).getroot()
+            queue = [group for group in ([p for p in g if p > end] for g in queue) if group]
         else:
             if merged is None:
                 context, expected = FIRST_CONTEXT, None
@@ -318,6 +320,22 @@ def main():
     print(f'-> {out}  parts/measures={summary}  final check problems={problems}')
     write_result(args, 'failed' if problems else 'ok', problems, log)
     return 3 if problems else 0
+
+
+def finished_from(outdir, start):
+    """start 쪽에서 시작하는 끝난 조각 → (경로, 마지막 쪽). 가장 긴 것. 없으면 (None, None)"""
+    import re
+    found = []
+    for path in (outdir / 'chunks').glob('*/chunk.musicxml'):
+        match = re.fullmatch(r'(?:p(\d{3})-(\d{3})|\d{3}_p(\d+)-(\d+))', path.parent.name)
+        if match:
+            first, last = [int(x) for x in (match.groups()[:2] if match.group(1) else match.groups()[2:])]
+            if first == start:
+                found.append((last, path))
+    if not found:
+        return None, None
+    last, path = max(found)
+    return path, last
 
 
 def finished_chunk(outdir, pages):

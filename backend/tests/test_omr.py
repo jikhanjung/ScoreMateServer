@@ -170,7 +170,7 @@ class MergeChunksTest(SimpleTestCase):
 class ChunkFallbackTest(SimpleTestCase):
     """두 쪽 조각이 안 되면(검산 실패 두 번 · 시간 초과) 한 쪽씩 다시 — 끝난 조각은 다시 부르지 않는다"""
 
-    def run_script(self, answers, pages=3):
+    def run_script(self, answers, pages=3, chunk=2, out=None):
         import subprocess
         import sys
         import tempfile
@@ -180,6 +180,7 @@ class ChunkFallbackTest(SimpleTestCase):
 
         tmp = Path(tempfile.mkdtemp(prefix='omr-'))
         self.addCleanup(__import__('shutil').rmtree, tmp, ignore_errors=True)
+        out = out or tmp / 'out'
         document = fitz.open()
         for _ in range(pages):
             document.new_page()
@@ -208,11 +209,26 @@ class ChunkFallbackTest(SimpleTestCase):
                 return [str(exc)]
             return []
 
-        argv = ['astra_musicxml.py', str(pdf), str(tmp / 'out'), '--dpi', '20']
+        argv = ['astra_musicxml.py', str(pdf), str(out), '--dpi', '20'] + (['--chunk', str(chunk)] if chunk else [])
         with patch.object(script, 'call_astra', fake_call), patch.object(script, 'check', fake_check), \
                 patch.object(sys, 'argv', argv):
             code = script.main()
-        return code, calls, tmp / 'out'
+        return code, calls, out
+
+    def test_default_is_one_page_per_call_and_resumes_old_pairs(self):
+        code, calls, out = self.run_script({}, chunk=None)
+        self.assertEqual((code, calls), (0, [[1], [2], [3]]))
+        # 예전 두 쪽 조각(1~2쪽)이 있으면 그대로 쓰고 3쪽만 부른다
+        import shutil
+        from scripts import astra_musicxml as script
+        chunks = out / 'chunks'
+        (chunks / 'p001-002').mkdir()
+        shutil.copy(chunks / 'p001-001' / 'chunk.musicxml', chunks / 'p001-002' / 'chunk.musicxml')
+        shutil.rmtree(chunks / 'p003-003')
+        (out / 'score.musicxml').unlink()
+        self.assertEqual(script.finished_from(out, 1)[1], 2)
+        code, calls, _ = self.run_script({}, chunk=None, out=out)
+        self.assertEqual((code, calls), (0, [[3]]))
 
     def test_bad_pair_is_split_into_single_pages(self):
         code, calls, out = self.run_script({(1, 2): 'bad'})

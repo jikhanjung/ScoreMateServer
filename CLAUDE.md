@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 **ScoreMateServer** - Django REST API backend for ScoreMate sheet music management, being extended (2026-09) into **ensemble score sharing** for Google TV clients (MrgqPdfViewer)
 - **Stack**: Python 3.12, Django 5.2 LTS, Django REST Framework, SQLite (default) / PostgreSQL (optional), Celery (optional), storage = local disk (prod) or MinIO/S3 (dev)
-- **Production**: https://scoremate.noematica.kr (API only) on dolfinid — see `deploy/README.md`, `DEPLOY.md`
+- **Production**: https://scoremate.noematica.kr (web + API) on dolfinid — see `deploy/README.md`, `DEPLOY.md`, current state in `HANDOFF.md`
 - **Web**: **Django templates** in `backend/web/` (session login). `frontend/` (Next.js) is legacy — not deployed, do not extend it
 - **Purpose**: User accounts, PDF sheet music storage, library metadata, setlists, page count / thumbnail processing, quota management — and next: ensembles, score versions, TV device linking, incremental sync API
 - **Current plan**: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md` (stages S0–S6). Read it before starting new feature work.
@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-28) — 408 backend tests passing, 0.10.0 in production
+### Status (2026-09-28) — 476 backend tests passing, 0.10.2 in production (see HANDOFF.md)
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -29,7 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | S6 | Ensemble setlists + sync, shared score analysis (per version, sha256-checked), Google login (OIDC, off until client id set) | ✅ devlog 061 |
 | — | Per-device scope: devices always get only their selected setlists (`sync_mode` removed in 0.8.2); chosen on the web "연결 기기" page only | ✅ devlog 062, 065 |
 | — | Web polish: tidy TV / setlist pickers (0.7.1), version next to the brand (0.7.2) | ✅ devlog 063 |
-| — | OMR lane: PDF → MusicXML via Codex CLI (gpt-6-astra) on the prod host cron, results as version analysis + file | ✅ devlog 064, plan P01 |
+| — | OMR lane: PDF → MusicXML via Codex CLI (gpt-6-astra) on the prod host cron, one page per call, compact text form, key/staves cross-checks; all 4 production scores done | ✅ devlog 064, 069, plan P01 |
 | — | Score metadata: arranger field, title/part from PDF document properties on upload, edit-page suggestions (PDF + OMR first-page read) | ✅ devlog 066 |
 | — | Page view on score detail: per-page images rendered on first view, cached per version in storage, signed-URL redirect | ✅ devlog 067 |
 | — | Score layout files: the TV app's Kotlin PDF analysis ported (scores/score_layout.py), stored per version, synced as `layout` | ✅ devlog 068 |
@@ -166,6 +166,8 @@ All under `/api/v1/`:
 - `device/code`, `device/token` (RFC 8628, TV), `devices/` (+ `me/`); web `/activate/`, `/devices/`
 - `sync/setlists/` (all readable setlists), `scores/{id}/analysis/` (GET/PUT shared TV analysis); web `/setlists/`, `/auth/google/`
 - `sync/scores/` (TV sync: `cursor`, `has_more`, `scores`, `ids`), `scores/{id}/download/` (302 to signed URL), `devices/me/heartbeat/`
+- `scores/{id}/musicxml/`, `scores/{id}/layout/` (302 to signed URL); sync entries carry `musicxml` / `layout` objects (null when absent)
+- Web-only: `/scores/{id}/pages/{n}/?size=thumb|view` (page images), `/scores/{id}/versions/{n}/musicxml/parts/` (rename recognized parts)
 
 ## Environment Configuration
 See `.env.example`:
@@ -208,6 +210,10 @@ item = SetlistItemFactory(setlist=setlist, score=score)
 - Always create and review migrations; `db_index=True` on frequently queried fields
 - **Migration files must be pure ASCII** (enforced by `tests/test_migrations_ascii.py`) — keep model `help_text`/`verbose_name` in English, put Korean labels in forms
 - Score file fields mirror `current_version`; change them only through `scores/services.py` (`add_version`, `make_current`, `delete_version`)
+- `scores/score_layout.py` is a port of the TV app's Kotlin `score/` — keep thresholds/rounding identical; after changing it bump
+  `SERVER_REVISION` in `scores/layouts.py` (re-analyzes every version and makes devices re-download). Tests: `tests/test_score_layout*.py`
+- Recognition (OMR) never runs in the container: the host lane calls the Codex CLI; the container only lists jobs (`omr_pending`)
+  and stores results (`omr_ingest`). Analysis files live under `files/` and are removed with their version/score (`omr.stored_keys`)
 
 ## Background Task Patterns
 ```python

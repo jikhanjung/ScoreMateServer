@@ -1,6 +1,6 @@
 # ScoreMateServer — ARCHITECTURE.md
 
-_Last updated: 2026-09-27 (Asia/Seoul). In production: https://scoremate.noematica.kr (API). Plan of record: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`._
+_Last updated: 2026-09-28 (Asia/Seoul). In production: https://scoremate.noematica.kr (web + API, 0.10.2). Plan of record: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`; score recognition: `devlog/20260928_P01_…`. Handoff: `HANDOFF.md`._
 
 ## 0) Purpose & Scope
 ScoreMateServer is the **server-side** for ScoreMate. Since 2026-09 its purpose is **sharing scores inside an ensemble**:
@@ -14,7 +14,10 @@ The server covers:
 - **Score versions** (frequent revisions) — S2 ✅
 - **TV device linking** (RFC 8628 code + QR) — S3 ✅
 - **Incremental sync API** for TVs — S4 ✅
-- **Processing** (page count, thumbnails)
+- **Processing** (page count, thumbnails, per-page images on demand)
+- **Score recognition (OMR)**: PDF → MusicXML on a host cron lane (Codex CLI `gpt-6-astra`) — devlog 064 · 069
+- **Score layout**: staves · systems · measures · time signatures from the PDF, the TV app's Kotlin analysis ported — devlog 068
+- **Web viewing**: page view (fit width/height, 1/2 pages), listening from MusicXML with page follow — devlog 067
 - **Plans/Quota/Referral**, **Admin**
 
 > Real-time rehearsal sync (beat / bar / page turns) is **not a server feature** — TVs sync with each other on the LAN.
@@ -54,7 +57,12 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
  |  sync API · in-request PDF processing         |
  +----------+-----------------------+------------+
             v                       v
-   /srv/scoremate/data/db.sqlite3   /srv/scoremate/files/
+   /srv/scoremate/db/db.sqlite3     /srv/scoremate/files/
+                                     ^
+ host cron (outside the container)   |  results written back via manage.py
+  */10 omr_lane.sh    PDF → MusicXML (Codex CLI, ChatGPT login on the host) → omr_ingest
+  */5  layout_lane.sh manage.py score_layout (staves/measures analysis, in the container)
+  hourly backup_db.py · daily offsite pull (m710q) incl. files/
 ```
 
 ### Development
@@ -70,7 +78,7 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
 
 ### Existing
 - **User**(email, plan, total_quota_mb, used_quota_mb, referral_code, …)
-- **Score**(user, title, original_filename, composer, instrumentation, pages, s3_key, size_bytes, mime, thumbnail_key, tags (JSON list), note, content_hash, created_at, updated_at)
+- **Score**(user, title, original_filename, composer, arranger (0.9.0), instrumentation, pages, s3_key, size_bytes, mime, thumbnail_key, tags (JSON list), note, content_hash, created_at, updated_at)
 - **Setlist**(user, title, description) / **SetlistItem**(setlist, score, order_index, notes)
 - **Task**(user, score, kind, status, try_count, celery_task_id, log, result_json, error_message, …)
 - **ReferralLog**, **BillingLog**, **AccessLog**
@@ -86,13 +94,15 @@ Score (+)           ensemble (null = personal, SET_NULL on ensemble delete), par
 ### Added in S6
 ```
 Setlist (+)         ensemble (null = personal; CASCADE with the ensemble)
-ScoreAnalysis       version, analyzer, analyzer_version, data (opaque JSON), uploaded_by, device; unique(version, analyzer)
+ScoreAnalysis       version, analyzer, analyzer_version, data (JSON), uploaded_by, device; unique(version, analyzer)
+                      analyzers: astra-musicxml (OMR, file omr/v{N}.musicxml) · score-layout (file layout/v{N}.json) · TV uploads
 SocialAccount       user, provider (google), subject (OIDC sub), email
 ```
 
 ### Added in S3 (`devices` app)
 ```
-Device              uuid, user, name, model, app_version, last_seen_at, revoked_at
+Device              uuid, user, name, model, app_version, last_seen_at, last_synced_at, revoked_at
+DeviceSetlist       device, setlist, added_at — a device receives only the scores of its chosen setlists (sync_mode removed in 0.8.2)
 DeviceAuthorization device_code_hash, user_code ("BCDF-GHJK"), status, device, user, interval, expires_at
 ```
 
@@ -100,11 +110,6 @@ DeviceAuthorization device_code_hash, user_code ("BCDF-GHJK"), status, device, u
 ```
 ScoreVersion        score, number, s3_key, original_filename, size_bytes, mime, pages, content_hash, uploaded_by, note
 Score (+)           current_version (file fields mirror it), last_version_number (numbers never reused)
-```
-
-### Planned additions
-```
-Score (+)           deleted_at (soft delete for sync)                                       (S4)
 ```
 
 ### Permissions
@@ -131,10 +136,12 @@ Implemented as `Score.objects.readable_by(user)` / `writable_by(user)`; every sc
 - Scores accept/return `ensemble`, `part_name`, `version`, `version_count`; filter `?ensemble=<id>|personal`
 - S6 ✅: `sync/setlists/`; `scores/{id}/analysis/` (PUT requires the version's sha256; members replace only with a newer analyzer); web `/setlists/`, Google login `/auth/google/`
 - Sync (S4 ✅): `sync/scores/?cursor=` → `{cursor, has_more, scores, ids}` (TV drops local scores not in `ids`); `scores/{id}/download/` → 302; `devices/me/heartbeat/`
-- TV linking (S3 ✅): `device/code`, `device/token` (RFC 8628 errors), `devices/` (list · rename · revoke), `devices/me/`; web `/activate/`, `/devices/`
+- TV linking (S3 ✅): `device/code`, `device/token` (RFC 8628 errors), `devices/` (list · rename · revoke), `devices/me/`; web `/activate/`, `/devices/` ("연결 기기")
 - Score versions (S2 ✅): `scores/{id}/versions/` (list · new version), `versions/{n}/` (delete), `versions/{n}/make_current/`
-
-### Planned
+- Recognition results: `scores/{id}/musicxml/` and `scores/{id}/layout/` (`?version=n`) → 302 to a signed URL; sync entries carry
+  `musicxml {url, sha256, size_bytes, filename, parts, measures, updated_at}` and
+  `layout {url, sha256, size_bytes, filename, analyzer_version, pdf_sha256, measures, systems, updated_at}` (null when absent)
+- Web: `/scores/{id}/pages/{n}/?size=thumb|view` (page image, rendered once, cached per version), `/scores/{id}/versions/{n}/musicxml/[parts/]`
 
 ---
 
@@ -152,7 +159,7 @@ TV  POST device/token {device_code} every interval
 ---
 
 ## 6) Sync (S4 ✅ — client contract: devlog 060)
-- Scope: my personal scores + scores of ensembles I belong to.
+- Scope: user tokens — my personal scores + scores of ensembles I belong to. **Device tokens — only the scores of the setlists chosen for that device** on the web.
 - Cursor = last seen (`updated_at`, id), monotonic; a new version or metadata change bumps `updated_at`.
 - First sync without cursor returns everything. Instead of a `deleted` list (and soft delete), every response carries `ids` — all scores readable now; the TV deletes anything else. This covers delete, leave, kick, ensemble delete and moves alike.
 - Effective time = max(updated_at, my join time for that ensemble), so joining brings old scores; recent changes wait `SYNC_LAG_SECONDS` so late commits are not skipped.
@@ -162,10 +169,14 @@ TV  POST device/token {device_code} every interval
 
 ## 7) Storage Layout
 ```
-{user_id}/scores/{score_id}/original.pdf
+{user_id}/uploads/{uuid}/original.pdf                 # each version's PDF
 {user_id}/scores/{score_id}/thumbs/cover.jpg
+{user_id}/scores/{score_id}/pages/{sha16}/{thumb|view}-{n:04d}.jpg   # page images, on first view
+{user_id}/scores/{score_id}/omr/v{N}.musicxml           # recognition result
+{user_id}/scores/{score_id}/layout/v{N}.json            # staves/measures analysis (TV app ScoreLayout shape)
 ```
-Versions (S2) will get their own keys per version. On deploy the same layout lives under `/srv/scoremate/files/` (`STORAGE_BACKEND=local`, S5).
+Production: `/srv/scoremate/files/` (`STORAGE_BACKEND=local`), served by nginx X-Accel after a Django permission check.
+All of it is inside `files/`, so the daily offsite backup (m710q rsync + hardlink snapshots + NAS) covers PDFs and results.
 
 ---
 
@@ -174,6 +185,12 @@ Versions (S2) will get their own keys per version. On deploy the same layout liv
 - **THUMBNAIL**: `cover.jpg`.
 - PyMuPDF makes both fast (hundreds of ms), so they run in-request by default. Failures do not fail the upload (`CELERY_TASK_EAGER_PROPAGATES=False`); results are recorded in `Task`.
 - Set `REDIS_URL` and run a worker if processing becomes heavy.
+- **Page images**: rendered on first view (PyMuPDF, 0.02 s thumb / 0.2 s view), cached per version.
+- **Score layout** (host cron → `manage.py score_layout`): `scores/score_layout.py` is the TV app's Kotlin `score/` ported line by line
+  (golden test + 64 app unit tests); `analyzer_version = SERVER_REVISION + app.<commit>` — bumping it re-analyzes every version.
+- **Recognition (OMR)** (host cron → `scripts/astra_musicxml.py`): one page per Codex CLI call, the model writes a compact text form
+  (`scripts/omr_compact.py` builds MusicXML), checks per page (well-formed, beat sums, part list, key signature vs a separate read,
+  staves = layout's staves per system); failures are retried once, two-page chunks split. Needs the layout analysis first.
 
 ---
 
@@ -193,7 +210,9 @@ Versions (S2) will get their own keys per version. On deploy the same layout liv
 - VM nginx site `scoremate.noematica.kr` with Let's Encrypt (webroot `/srv/scoremate/acme`).
 - SQLite + files bind-mounted; verified backup before deploy; migrate inside the container; roll back `.env` on failure (`deploy.sh`).
 - Read-only container, `cap_drop: ALL`, log size limits; Gunicorn ~2 workers × 4 threads.
-- `deploy/` follows the hanyang3d convention (`deploy.toml`).
+- `deploy/` follows the fcmanager convention (`deploy.toml`); host scripts are extracted from the image on deploy.
+- Host cron lanes: `scripts/omr_lane.sh` (10 min, flock, needs `codex login --device-auth` on the host and `omr/venv`),
+  `scripts/layout_lane.sh` (5 min). See `deploy/README.md` §악보 인식 · §보표 · 마디 분석.
 
 ### Legacy / development
 `docker-compose.yml` (and `docker-compose.prod.yml`, to be replaced in S5): web, worker, Postgres, Redis, MinIO, frontend, nginx.
@@ -237,13 +256,17 @@ backend/
   scoremateserver/  # settings, urls, celery
   core/             # auth, users, quota, referral
   ensembles/        # ensembles, memberships, invites
-  scores/           # Score (+ versions, S2)
+  devices/          # TV/tablet linking (RFC 8628), per-device setlists
+  web/              # Django templates (session auth), static player.js
+  scores/           # Score + versions; omr.py (recognition), layouts.py + score_layout.py (staves/measures), pages.py
+  scripts/          # host-side: backup_db.py, astra_musicxml.py, omr_compact.py (shipped in the image)
   setlists/
   files/            # upload/download URL issuance
   tasks/            # pdf_info, thumbnail
   scoremate_admin/  # admin API
   tests/
-frontend/           # Next.js (App Router), Playwright E2E
+deploy/             # image build, host scripts (deploy.sh, omr_lane.sh, layout_lane.sh, …)
+frontend/           # Next.js — legacy, not deployed
 devlog/             # plans and reports
 ```
 
@@ -260,10 +283,16 @@ devlog/             # plans and reports
 | S5 ✅ | dolfinid deployment — API only (done before S2), devlog 056 |
 | Web ✅ | Django templates — login, scores, upload, ensembles/invites, join links (devlog 057) |
 | S6 ✅ | Ensemble setlists + sync, shared score analysis, Google login (devlog 061) |
+| — ✅ | Per-device setlists, "연결 기기" (devlog 062, 065) |
+| — ✅ | Metadata: arranger, PDF title, suggestions (devlog 066) |
+| — ✅ | Page view, fit width/height, 1/2 pages, listening with page follow (devlog 067) |
+| — ✅ | Score layout files — TV app analysis ported (devlog 068) |
+| — ✅ | Recognition lane PDF → MusicXML, all current scores done (devlog 064, 069) |
+| next | Work-level ensemble play & parts (P01 §3), scanned scores, pitch review |
 
 ---
 
 ## 14) Non-Goals
 - No WebSocket rooms or server-side page-turn broadcasting.
 - No public libraries or public share links.
-- No AI models embedded in the API container.
+- No AI models embedded in the API container — recognition runs on the host through the Codex CLI and only its result files come back.

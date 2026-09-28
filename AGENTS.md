@@ -1,11 +1,11 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `backend/`: Django 5 REST API. Apps live under `core/`, `scores/`, `setlists/`, `files/`, `tasks/`, `scoremate_admin/`, with project config in `scoremateserver/`. Tests are in `backend/tests/` (pytest).
+- `backend/`: Django 5 web (templates in `web/`) + REST API. Apps: `core/`, `ensembles/`, `devices/`, `scores/`, `setlists/`, `files/`, `tasks/`, `web/`, `scoremate_admin/`; project config in `scoremateserver/`; host-side scripts in `scripts/` (backup, OMR). Tests are in `backend/tests/` (pytest). Current state: `HANDOFF.md`.
 - DB is SQLite by default (`DATA_DIR/db.sqlite3`); `DATABASE_URL` switches to Postgres. Code must stay SQLite-compatible (no `ArrayField`, `ArrayAgg`, Postgres full-text search).
 - Celery is optional: without `REDIS_URL` tasks run eagerly inside the request.
 - Direction (2026-09): ensemble score sharing to Google TV clients. Plan: `devlog/20260926_054_악보공유_및_TV클라이언트_계획.md`.
-- `frontend/`: Next.js app (TypeScript, App Router). Key folders: `app/`, `components/`, `hooks/`, `tests/e2e/` (Playwright).
+- `frontend/`: legacy Next.js app — not deployed, do not extend. The web UI is Django templates in `backend/web/`.
 - Root: `docker-compose.yml` (full legacy dev stack: Postgres, Redis, MinIO, web, worker, frontend), `.env*` for configuration, `ARCHITECTURE.md` for a deeper overview, `nginx/` for optional proxy.
 
 ## Build, Test, and Development Commands

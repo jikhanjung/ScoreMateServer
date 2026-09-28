@@ -49,13 +49,17 @@
     <button class="btn sm" type="button" data-prev aria-label="앞 쪽">‹</button>
     <span class="small" data-counter></span>
     <button class="btn sm" type="button" data-next aria-label="다음 쪽">›</button>
+    <span class="page-viewer-fit" role="group" aria-label="한 번에 보는 쪽">
+      <button class="btn sm" type="button" data-spread="1" aria-pressed="false" title="한 쪽씩 (1)">1쪽</button>
+      <button class="btn sm" type="button" data-spread="2" aria-pressed="false" title="두 쪽씩 나란히 (2)">2쪽</button>
+    </span>
     <span class="page-viewer-fit" role="group" aria-label="맞춤">
       <button class="btn sm" type="button" data-fit="width" aria-pressed="false" title="너비 맞춤 (W)">너비 맞춤</button>
-      <button class="btn sm" type="button" data-fit="height" aria-pressed="false" title="높이 맞춤 (H) — 한 쪽이 한 화면에">높이 맞춤</button>
+      <button class="btn sm" type="button" data-fit="height" aria-pressed="false" title="높이 맞춤 (H) — 한 화면에">높이 맞춤</button>
     </span>
     <button class="btn sm" type="button" data-close aria-label="닫기">닫기</button>
   </div>
-  <img data-image alt="">
+  <div class="page-viewer-pages" data-spread-box><img data-image alt=""><img data-image alt=""></div>
 </dialog>
 {% endif %}
 
@@ -99,53 +103,95 @@
 {% endif %}
 {% if page_numbers %}
 <script>
-// 쪽 보기 — 작은 이미지를 누르면 큰 이미지로. ← → 키 · 이미지 왼쪽/오른쪽 누르기로 넘긴다
+// 쪽 보기 — 작은 이미지를 누르면 큰 이미지로. ← → 키 · 왼쪽/오른쪽 절반 누르기로 넘긴다.
+// 한 번에 1쪽 · 2쪽(1–2, 3–4 … 나란히), 맞춤은 너비 · 높이. 고른 것은 이 브라우저에 기억
 (function () {
   var viewer = document.querySelector('[data-viewer]');
   if (!viewer || !viewer.showModal) return;   // dialog 를 모르는 브라우저는 링크(새 창)로
   var links = Array.prototype.slice.call(document.querySelectorAll('[data-pages] a'));
-  var image = viewer.querySelector('[data-image]'), counter = viewer.querySelector('[data-counter]');
-  var current = 0, preload = new Image();
-  var bar = viewer.querySelector('.page-viewer-bar'), fitButtons = viewer.querySelectorAll('[data-fit]');
-  // 맞춤: 너비(세로로 스크롤) · 높이(한 쪽이 한 화면에). 고른 것은 이 브라우저에 기억 — 처음엔 가로 화면이면 높이, 세로 화면이면 너비
-  var fit = null;
-  try { fit = localStorage.getItem('scoremate.pageFit'); } catch (e) {}
-  if (fit !== 'width' && fit !== 'height') fit = window.innerWidth > window.innerHeight ? 'height' : 'width';
+  var images = viewer.querySelectorAll('[data-image]'), box = viewer.querySelector('[data-spread-box]');
+  var counter = viewer.querySelector('[data-counter]'), bar = viewer.querySelector('.page-viewer-bar');
+  var current = 0, preloads = [new Image(), new Image()];
+
+  function remembered(key, allowed, fallback) {
+    var value = null;
+    try { value = localStorage.getItem(key); } catch (e) {}
+    return allowed.indexOf(value) >= 0 ? value : fallback;
+  }
+  function remember(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+  function press(selector, attr, value) {
+    viewer.querySelectorAll(selector).forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset[attr] === value)); });
+  }
+
+  // 처음: 가로 화면이면 높이 맞춤, 세로 화면이면 너비 맞춤 · 한 쪽씩
+  var fit = remembered('scoremate.pageFit', ['width', 'height'], window.innerWidth > window.innerHeight ? 'height' : 'width');
+  var spread = Number(remembered('scoremate.pageSpread', ['1', '2'], '1'));
   function setFit(value) {
     fit = value;
     viewer.classList.toggle('fit-width', fit === 'width');
     viewer.classList.toggle('fit-height', fit === 'height');
-    fitButtons.forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.fit === fit)); });
-    try { localStorage.setItem('scoremate.pageFit', fit); } catch (e) {}
+    press('[data-fit]', 'fit', fit);
+    remember('scoremate.pageFit', fit);
+  }
+  function setSpread(value) {
+    spread = value;
+    viewer.classList.toggle('spread-2', spread === 2);
+    press('[data-spread]', 'spread', String(spread));
+    remember('scoremate.pageSpread', String(spread));
+    if (viewer.open) show(current);
   }
   function measureBar() { viewer.style.setProperty('--bar-h', bar.offsetHeight + 'px'); }
-  fitButtons.forEach(function (b) { b.addEventListener('click', function () { setFit(b.dataset.fit); }); });
-  window.addEventListener('resize', measureBar);
-  setFit(fit);
+
   function show(index) {
     if (index < 0 || index >= links.length) return;
+    if (spread === 2) index -= index % 2;          // 1–2, 3–4 … (0 부터 세면 짝수에서 시작)
     current = index;
     viewer.scrollTop = 0;
-    image.src = links[index].href;
-    image.alt = (index + 1) + '쪽';
-    counter.textContent = (index + 1) + ' / ' + links.length;
-    if (index + 1 < links.length) preload.src = links[index + 1].href;
+    viewer.scrollLeft = 0;
+    var count = spread === 2 && index + 1 < links.length ? 2 : 1;
+    images.forEach(function (image, i) {
+      if (i < count) {
+        image.hidden = false;
+        image.src = links[index + i].href;
+        image.alt = (index + i + 1) + '쪽';
+      } else {
+        image.hidden = true;
+        image.removeAttribute('src');
+      }
+    });
+    counter.textContent = (count === 2 ? (index + 1) + '–' + (index + 2) : (index + 1)) + ' / ' + links.length;
+    preloads.forEach(function (preload, i) {
+      var next = index + spread + i;
+      if (i < spread && next < links.length) preload.src = links[next].href;
+    });
   }
-  links.forEach(function (link, index) {
-    link.addEventListener('click', function (event) { event.preventDefault(); show(index); viewer.showModal(); measureBar(); });
+  function step(direction) { show(direction < 0 ? current - spread : current + spread); }
+
+  viewer.querySelectorAll('[data-fit]').forEach(function (b) { b.addEventListener('click', function () { setFit(b.dataset.fit); }); });
+  viewer.querySelectorAll('[data-spread]').forEach(function (b) {
+    b.addEventListener('click', function () { setSpread(Number(b.dataset.spread)); });
   });
-  viewer.querySelector('[data-prev]').addEventListener('click', function () { show(current - 1); });
-  viewer.querySelector('[data-next]').addEventListener('click', function () { show(current + 1); });
+  window.addEventListener('resize', measureBar);
+  setFit(fit);
+  setSpread(spread);
+
+  links.forEach(function (link, index) {
+    link.addEventListener('click', function (event) { event.preventDefault(); viewer.showModal(); measureBar(); show(index); });
+  });
+  viewer.querySelector('[data-prev]').addEventListener('click', function () { step(-1); });
+  viewer.querySelector('[data-next]').addEventListener('click', function () { step(1); });
   viewer.querySelector('[data-close]').addEventListener('click', function () { viewer.close(); });
-  image.addEventListener('click', function (event) {
-    var box = image.getBoundingClientRect();
-    show(event.clientX - box.left < box.width / 2 ? current - 1 : current + 1);
+  box.addEventListener('click', function (event) {
+    var rect = box.getBoundingClientRect();
+    step(event.clientX - rect.left < rect.width / 2 ? -1 : 1);
   });
   viewer.addEventListener('keydown', function (event) {
-    if (event.key === 'ArrowLeft' || event.key === 'PageUp') { show(current - 1); event.preventDefault(); }
-    if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') { show(current + 1); event.preventDefault(); }
-    if (event.key === 'w' || event.key === 'W') setFit('width');
-    if (event.key === 'h' || event.key === 'H') setFit('height');
+    var key = event.key;
+    if (key === 'ArrowLeft' || key === 'PageUp') { step(-1); event.preventDefault(); }
+    else if (key === 'ArrowRight' || key === 'PageDown' || key === ' ') { step(1); event.preventDefault(); }
+    else if (key === 'w' || key === 'W') setFit('width');
+    else if (key === 'h' || key === 'H') setFit('height');
+    else if (key === '1' || key === '2') setSpread(Number(key));
   });
 })();
 </script>

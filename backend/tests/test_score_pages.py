@@ -32,6 +32,8 @@ class ScorePagesTest(WebTestBase):
         self.assertContains(response, reverse('web:score_page', args=[self.score.pk, self.score.pages]))
         self.assertContains(response, 'data-fit="width"')    # 너비 맞춤 · 높이 맞춤
         self.assertContains(response, 'data-fit="height"')
+        self.assertContains(response, 'data-spread="1"')   # 한 쪽씩 · 두 쪽씩
+        self.assertContains(response, 'data-spread="2"')
 
     def test_page_is_rendered_once_and_redirected(self):
         with patch('scores.pages.render', wraps=pages.render) as render:

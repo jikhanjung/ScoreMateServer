@@ -174,6 +174,12 @@ details > summary { cursor: pointer; color: var(--accent); }
 .page-viewer-bar { flex-wrap: wrap; z-index: 1; }
 .page-viewer-fit { display: inline-flex; gap: .25rem; }
 .page-viewer-fit .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-.page-viewer img { display: block; margin: 0 auto; background: #fff; cursor: pointer; }
-.page-viewer.fit-width img { width: 100%; height: auto; }                                  /* 가로를 채우고 세로로 스크롤 */
-.page-viewer.fit-height img { width: auto; max-width: none; height: calc(100dvh - var(--bar-h, 3rem)); } /* 한 쪽이 한 화면에 */
+.page-viewer-pages { display: flex; justify-content: center; align-items: flex-start; gap: 4px; cursor: pointer; }
+.page-viewer-pages img { display: block; background: #fff; min-width: 0; }
+.page-viewer-pages img[hidden] { display: none; }
+/* 너비 맞춤: 가로를 채우고 세로로 스크롤 — 두 쪽이면 반씩 */
+.page-viewer.fit-width .page-viewer-pages img { width: 100%; height: auto; }
+.page-viewer.fit-width.spread-2 .page-viewer-pages img { width: calc(50% - 2px); }
+/* 높이 맞춤: 한 화면에 — 두 쪽이 화면보다 넓으면 가로로 스크롤 */
+.page-viewer.fit-height .page-viewer-pages { width: max-content; min-width: 100%; }
+.page-viewer.fit-height .page-viewer-pages img { width: auto; max-width: none; height: calc(100dvh - var(--bar-h, 3rem)); }

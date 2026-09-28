@@ -267,7 +267,26 @@ def score_detail(request, pk):
     score.editable = score.can_edit(request.user)
     versions = list(score.versions.select_related('uploaded_by').prefetch_related('analyses'))
     form = NewVersionForm(user=request.user) if score.editable else None
-    return render(request, 'web/scores/detail.html', {'score': score, 'versions': versions, 'version_form': form})
+    return render(request, 'web/scores/detail.html', {'score': score, 'versions': versions, 'version_form': form,
+                                                      'page_numbers': range(1, (score.pages or 0) + 1)})
+
+
+@login_required
+def score_page(request, pk, number):
+    """지금 쓰는 판의 한 쪽 이미지(size=thumb|view) — 처음이면 그려 두고, 짧은 서명 URL 로 보낸다"""
+    from scores.pages import PageError, page_image_key
+    score = _readable_score(request, pk)
+    version = score.current_version
+    if version is None or not version.content_hash:
+        raise Http404('Still processing')
+    try:
+        key = page_image_key(score, version, number, request.GET.get('size', 'view'))
+    except PageError as exc:
+        raise Http404(str(exc)) from exc
+    response = HttpResponseRedirect(
+        get_storage().generate_presigned_download_url(key, expiry=settings.THUMBNAIL_URL_EXPIRY)['url'])
+    response['Cache-Control'] = 'private, max-age=600'   # 같은 쪽을 다시 볼 때 브라우저가 그대로 쓴다
+    return response
 
 
 def _version_or_404(score, number):

@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-28) — 367 backend tests passing, 0.9.0 in production
+### Status (2026-09-28) — 378 backend tests passing, 0.9.3 in production
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -31,6 +31,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | — | Web polish: tidy TV / setlist pickers (0.7.1), version next to the brand (0.7.2) | ✅ devlog 063 |
 | — | OMR lane: PDF → MusicXML via Codex CLI (gpt-6-astra) on the prod host cron, results as version analysis + file | ✅ devlog 064, plan P01 |
 | — | Score metadata: arranger field, title/part from PDF document properties on upload, edit-page suggestions (PDF + OMR first-page read) | ✅ devlog 066 |
+| — | Page view on score detail: per-page images rendered on first view, cached per version in storage, signed-URL redirect | ✅ devlog 067 |
 
 ## Development Commands
 

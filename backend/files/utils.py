@@ -10,6 +10,7 @@ Utility functions for file operations
 import math
 import mimetypes
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -153,6 +154,14 @@ class S3Handler:
             ContentType=content_type, CacheControl='max-age=86400',
         )
 
+    def delete_prefix(self, prefix):
+        """prefix/ 아래를 모두 지운다 (쪽 이미지 캐시)"""
+        paginator = self.s3_client.get_paginator('list_objects_v2')
+        for page in paginator.paginate(Bucket=self.bucket_name, Prefix=prefix.rstrip('/') + '/'):
+            objects = [{'Key': o['Key']} for o in page.get('Contents', [])]
+            if objects:
+                self.s3_client.delete_objects(Bucket=self.bucket_name, Delete={'Objects': objects})
+
 
 BLOB_SIGNING_SALT = 'scoremate.files.blob'
 
@@ -232,6 +241,20 @@ class LocalStorageHandler:
 
     def read_bytes(self, s3_key):
         return self.path_for(s3_key).read_bytes()
+
+    def delete_prefix(self, prefix):
+        """prefix/ 아래를 모두 지운다 (쪽 이미지 캐시) — 비게 된 상위 디렉터리도"""
+        path = self.path_for(prefix.rstrip('/'))
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        root = self.root.resolve()
+        parent = path.parent
+        while parent != root and root in parent.parents:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
 
     def write_bytes(self, s3_key, data, content_type='application/octet-stream'):
         self.write_stream(s3_key, [data])

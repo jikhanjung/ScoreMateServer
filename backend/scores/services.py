@@ -118,6 +118,7 @@ def delete_version(score, version):
     delete_single_file.delay(s3_key)
     for key in extra_keys:
         delete_single_file.delay(key)
+    _delete_page_images(locked, version)
     if was_current:
         make_current(locked, locked.current_version)   # 썸네일을 그 판으로
 
@@ -132,6 +133,8 @@ def delete_score(score):
     if not versions:    # 판 없는 옛 행(이론상) — 올린 사람 기준
         refunds[score.user_id] = size_mb(score.size_bytes)
     s3_key, thumbnail_key, score_id = score.s3_key, score.thumbnail_key, score.id
+    from .pages import pages_prefix
+    page_images = pages_prefix(score)   # score.delete() 뒤에는 pk 가 없다
     other_keys = [v.s3_key for v in versions if v.s3_key != s3_key]
     from .omr import stored_keys
     other_keys += stored_keys(versions)
@@ -144,6 +147,23 @@ def delete_score(score):
     delete_score_files.delay(s3_key, thumbnail_key, score_id)
     for key in other_keys:
         delete_single_file.delay(key)
+    _delete_prefix(page_images)
+
+
+def _delete_page_images(score, version):
+    """그 판의 쪽 이미지 캐시(scores/pages.py) — 다른 판이 같은 파일(해시)이면 남긴다"""
+    from .pages import pages_prefix
+    if not version.content_hash or score.versions.filter(content_hash=version.content_hash).exists():
+        return
+    _delete_prefix(f'{pages_prefix(score)}/{version.content_hash[:16]}')
+
+
+def _delete_prefix(prefix):
+    from files.utils import get_storage
+    try:
+        get_storage().delete_prefix(prefix)
+    except Exception:  # noqa: BLE001 — 캐시다. 못 지워도 지우기는 계속
+        pass
 
 
 class AnalysisError(ValueError):

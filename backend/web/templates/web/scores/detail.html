@@ -34,6 +34,27 @@
   </div>
 </div>
 
+{% if page_numbers and score.current_version.content_hash %}
+<h2 id="pages">쪽 ({{ score.pages }})</h2>
+<div class="page-grid" data-pages>
+  {% for n in page_numbers %}
+  <a class="page-thumb" href="{% url 'web:score_page' score.pk n %}?size=view" data-page="{{ n }}" target="_blank" rel="noopener">
+    <img src="{% url 'web:score_page' score.pk n %}?size=thumb" alt="{{ n }}쪽" loading="lazy" width="320" height="453">
+    <span>{{ n }}</span>
+  </a>
+  {% endfor %}
+</div>
+<dialog class="page-viewer" data-viewer aria-label="쪽 보기">
+  <div class="page-viewer-bar">
+    <button class="btn sm" type="button" data-prev aria-label="앞 쪽">‹</button>
+    <span class="small" data-counter></span>
+    <button class="btn sm" type="button" data-next aria-label="다음 쪽">›</button>
+    <button class="btn sm" type="button" data-close aria-label="닫기">닫기</button>
+  </div>
+  <img data-image alt="">
+</dialog>
+{% endif %}
+
 <h2 id="versions">판 ({{ versions|length }})</h2>
 <div class="box table-wrap">
   <table class="stacked">
@@ -71,5 +92,39 @@
     <p class="muted small">새 판이 곧바로 지금 쓰는 판이 됩니다{% if ensembles_enabled and score.ensemble %} — "{{ score.ensemble.name }}" 멤버 모두에게{% endif %}. 예전 판은 남아 있어 되돌릴 수 있습니다.</p>
   </form>
 </div>
+{% endif %}
+{% if page_numbers %}
+<script>
+// 쪽 보기 — 작은 이미지를 누르면 큰 이미지로. ← → 키 · 이미지 왼쪽/오른쪽 누르기로 넘긴다
+(function () {
+  var viewer = document.querySelector('[data-viewer]');
+  if (!viewer || !viewer.showModal) return;   // dialog 를 모르는 브라우저는 링크(새 창)로
+  var links = Array.prototype.slice.call(document.querySelectorAll('[data-pages] a'));
+  var image = viewer.querySelector('[data-image]'), counter = viewer.querySelector('[data-counter]');
+  var current = 0, preload = new Image();
+  function show(index) {
+    if (index < 0 || index >= links.length) return;
+    current = index;
+    image.src = links[index].href;
+    image.alt = (index + 1) + '쪽';
+    counter.textContent = (index + 1) + ' / ' + links.length;
+    if (index + 1 < links.length) preload.src = links[index + 1].href;
+  }
+  links.forEach(function (link, index) {
+    link.addEventListener('click', function (event) { event.preventDefault(); show(index); viewer.showModal(); });
+  });
+  viewer.querySelector('[data-prev]').addEventListener('click', function () { show(current - 1); });
+  viewer.querySelector('[data-next]').addEventListener('click', function () { show(current + 1); });
+  viewer.querySelector('[data-close]').addEventListener('click', function () { viewer.close(); });
+  image.addEventListener('click', function (event) {
+    var box = image.getBoundingClientRect();
+    show(event.clientX - box.left < box.width / 2 ? current - 1 : current + 1);
+  });
+  viewer.addEventListener('keydown', function (event) {
+    if (event.key === 'ArrowLeft' || event.key === 'PageUp') { show(current - 1); event.preventDefault(); }
+    if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') { show(current + 1); event.preventDefault(); }
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}

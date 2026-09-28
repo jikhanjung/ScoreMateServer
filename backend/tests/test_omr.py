@@ -125,7 +125,7 @@ class OmrTest(WebTestBase):
         url = reverse('web:version_musicxml', args=[self.score.pk, self.version.number])
         self.client.force_login(self.member)
         page = self.client.get(reverse('web:score_detail', args=[self.score.pk]))
-        self.assertContains(page, '악보 인식 · 2파트 · 2마디')
+        self.assertContains(page, '악보 인식 · 2파트(진호 · 예진) · 2마디')
         self.assertContains(page, url)
         response = self.client.get(url)
         self.assertEqual(response.status_code, 302)
@@ -309,6 +309,36 @@ class MusicXmlSyncTest(WebTestBase):
         self.assertEqual(redirect.status_code, 302)
         body = b''.join(Client().get(redirect['Location']).streaming_content)
         self.assertEqual(hashlib.sha256(body).hexdigest(), info['sha256'])
+
+    def test_renaming_parts_changes_file_and_resends(self):
+        """인식이 한글 이름을 잘못 읽었을 때(예완 → 예원) 웹에서 고친다 — 파일 · sha256 이 바뀌고 기기에 다시 온다"""
+        self.ingest(musicxml=xml(parts=(('P1', '하진'), ('P2', '예원'))))
+        first = self.tv.get('/api/v1/sync/scores/').data
+        old = first['scores'][0]['musicxml']
+        self.assertEqual(old['parts'], ['하진', '예원'])
+
+        self.client.force_login(self.owner)
+        url = reverse('web:version_musicxml_parts', args=[self.score.pk, 1])
+        page = self.client.get(url)
+        self.assertContains(page, 'value="예원"')
+        self.client.post(url, {'part_P1': '하진', 'part_P2': '예완'})
+
+        again = self.tv.get('/api/v1/sync/scores/', {'cursor': first['cursor']}).data
+        new = again['scores'][0]['musicxml']
+        self.assertEqual(new['parts'], ['하진', '예완'])
+        self.assertNotEqual(new['sha256'], old['sha256'])
+        body = b''.join(Client().get(self.tv.get(new['url'])['Location']).streaming_content)
+        self.assertEqual(hashlib.sha256(body).hexdigest(), new['sha256'])
+        self.assertIn('<part-name>예완</part-name>', body.decode())
+        self.assertContains(self.client.get(reverse('web:score_detail', args=[self.score.pk])), '하진 · 예완')
+
+    def test_only_editors_rename_parts(self):
+        self.ingest()
+        url = reverse('web:version_musicxml_parts', args=[self.score.pk, 1])
+        self.client.force_login(self.outsider)
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.post(url, {'part_P1': '진호', 'part_P2': '예진'}).status_code, 302)   # 그대로면 바뀐 것 없음
 
     def test_failed_recognition_is_not_offered(self):
         self.ingest(status='failed', musicxml='')

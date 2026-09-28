@@ -125,6 +125,44 @@ def musicxml_of(version):
     return None
 
 
+def rename_parts(version, names):
+    """인식 결과의 파트 이름을 고친다(한글 이름은 원/완처럼 비슷한 글자를 잘못 읽기 쉽다). names: {part id: 새 이름}
+
+    저장된 MusicXML 의 <part-name> 을 바꿔 다시 쓰고, 분석 data(parts · sha256 · 크기)를 맞춘다.
+    악보 updated_at 을 올려 기기가 다음 동기화에 다시 받게 한다(musicxml.sha256 이 바뀐다). 바뀐 수를 돌려준다
+    """
+    from django.utils import timezone
+    from .models import Score
+
+    analysis = musicxml_of(version)
+    if analysis is None:
+        raise OmrError('No MusicXML for this version.')
+    names = {pid: ' '.join(str(name).split())[:100] for pid, name in names.items() if str(name).strip()}
+    storage = get_storage()
+    key = analysis.data['musicxml_key']
+    raw = storage.read_bytes(key)
+    root = ET.fromstring(raw)
+    changed = 0
+    for score_part in root.iter('score-part'):
+        new = names.get(score_part.get('id'))
+        element = score_part.find('part-name')
+        if new and element is not None and (element.text or '') != new:
+            element.text = new
+            changed += 1
+    if not changed:
+        return 0
+    raw = ('<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding='unicode')).encode('utf-8')
+    storage.write_bytes(key, raw, 'application/vnd.recordare.musicxml+xml')
+    data = dict(analysis.data)
+    data['parts'] = [dict(p, name=names.get(p.get('id'), p.get('name', ''))) for p in data.get('parts', [])]
+    data.update(musicxml_sha256=hashlib.sha256(raw).hexdigest(), musicxml_bytes=len(raw),
+                parts_renamed_at=timezone.now().isoformat())
+    with transaction.atomic():
+        ScoreAnalysis.objects.filter(pk=analysis.pk).update(data=data, updated_at=timezone.now())
+        Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())
+    return changed
+
+
 def musicxml_filename(score, version):
     """받을 때 파일 이름 — PDF 와 같은 이름에 .musicxml (기기가 PDF 옆에 둔다)"""
     original = version.original_filename or score.original_filename or f'{score.title}.pdf'

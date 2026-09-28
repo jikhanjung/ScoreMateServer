@@ -330,6 +330,25 @@ def version_musicxml(request, pk, number):
 
 
 @login_required
+def version_musicxml_parts(request, pk, number):
+    """인식 결과의 파트 이름 고치기 — 악보를 고칠 수 있는 사람만"""
+    from scores.omr import musicxml_of, rename_parts
+    score = _writable_score(request, pk)
+    version = _version_or_404(score, number)
+    analysis = musicxml_of(version)
+    if analysis is None:
+        raise Http404('No MusicXML for this version')
+    parts = analysis.data.get('parts', [])
+    if request.method == 'POST':
+        names = {p['id']: request.POST.get(f'part_{p["id"]}', '') for p in parts}
+        changed = rename_parts(version, names)
+        messages.success(request, f'파트 이름 {changed}개를 고쳤습니다. 기기는 다음 동기화 때 새로 받습니다.' if changed
+                         else '바뀐 이름이 없습니다.')
+        return redirect(reverse('web:score_detail', args=[pk]) + '#versions')
+    return render(request, 'web/scores/musicxml_parts.html', {'score': score, 'version': version, 'parts': parts})
+
+
+@login_required
 @require_POST
 def version_upload(request, pk):
     score = _writable_score(request, pk)

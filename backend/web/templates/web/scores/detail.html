@@ -73,12 +73,12 @@
         <td><strong>판 {{ v.number }}</strong>{% if v.pk == score.current_version_id %} <span class="badge">지금 쓰는 판</span>{% endif %}</td>
         <td>{{ v.created_at|date:'Y-m-d H:i' }}<div class="muted small">{{ v.uploaded_by.username|default:'(지운 계정)' }}</div></td>
         <td>{{ v.note|default:'—' }}{% if v.original_filename %}<div class="muted small">{{ v.original_filename }}</div>{% endif %}</td>
-        <td class="small">{{ v.pages|default:'?' }}쪽 · {{ v.size_bytes|filesizeformat }}{% for a in v.analyses.all %}{% if a.analyzer == 'astra-musicxml' %}{% if a.data.status == 'ok' %}<div class="muted small">악보 인식 · {{ a.data.parts|length }}파트 · {{ a.data.measure_count }}마디</div>{% else %}<div class="muted small">악보 인식 실패</div>{% endif %}{% else %}<div class="muted small">분석 {{ a.analyzer }} {{ a.analyzer_version }}</div>{% endif %}{% endfor %}</td>
+        <td class="small">{{ v.pages|default:'?' }}쪽 · {{ v.size_bytes|filesizeformat }}{% for a in v.analyses.all %}{% if a.analyzer == 'astra-musicxml' %}{% if a.data.status == 'ok' %}<div class="muted small">악보 인식 · {{ a.data.parts|length }}파트({% for p in a.data.parts %}{{ p.name }}{% if not forloop.last %} · {% endif %}{% endfor %}) · {{ a.data.measure_count }}마디</div>{% else %}<div class="muted small">악보 인식 실패</div>{% endif %}{% else %}<div class="muted small">분석 {{ a.analyzer }} {{ a.analyzer_version }}</div>{% endif %}{% endfor %}</td>
         <td style="text-align:right">
           <div class="actions" style="justify-content:flex-end">
             <a class="btn sm" href="{% url 'web:version_view' score.pk v.number %}" target="_blank" rel="noopener">보기</a>
             <a class="btn sm" href="{% url 'web:version_download' score.pk v.number %}">받기</a>
-            {% for a in v.analyses.all %}{% if a.analyzer == 'astra-musicxml' and a.data.status == 'ok' %}<a class="btn sm" href="{% url 'web:version_musicxml' score.pk v.number %}">MusicXML</a>{% endif %}{% endfor %}
+            {% for a in v.analyses.all %}{% if a.analyzer == 'astra-musicxml' and a.data.status == 'ok' %}<a class="btn sm" href="{% url 'web:version_musicxml' score.pk v.number %}">MusicXML</a>{% if score.editable %}<a class="btn sm" href="{% url 'web:version_musicxml_parts' score.pk v.number %}">파트 이름</a>{% endif %}{% endif %}{% endfor %}
             {% if score.editable and v.pk != score.current_version_id %}
             <form method="post" action="{% url 'web:version_make_current' score.pk v.number %}" class="inline">{% csrf_token %}<button class="btn sm" type="submit">이 판으로</button></form>
             {% endif %}

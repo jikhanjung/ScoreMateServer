@@ -199,3 +199,13 @@
 - 운영: K488 · Clair de Lune 쪽별 마디를 채웠다. Arpeggione 는 끝나면 채운다(옛 스크립트로 시작)
 - 마이그레이션 없음
 
+### 0.10.0 (2026-09-28) — 보표 · 마디 분석 파일 (TV 앱 분석을 옮김)
+- `scores/score_layout.py`: TV 앱 `score/`(Kotlin — PathContentInterpreter · StaffSystemDetector · StaffLabelDetector ·
+  TimeSignatureDetector · ScoreLayout)를 그대로 옮겼다. 앱 골든 테스트(Moldau 26 시스템 / 81 마디, ±0.6pt)와 같다
+- 판마다 `files/…/scores/{id}/layout/v{N}.json`(쪽별 시스템 · 보표 · 마디선 · 박자표 + 앱 DB 행 measures · staves) + 분석 `score-layout`
+- 동기화 응답에 **`layout`** `{url, sha256, size_bytes, filename, format_version, measures, systems, updated_at}`(추가만), `GET /api/v1/scores/{id}/layout/`
+- 올리기 안에서는 돌리지 않는다(35쪽 4.7초) → **호스트 cron** `scripts/layout_lane.sh`(5분, `manage.py score_layout`)
+  - 새 추출 규칙은 다음 배포부터 → 이번엔 호스트에 직접 복사 · cron 등록
+- 상세 화면 "보표 분석: N시스템 · M마디 · 박자표"(악보 인식 마디 수와 다르면 함께)
+- 마이그레이션 없음
+

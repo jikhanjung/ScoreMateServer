@@ -102,6 +102,15 @@ m710q `~/backups/scoremate/current/files/`(미러) · `files_snapshots/monthly/Y
 NAS `scoremate_backup/current/files` + `files_snapshots`(-H). 2026-09-28 확인: PDF 6 · 표지 5 모두 미러에 있다.
 한계: 하루 한 번(05:25)이라 그날 올린 파일은 다음 새벽까지 운영 디스크에만 있다 — 필요하면 files 만 더 자주 rsync.
 
+## 보표 · 마디 분석 (devlog 068)
+
+TV 앱의 PDF 분석(`score/`, Kotlin)을 옮긴 `scores/score_layout.py` 가 판마다 보표 · 시스템 · 마디선 · 박자표 · 보표 이름을 JSON 파일로 남긴다.
+기기는 동기화 응답의 `layout` 으로 받아 스스로 분석하지 않고 쓸 수 있다.
+```
+*/5 * * * * /srv/scoremate/scripts/layout_lane.sh >> /srv/scoremate/omr/layout.log 2>&1
+```
+`manage.py score_layout` = 분석 파일이 없는 판 전부, `--version-id N` = 그 판을 다시.
+
 ## 악보 인식 (OMR, devlog P01)
 
 PDF → MusicXML 을 **운영 호스트의 cron** 이 만든다. 모델 호출(Codex CLI, `gpt-6-astra`, ChatGPT 로그인)은 호스트에서, 결과 저장은 컨테이너에서.

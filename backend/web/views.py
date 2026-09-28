@@ -267,11 +267,14 @@ def score_detail(request, pk):
     score.editable = score.can_edit(request.user)
     versions = list(score.versions.select_related('uploaded_by').prefetch_related('analyses'))
     form = NewVersionForm(user=request.user) if score.editable else None
+    from scores.layouts import layout_of
     from scores.omr import summary_for
     current = next((v for v in versions if v.pk == score.current_version_id), None)
+    layout = layout_of(current) if current else None
     return render(request, 'web/scores/detail.html', {'score': score, 'versions': versions, 'version_form': form,
                                                       'page_numbers': range(1, (score.pages or 0) + 1),
-                                                      'omr': summary_for(current), 'current_version': current})
+                                                      'omr': summary_for(current), 'current_version': current,
+                                                      'layout': layout.data if layout else None})
 
 
 @login_required

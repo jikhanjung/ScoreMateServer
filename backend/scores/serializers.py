@@ -266,11 +266,12 @@ class SyncScoreSerializer(serializers.ModelSerializer):
     version = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
     musicxml = serializers.SerializerMethodField()
+    layout = serializers.SerializerMethodField()
 
     class Meta:
         model = Score
         fields = ['id', 'title', 'composer', 'arranger', 'instrumentation', 'part_name', 'tags', 'note',
-                  'ensemble', 'version', 'download_url', 'musicxml', 'updated_at']
+                  'ensemble', 'version', 'download_url', 'musicxml', 'layout', 'updated_at']
         read_only_fields = fields
 
     def get_ensemble(self, obj):
@@ -295,6 +296,24 @@ class SyncScoreSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         path = f'/api/v1/scores/{obj.pk}/download/'
         return request.build_absolute_uri(path) if request else path
+
+    def get_layout(self, obj):
+        """보표 · 마디 분석 파일(앱 분석과 같은 결과, scores/layouts.py) — 없으면 null"""
+        from .layouts import layout_filename, layout_of
+        v = obj.current_version
+        analysis = layout_of(v) if v else None
+        if analysis is None:
+            return None
+        request = self.context.get('request')
+        path = f'/api/v1/scores/{obj.pk}/layout/'
+        data = analysis.data
+        return {
+            'url': request.build_absolute_uri(path) if request else path,
+            'sha256': data.get('layout_sha256'), 'size_bytes': data.get('layout_bytes'),
+            'filename': layout_filename(obj, v), 'format_version': int(analysis.analyzer_version),
+            'measures': data.get('measure_count'), 'systems': data.get('system_count'),
+            'updated_at': analysis.updated_at,
+        }
 
     def get_musicxml(self, obj):
         from .omr import musicxml_filename, musicxml_of

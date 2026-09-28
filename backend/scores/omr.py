@@ -237,6 +237,9 @@ def musicxml_filename(score, version):
 
 
 def stored_keys(versions):
-    """지울 때 함께 지울 MusicXML 파일들"""
-    return [a.data['musicxml_key'] for a in ScoreAnalysis.objects.filter(version__in=versions, analyzer=ANALYZER)
-            if isinstance(a.data, dict) and a.data.get('musicxml_key')]
+    """지울 때 함께 지울 분석 파일들 — MusicXML, 보표 · 마디 분석(scores/layouts.py)"""
+    keys = []
+    for analysis in ScoreAnalysis.objects.filter(version__in=versions):
+        data = analysis.data if isinstance(analysis.data, dict) else {}
+        keys += [data[k] for k in ('musicxml_key', 'layout_key') if data.get(k)]
+    return keys

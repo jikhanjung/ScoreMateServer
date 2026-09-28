@@ -24,6 +24,7 @@
       {% if score.arranger %}<dt>편곡</dt><dd>{{ score.arranger }}</dd>{% endif %}
       {% if score.instrumentation %}<dt>편성</dt><dd>{{ score.instrumentation }}</dd>{% endif %}
       <dt>쪽수</dt><dd>{{ score.pages|default:'처리 중' }}</dd>
+      {% if layout %}<dt>보표 분석</dt><dd>{{ layout.system_count }}시스템 · {{ layout.measure_count }}마디{% if layout.time_signatures %} · {% for t in layout.time_signatures|slice:':3' %}{{ t.time }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% if omr.status == 'ok' and omr.measures != layout.measure_count %} <span class="muted small">(악보 인식 {{ omr.measures }}마디 — 도돌이 · 못갖춘마디로 다를 수 있음)</span>{% endif %}</dd>{% endif %}
       <dt>크기</dt><dd>{{ score.size_bytes|filesizeformat }}</dd>
       {% if score.original_filename %}<dt>파일</dt><dd>{{ score.original_filename }}</dd>{% endif %}
       {% if score.tags %}<dt>태그</dt><dd>{% for t in score.tags %}<span class="badge plain">{{ t }}</span> {% endfor %}</dd>{% endif %}

@@ -124,6 +124,24 @@ class OmrTest(WebTestBase):
             self.ingest(musicxml='<score-partwise><part')
         self.assertFalse(ScoreAnalysis.objects.filter(analyzer=omr.ANALYZER).exists())
 
+    def test_breaks_from_layout_at_ingest_and_backfill(self):
+        """PDF 분석과 마디 수가 같으면 줄 · 쪽 바뀜을 그 값으로 — 모델 표시와 맞는 수를 남긴다"""
+        from scores.layouts import ANALYZER as LAYOUT
+        from files.utils import get_storage
+        layout = {'measures': [{'pageIndex': 0, 'systemIndex': 0}, {'pageIndex': 1, 'systemIndex': 0}], 'pages': []}
+        get_storage().write_bytes('layout.json', json.dumps(layout).encode())
+        ScoreAnalysis.objects.filter(version=self.version, analyzer=LAYOUT).update(data={'layout_key': 'layout.json'})
+        self.ingest()
+        data = ScoreAnalysis.objects.get(version=self.version, analyzer=omr.ANALYZER).data
+        self.assertEqual(data['breaks'], {'source': 'layout', 'agree': 0, 'total': 1, 'model': 0})
+        stored = (self.files_root / data['musicxml_key']).read_text()
+        self.assertEqual(stored.count('<print new-page="yes" />'), 2)          # 파트 둘의 2마디
+        # 이미 끝난 결과에 다시 — 그대로(같은 바뀜)
+        self.assertTrue(omr.apply_layout_breaks(self.version))
+        # 마디 수가 다르면 하지 않는다
+        get_storage().write_bytes('layout.json', json.dumps({'measures': layout['measures'][:1]}).encode())
+        self.assertFalse(omr.apply_layout_breaks(self.version))
+
     def test_page_map_backfill_command(self):
         self.ingest()
         log = '\n'.join(json.dumps(e) for e in [{'pages': [1], 'measures': [1, 1], 'problems': []},

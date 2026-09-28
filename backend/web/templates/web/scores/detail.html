@@ -45,6 +45,7 @@
     <dt>쪽</dt><dd>{{ score.pages|default:'?' }}쪽</dd>
     <dt>파트</dt><dd>{{ omr.parts|length }}개{% if omr.staves_total %} <span class="muted small">· 보표 {{ omr.staves_total }}개{% if layout_staves and layout_staves != omr.staves_total %} — PDF 분석은 시스템마다 보표 {{ layout_staves }}개{% endif %}</span>{% endif %}</dd>
     {% if omr.signatures %}<dt>박자 · 조표</dt><dd>{{ omr.signatures|join:' · ' }}</dd>{% endif %}
+    {% if omr.breaks.source %}<dt>줄 · 쪽 바뀜</dt><dd>{% if omr.breaks.source == 'layout' %}{{ omr.breaks.total }}곳 · PDF 분석으로 확정{% if omr.breaks.model %} <span class="muted small">(악보 인식 표시와 {{ omr.breaks.agree }}곳 일치)</span>{% endif %}{% elif omr.breaks.source == 'model' %}{{ omr.breaks.model }}곳 · 악보 인식 표시{% else %}<span class="muted">없음</span>{% endif %}</dd>{% endif %}
     <dt>인식</dt><dd>{{ omr.updated_at|date:'Y-m-d H:i' }}{% if omr.elapsed_minutes %} <span class="muted small">· {{ omr.elapsed_minutes }}분 걸림</span>{% endif %}
       · <a href="{% url 'web:version_musicxml' score.pk current_version.number %}">MusicXML 받기</a>{% if omr.bytes %} <span class="muted small">({{ omr.bytes|filesizeformat }})</span>{% endif %}</dd>
   </dl>

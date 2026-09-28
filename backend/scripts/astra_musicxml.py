@@ -68,6 +68,7 @@ Rules:
 - The FIRST measure on these pages must give full attributes for every part (key, time, clef — and clef2 for a second
   staff) even if they are not reprinted on the page. After that, give attributes only where something changes.
 - Each measure lists every part (use "R" for a whole-measure rest). Keep voice numbers stable from measure to measure.
+- system_start: true on the first measure of every printed line (system) on the page, false otherwise.
 - Do not invent content. If something is unreadable, transcribe your best reading and say so in notes.
 - Inspect the attached images directly. Do not read other files, run commands, or use external tools.
 {context}
@@ -96,6 +97,8 @@ FIRST_CONTEXT = """- These are the first pages. Part ids P1, P2, … in score or
   arranged for guitars). One part = one staff, unless one printed name (e.g. "Piano") spans two staves joined by a brace.{staves}"""
 STAVES_CONTEXT = """
 - Measured from the PDF drawing: every system here has exactly {count} staves. Your parts' staves must add up to {count}."""
+PAGE_SYSTEMS_CONTEXT = """
+- Measured from the PDF drawing: this page has {count} systems (printed lines) — mark system_start on the first measure of each."""
 
 NEXT_CONTEXT = """- This continues a transcription already made from the previous pages. Use EXACTLY these parts, ids and order
   (a part may be printed with an abbreviated name or be absent on a page — still include it, filling absent measures
@@ -105,6 +108,16 @@ NEXT_CONTEXT = """- This continues a transcription already made from the previou
   say otherwise.
 - State at the end of the previous pages (carry it into your first measure's attributes):
 {state}"""
+
+
+def page_systems(args, pages):
+    """보표 분석이 잰 이 쪽의 시스템 수 — 한 쪽 호출이고 값이 있을 때만(0 = 악보가 아닌 쪽은 검사하지 않는다)"""
+    if not args.page_systems or len(pages) != 1:
+        return None
+    counts = [int(c) for c in args.page_systems.split(',') if c.strip().isdigit()]
+    if pages[0] > len(counts) or counts[pages[0] - 1] == 0:
+        return None
+    return counts[pages[0] - 1]
 
 
 def key_disagreement(page, meta):
@@ -307,6 +320,7 @@ def main():
     parser.add_argument('--timeout', type=float, default=3600)
     parser.add_argument('--pages', help='only these pages, e.g. 1-4 (for trials)')
     parser.add_argument('--staves', type=int, help='staves per system measured by the layout analysis (checks the part list)')
+    parser.add_argument('--page-systems', help='systems per page from the layout analysis, e.g. 2,2,3 (checks system_start)')
     parser.add_argument('--format', default='compact', choices=('compact', 'musicxml'),
                         help='what the model writes: compact (short text → we build MusicXML, ~4x fewer tokens) or musicxml')
     args = parser.parse_args()
@@ -342,7 +356,8 @@ def main():
             compact = done.parent / 'chunk.json'
             if compact.exists():     # 짧은 형식으로 끝난 조각 — 다시 바꿔 붙임줄 상태를 이어 간다(결과 XML 은 같다)
                 xml_text, _ = omr_compact.to_musicxml(json.loads(compact.read_text()), ties,
-                                                      time_state(merged) if merged is not None else None)
+                                                      time_state(merged) if merged is not None else None,
+                                                      new_page=pages[0] > 1)
                 chunk = ET.fromstring(xml_text)
             else:
                 chunk = ET.parse(done).getroot()
@@ -361,6 +376,9 @@ def main():
                 previous = int(last_measure(merged)) if last_measure(merged).isdigit() else 0
                 context = NEXT_CONTEXT.format(parts=parts, last=previous, next=previous + 1, state=state)
             if args.format == 'compact':
+                expected_systems = page_systems(args, pages)
+                if expected_systems is not None:
+                    context += PAGE_SYSTEMS_CONTEXT.format(count=expected_systems)
                 prompt = COMPACT_PROMPT.format(pages=pages, total=total, context=context,
                                                format_help=omr_compact.FORMAT_HELP)
                 schema = omr_compact.SCHEMA
@@ -382,11 +400,17 @@ def main():
                 attempt_ties = omr_compact.TieState(ties)
                 if args.format == 'compact':
                     xml_text, problems = omr_compact.to_musicxml(result, attempt_ties,
-                                                                 time_state(merged) if merged is not None else None)
+                                                                 time_state(merged) if merged is not None else None,
+                                                                 new_page=pages[0] > 1)
                     result['musicxml'] = xml_text
                     problems = problems + ([] if problems else check(xml_text, expected))
                     if merged is None and attempt == 1:
                         problems += key_disagreement(result, meta)
+                    expected_systems = page_systems(args, pages)
+                    if expected_systems is not None and omr_compact.systems_on_page(result) != expected_systems:
+                        problems.append(f'systems: you marked {omr_compact.systems_on_page(result)} systems (system_start) on '
+                                        f'page {pages[0]}, the PDF drawing has {expected_systems} — mark system_start on the '
+                                        f'first measure of every printed line')
                     if merged is None and args.staves:
                         total = sum(max(1, int(p.get('staves') or 1)) for p in result.get('parts') or [])
                         if total != args.staves:

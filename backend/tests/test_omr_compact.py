@@ -156,6 +156,33 @@ class StavesCheckTest(SimpleTestCase):
         self.assertIn('NEVER infer instruments from the title', prompts[0])
         self.assertIn('your parts have 3 staves in total', prompts[1])
 
+    def test_systems_per_page_are_checked(self):
+        import sys
+        from unittest.mock import patch
+        from scripts import astra_musicxml as script
+
+        class Args:
+            page_systems = '2,0'
+        self.assertEqual(script.page_systems(Args, [1]), 2)
+        self.assertIsNone(script.page_systems(Args, [2]))        # 0 = 악보가 아닌 쪽 — 검사하지 않는다
+        self.assertIsNone(script.page_systems(Args, [1, 2]))     # 여러 쪽 호출은 검사하지 않는다
+
     def test_matching_part_list_passes(self):
         code, _ = self.run_first_page([{'id': f'P{i}', 'name': f'Staff {i}', 'staves': 1} for i in (1, 2, 3)], staves=3)
         self.assertEqual(code, 0)
+
+
+class BreaksTest(SimpleTestCase):
+    """줄 · 쪽 바뀜 — 짧은 형식의 system_start 와 쪽 경계가 <print> 가 된다"""
+
+    def test_print_elements(self):
+        data = page({'P1': [voice('C5/4.')]}, attributes='time=3/8')
+        data['measures'] += [{'number': str(n), 'implicit': False, 'system_start': n == 3, 'parts': [
+            {'id': 'P1', 'attributes': '', 'barline': '', 'voices': [voice('C5/4.')]}]} for n in (2, 3)]
+        root, problems = omr_compact.to_musicxml(data)[0], []
+        root = ET.fromstring(root)
+        prints = [(m.get('number'), m.find('print').attrib if m.find('print') is not None else None) for m in root.iter('measure')]
+        self.assertEqual(prints, [('1', None), ('2', None), ('3', {'new-system': 'yes'})])
+        self.assertEqual(omr_compact.systems_on_page(data), 2)
+        text, _ = omr_compact.to_musicxml(data, new_page=True)
+        self.assertEqual(ET.fromstring(text).find('part/measure/print').get('new-page'), 'yes')

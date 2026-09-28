@@ -48,10 +48,73 @@ def pending(limit=1):
 
 
 def job(version):
-    from .layouts import staves_per_system
+    from .layouts import page_systems, staves_per_system
     return {'version_id': version.pk, 'score_id': version.score_id, 'number': version.number,
             'title': version.score.title, 'key': version.s3_key, 'sha256': version.content_hash,
-            'pages': version.pages, 'staves_per_system': staves_per_system(version)}
+            'pages': version.pages, 'staves_per_system': staves_per_system(version),
+            'page_systems': page_systems(version)}
+
+
+def layout_breaks(xml_text, layout_document):
+    """보표 · 마디 분석(PDF 에서 잰 것)으로 줄 · 쪽 바뀜(<print new-system/new-page>)을 정한다 — 마디 수가 같을 때만.
+    돌려주는 것: (새 XML 또는 None, {'agree': 모델 표시와 같은 마디 수, 'total': 바뀜 수, 'model': 모델이 표시한 수})"""
+    if not layout_document:
+        return None, None
+    root = ET.fromstring(xml_text)
+    parts = root.findall('part')
+    measures = [m for m in layout_document.get('measures') or []]
+    if not parts or len(parts[0].findall('measure')) != len(measures) or not measures:
+        return None, None
+    wanted = {}
+    for index, m in enumerate(measures):
+        if index == 0:
+            continue
+        prev = measures[index - 1]
+        if m['pageIndex'] != prev['pageIndex']:
+            wanted[index] = 'new-page'
+        elif m['systemIndex'] != prev['systemIndex']:
+            wanted[index] = 'new-system'
+
+    def kind(measure):
+        p = measure.find('print')
+        if p is None:
+            return None
+        return 'new-page' if p.get('new-page') == 'yes' else 'new-system' if p.get('new-system') == 'yes' else None
+    first = parts[0].findall('measure')
+    model = {i: kind(m) for i, m in enumerate(first) if kind(m)}
+    agree = sum(1 for i, k in wanted.items() if model.get(i) == k)
+    for part in parts:
+        for index, measure in enumerate(part.findall('measure')):
+            for old in measure.findall('print'):
+                measure.remove(old)
+            if index in wanted:
+                measure.insert(0, ET.Element('print', {wanted[index]: 'yes'}))
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding='unicode')
+    return xml, {'agree': agree, 'total': len(wanted), 'model': len(model)}
+
+
+def apply_layout_breaks(version):
+    """이미 끝난 인식 결과에 PDF 분석의 줄 · 쪽 바뀜을 넣는다(파일 · sha256 을 새로, 기기가 다시 받는다). 바꿨으면 True"""
+    from django.utils import timezone
+    from .layouts import layout_document
+    from .models import Score
+
+    analysis = musicxml_of(version)
+    if analysis is None:
+        return False
+    storage = get_storage()
+    key = analysis.data['musicxml_key']
+    xml, stats = layout_breaks(storage.read_bytes(key).decode('utf-8'), layout_document(version))
+    if xml is None:
+        return False
+    raw = xml.encode('utf-8')
+    storage.write_bytes(key, raw, 'application/vnd.recordare.musicxml+xml')
+    data = dict(analysis.data, musicxml_sha256=hashlib.sha256(raw).hexdigest(), musicxml_bytes=len(raw),
+                breaks={'source': 'layout', **stats})
+    with transaction.atomic():
+        ScoreAnalysis.objects.filter(pk=analysis.pk).update(data=data, updated_at=timezone.now())
+        Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())
+    return True
 
 
 def measure_summary(xml_text):
@@ -110,14 +173,22 @@ def ingest(version, *, sha256, status, musicxml='', run=None, problems=None, met
     if status != STATUS_OK:
         raise OmrError(f'Unknown status: {status}')
 
-    raw = musicxml.encode('utf-8')
-    if not raw or len(raw) > MAX_MUSICXML_BYTES:
+    if not musicxml or len(musicxml.encode('utf-8')) > MAX_MUSICXML_BYTES:
         raise OmrError('MusicXML is empty or too large.')
     summary = measure_summary(musicxml)
+    # 줄 · 쪽 바뀜: PDF 분석과 마디 수가 같으면 그 값(정확)으로, 아니면 모델이 표시한 그대로(스캔 악보 등)
+    from .layouts import layout_document
+    with_layout, stats = layout_breaks(musicxml, layout_document(version))
+    if with_layout is not None:
+        musicxml, breaks = with_layout, {'source': 'layout', **stats}
+    else:
+        marked = len(ET.fromstring(musicxml).findall('part/measure/print'))
+        breaks = {'source': 'model' if marked else 'none', 'model': marked}
+    raw = musicxml.encode('utf-8')
     key = musicxml_key(version)
     get_storage().write_bytes(key, raw, 'application/vnd.recordare.musicxml+xml')
     data = {'status': STATUS_OK, 'musicxml_key': key, 'musicxml_sha256': hashlib.sha256(raw).hexdigest(),
-            'musicxml_bytes': len(raw), **summary, 'run': run, 'metadata': metadata}
+            'musicxml_bytes': len(raw), **summary, 'run': run, 'metadata': metadata, 'breaks': breaks}
     analysis, _ = save_analysis(version.score, user=version.score.user, analyzer=ANALYZER,
                                 analyzer_version=ANALYZER_VERSION, sha256=sha256, data=data, version=version)
     ScoreAnalysis.objects.filter(pk=analysis.pk).update(uploaded_by=None)   # 사람이 올린 것이 아니다
@@ -248,7 +319,8 @@ def summary_for(version):
         info.update(measures=data.get('measure_count'), first=data.get('first_measure'), last=data.get('last_measure'),
                     parts=data.get('parts') or [], signatures=signatures, bytes=data.get('musicxml_bytes'),
                     renamed=bool(data.get('parts_renamed_at')), page_map=page_map(data, version.pages),
-                    staves_total=sum(int(p.get('staves') or 1) for p in data.get('parts') or []))
+                    staves_total=sum(int(p.get('staves') or 1) for p in data.get('parts') or []),
+                    breaks=data.get('breaks') or {})
     return info
 
 

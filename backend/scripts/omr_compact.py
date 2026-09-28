@@ -1,7 +1,9 @@
 """Compact score text → MusicXML. The model writes this short form (≈4x fewer tokens than MusicXML); we build the XML.
 
-A page is JSON: {"parts": [{"id", "name", "staves"}], "measures": [{"number", "implicit",
+A page is JSON: {"parts": [{"id", "name", "staves"}], "measures": [{"number", "implicit", "system_start",
 "parts": [{"id", "attributes", "barline", "voices": [{"voice", "staff", "events"}]}]}]}
+
+system_start: true for the first measure of every system (printed line) on the page — the page's first measure is always true.
 
 attributes (space separated, only when something is set or changes): key=-3..7  time=6/8  clef=G2 | F4 | C3 | G2-8
 (octave down, e.g. guitar) — clef2=… for the second staff of a multi-staff part.
@@ -43,9 +45,9 @@ SCHEMA = {
             'type': 'object', 'additionalProperties': False, 'required': ['id', 'name', 'staves'],
             'properties': {'id': {'type': 'string'}, 'name': {'type': 'string'}, 'staves': {'type': 'integer'}}}},
         'measures': {'type': 'array', 'items': {
-            'type': 'object', 'additionalProperties': False, 'required': ['number', 'implicit', 'parts'],
+            'type': 'object', 'additionalProperties': False, 'required': ['number', 'implicit', 'system_start', 'parts'],
             'properties': {
-                'number': {'type': 'string'}, 'implicit': {'type': 'boolean'},
+                'number': {'type': 'string'}, 'implicit': {'type': 'boolean'}, 'system_start': {'type': 'boolean'},
                 'parts': {'type': 'array', 'items': {
                     'type': 'object', 'additionalProperties': False,
                     'required': ['id', 'attributes', 'barline', 'voices'],
@@ -58,7 +60,13 @@ SCHEMA = {
     },
 }
 
-FORMAT_HELP = __doc__[__doc__.index('attributes (space'):]
+FORMAT_HELP = __doc__[__doc__.index('system_start:'):]
+
+
+def systems_on_page(page):
+    """이 쪽의 시스템 수 — 첫 마디 + system_start 인 마디"""
+    measures = page.get('measures') or []
+    return (1 if measures else 0) + sum(1 for m in measures[1:] if m.get('system_start'))
 
 
 class TieState(dict):
@@ -260,9 +268,10 @@ def _voice(measure_el, part_id, voice, staff, staves, events, measure_length, ti
     return total, problems
 
 
-def to_musicxml(page, ties=None, first_state=None):
+def to_musicxml(page, ties=None, first_state=None, new_page=False):
     """page (dict in the compact form) → (MusicXML text, problems). ties: TieState carried between pages.
-    first_state: {part_id: {'time': Fraction}} — the time signature in force before this page"""
+    first_state: {part_id: {'time': Fraction}} — the time signature in force before this page.
+    new_page: this page is not the score's first — its first measure gets <print new-page>, later system starts <print new-system>"""
     ties = ties if ties is not None else TieState()
     problems = []
     root = ET.Element('score-partwise', version='4.0')
@@ -286,6 +295,10 @@ def to_musicxml(page, ties=None, first_state=None):
             seen.add(pid)
             measure_el = _sub(part_elements[pid], 'measure', number=number,
                               **({'implicit': 'yes'} if measure.get('implicit') else {}))
+            if index == 0 and new_page:
+                _sub(measure_el, 'print', new_page='yes')           # 한 쪽씩 옮기므로 쪽 바뀜은 호출 경계로 정확하다
+            elif index > 0 and measure.get('system_start'):
+                _sub(measure_el, 'print', new_system='yes')
             unknown = _attributes(measure_el, entry.get('attributes') or '', staves[pid], index == 0, time_state[pid])
             if unknown:
                 problems.append(f'{pid} m{number}: unknown attributes {unknown}')

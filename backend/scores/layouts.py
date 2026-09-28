@@ -88,6 +88,25 @@ def staves_per_system(version):
     return int(max(counts.items(), key=lambda item: (item[1], item[0]))[0])
 
 
+def layout_document(version):
+    """이 판의 분석 파일(JSON) — 없거나 못 읽으면 None"""
+    analysis = next((a for a in version.analyses.all() if a.analyzer == ANALYZER), None)
+    if analysis is None or not (analysis.data or {}).get('layout_key'):
+        return None
+    try:
+        return json.loads(get_storage().read_bytes(analysis.data['layout_key']))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def page_systems(version):
+    """쪽마다 시스템 수 'a,b,c' — 악보 인식이 줄 바뀜(system_start)을 검산한다. 없으면 None"""
+    document = layout_document(version)
+    if document is None:
+        return None
+    return ','.join(str(len(p['systems'])) for p in document['pages'])
+
+
 def layout_of(version):
     analysis = next((a for a in version.analyses.all() if a.analyzer == ANALYZER), None)
     if analysis is not None and (analysis.data or {}).get('layout_key'):

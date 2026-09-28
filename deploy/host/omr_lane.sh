@@ -45,6 +45,8 @@ field() { printf '%s' "${JOB}" | python3 -c "import json,sys; print(json.load(sy
 VID=$(field version_id); KEY=$(field key); SHA=$(field sha256); TITLE=$(field title); STAVES=$(field staves_per_system)
 EXTRA=()
 [ "${STAVES}" != "None" ] && [ -n "${STAVES}" ] && EXTRA=(--staves "${STAVES}")   # 보표 분석이 잰 시스템마다 보표 수
+PAGE_SYSTEMS=$(field page_systems)
+[ "${PAGE_SYSTEMS}" != "None" ] && [ -n "${PAGE_SYSTEMS}" ] && EXTRA+=(--page-systems "${PAGE_SYSTEMS}")   # 쪽마다 시스템 수
 PDF="${ROOT}/files/${KEY}"
 WORK="${OMR}/work/v${VID}"
 mkdir -p "${WORK}"

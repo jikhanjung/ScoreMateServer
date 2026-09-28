@@ -1,5 +1,7 @@
-// 들어보기 — 악보 인식 결과(MusicXML)를 브라우저에서 소리로. 외부 라이브러리 없이 Web Audio.
+// 들어보기 — 악보 인식 결과(MusicXML)를 브라우저에서 소리로. 외부 라이브러리 없이 Web Audio. 쪽 보기 창의 막대에 있다.
 // 적힌 순서대로 재생한다(도돌이표 · D.S. 는 따르지 않는다). 붙임줄은 한 음으로 이어 소리 낸다.
+// 시작 마디는 root.dataset.startMeasure(보기 창이 지금 쪽의 첫 마디를 넣는다). 마디가 바뀌면 'player:measure' 를 알린다
+// (보기 창이 그 쪽으로 넘긴다). 'player:stop' 을 받으면 멈춘다(보기 창을 닫을 때).
 (function () {
   'use strict';
   var root = document.querySelector('[data-player]');
@@ -7,7 +9,7 @@
   var STEPS = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   var play = root.querySelector('[data-play]'), stop = root.querySelector('[data-stop]');
   var tempoInput = root.querySelector('[data-tempo]'), tempoLabel = root.querySelector('[data-tempo-label]');
-  var startInput = root.querySelector('[data-start]'), status = root.querySelector('[data-status]');
+  var status = root.querySelector('[data-status]'), lastMeasure = null;
   var partsBox = root.querySelector('[data-parts]');
   var score = null, audio = null, master = null, timer = null, state = 'stopped';
   var cursor = 0, playedFrom = 0, startedAt = 0, muted = {};
@@ -123,7 +125,12 @@
       voice(note.midi, Math.max(when, audio.currentTime), note.length * secondsPerQuarter(), note.index);
     }
     var beat = beatNow();
-    status.textContent = beat >= score.end ? '끝' : measureAt(beat).number + '마디';
+    var measure = measureAt(beat);
+    status.textContent = beat >= score.end ? '끝' : measure.number + '마디';
+    if (measure.number !== lastMeasure) {
+      lastMeasure = measure.number;
+      root.dispatchEvent(new CustomEvent('player:measure', { detail: { number: measure.number } }));
+    }
     if (beat >= score.end + 1) finish();
   }
 
@@ -134,7 +141,7 @@
     startedAt = audio.currentTime + 0.1;
     timer = setInterval(tick, 25);
     state = 'playing';
-    play.textContent = '일시정지';
+    play.textContent = '⏸ 일시정지';
   }
 
   function halt() { clearInterval(timer); timer = null; }
@@ -142,12 +149,13 @@
   function finish() {
     halt();
     state = 'stopped';
-    play.textContent = '재생';
+    lastMeasure = null;
+    play.textContent = '▶ 재생';
     if (audio) { audio.close(); audio = null; master = null; }
   }
 
   function startBeat() {
-    var wanted = String(startInput.value || '').trim();
+    var wanted = String(root.dataset.startMeasure || '').trim();
     var found = score.measures.filter(function (m) { return m.number === wanted; })[0];
     return found ? found.start : 0;
   }
@@ -181,7 +189,7 @@
       if (state === 'playing') {                     // 일시정지 — 지금 박에서 멈추고 기억
         var at = beatNow();
         halt(); audio.suspend();
-        state = 'paused'; play.textContent = '이어서';
+        state = 'paused'; play.textContent = '▶ 이어서';
         playedFrom = at;
         return;
       }
@@ -194,6 +202,7 @@
     }).catch(function () { status.textContent = '불러오지 못했습니다'; });
   });
   stop.addEventListener('click', function () { if (score) { finish(); status.textContent = '정지'; } });
+  root.addEventListener('player:stop', function () { if (score && state !== 'stopped') { finish(); status.textContent = ''; } });
   tempoInput.addEventListener('input', function () {
     tempoLabel.textContent = tempoInput.value;
     if (state === 'playing') { var at = beatNow(); halt(); audio && begin(at); }   // 빠르기를 바꾸면 지금 박부터 새로

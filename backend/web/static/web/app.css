@@ -187,12 +187,14 @@ details > summary { cursor: pointer; color: var(--accent); }
 /* 악보 인식 결과 */
 .omr-box table { margin-top: .6rem; }
 .omr-box td input[type=text] { width: 100%; max-width: 20rem; }
-.player { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--line); }
-.player h3 { margin: 0 0 .5rem; font-size: 1rem; }
-.player-controls { align-items: center; gap: .6rem; flex-wrap: wrap; }
-.player-controls input[type=range] { vertical-align: middle; width: 9rem; }
-.player-controls input[type=text] { width: 4.5rem; display: inline-block; }
-.player [data-parts] { gap: .8rem; margin-top: .5rem; flex-wrap: wrap; }
+.page-viewer-player { display: inline-flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.page-viewer-player input[type=range] { width: 7rem; vertical-align: middle; }
+.page-viewer-player [data-status] { min-width: 3.5rem; }
+.player-parts { position: relative; }
+.player-parts > summary { list-style: none; cursor: pointer; }
+.player-parts > summary::-webkit-details-marker { display: none; }
+.player-parts-list { position: absolute; top: 110%; left: 0; z-index: 2; display: grid; gap: .3rem; min-width: 9rem;
+  padding: .5rem .7rem; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
 
 /* 목록 카드 — 썸네일 위 쪽수 */
 .card .thumb { position: relative; }

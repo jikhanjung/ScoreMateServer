@@ -69,18 +69,8 @@
     </div>
   </form>
   {% endif %}
-  <div class="player" data-player data-url="{% url 'web:version_musicxml' score.pk current_version.number %}">
-    <h3>들어보기</h3>
-    <div class="row player-controls">
-      <button class="btn sm primary" type="button" data-play>재생</button>
-      <button class="btn sm" type="button" data-stop>정지</button>
-      <label class="small">빠르기 ♩=<span data-tempo-label></span> <input type="range" min="30" max="200" step="2" value="80" data-tempo aria-label="빠르기"></label>
-      <label class="small">시작 마디 <input type="text" inputmode="numeric" value="{{ omr.first|default:'1' }}" size="4" data-start aria-label="시작 마디"></label>
-      <span class="small muted" data-status></span>
-    </div>
-    <div class="row small" data-parts></div>
-    <p class="hint">악보 인식 결과를 소리로 들어 봅니다 — 인식이 맞는지 확인할 때. 적힌 순서대로 재생하고 도돌이표는 따르지 않습니다.</p>
-  </div>
+  {% if page_numbers %}<p style="margin-top:.8rem"><button class="btn sm primary" type="button" data-listen>▶ 크게 보며 들어보기</button>
+    <span class="muted small">쪽 보기에서 재생하면 마디를 따라 쪽이 넘어갑니다.</span></p>{% endif %}
   {% elif omr.status == 'failed' %}
   <p>악보 인식이 검산을 통과하지 못했습니다. <span class="muted small">({{ omr.updated_at|date:'Y-m-d H:i' }})</span></p>
   {% if omr.problems %}<details><summary class="small">문제 {{ omr.problems|length }}개</summary><ul class="small">{% for p in omr.problems|slice:':10' %}<li>{{ p }}</li>{% endfor %}</ul></details>{% endif %}
@@ -101,6 +91,7 @@
   </a>
   {% endfor %}
 </div>
+{% if omr.status == 'ok' %}{{ omr.page_map|json_script:"page-map" }}{% endif %}
 <dialog class="page-viewer" data-viewer aria-label="쪽 보기">
   <div class="page-viewer-bar">
     <button class="btn sm" type="button" data-prev aria-label="앞 쪽">‹</button>
@@ -110,6 +101,15 @@
       <button class="btn sm" type="button" data-spread="1" aria-pressed="false" title="한 쪽씩 (1)">1쪽</button>
       <button class="btn sm" type="button" data-spread="2" aria-pressed="false" title="두 쪽씩 나란히 (2)">2쪽</button>
     </span>
+    {% if omr.status == 'ok' %}
+    <span class="page-viewer-player" data-player data-url="{% url 'web:version_musicxml' score.pk current_version.number %}">
+      <button class="btn sm primary" type="button" data-play title="지금 보는 쪽부터 (P)">▶ 재생</button>
+      <button class="btn sm" type="button" data-stop aria-label="정지">■</button>
+      <label class="small">♩=<span data-tempo-label></span><input type="range" min="30" max="200" step="2" value="80" data-tempo aria-label="빠르기"></label>
+      <details class="player-parts"><summary class="btn sm">파트</summary><div class="player-parts-list" data-parts><span class="muted small">재생하면 나옵니다</span></div></details>
+      <span class="small muted" data-status></span>
+    </span>
+    {% endif %}
     <span class="page-viewer-fit" role="group" aria-label="맞춤">
       <button class="btn sm" type="button" data-fit="width" aria-pressed="false" title="너비 맞춤 (W)">너비 맞춤</button>
       <button class="btn sm" type="button" data-fit="height" aria-pressed="false" title="높이 맞춤 (H) — 한 화면에">높이 맞춤</button>
@@ -199,10 +199,12 @@
   }
   function measureBar() { viewer.style.setProperty('--bar-h', bar.offsetHeight + 'px'); }
 
-  function show(index) {
+  function show(index, following) {
     if (index < 0 || index >= links.length) return;
     if (spread === 2) index -= index % 2;          // 1–2, 3–4 … (0 부터 세면 짝수에서 시작)
     current = index;
+    var playerEl = viewer.querySelector('[data-player]');
+    if (playerEl && !following) playerEl.dataset.startMeasure = firstMeasureOf(index);
     viewer.scrollTop = 0;
     viewer.scrollLeft = 0;
     var count = spread === 2 && index + 1 < links.length ? 2 : 1;
@@ -224,6 +226,30 @@
   }
   function step(direction) { show(direction < 0 ? current - spread : current + spread); }
 
+  // 들어보기 — 지금 보는 쪽의 첫 마디부터 재생하고, 마디가 다른 쪽으로 가면 따라 넘긴다
+  var player = viewer.querySelector('[data-player]');
+  var mapEl = document.getElementById('page-map');
+  var pageMap = mapEl ? JSON.parse(mapEl.textContent) : [];
+  function firstMeasureOf(index) {
+    var entry = pageMap.filter(function (e) { return e.page === index + 1; })[0];
+    return entry ? String(entry.first) : '';
+  }
+  function pageOfMeasure(number) {
+    var n = Number(number);
+    var entry = pageMap.filter(function (e) { return e.first <= n && n <= e.last; })[0];
+    return entry ? entry.page - 1 : null;
+  }
+  if (player) {
+    player.addEventListener('player:measure', function (event) {
+      var index = pageOfMeasure(event.detail.number);
+      if (index === null || (index >= current && index < current + spread)) return;
+      show(index, true);
+    });
+    viewer.addEventListener('close', function () { player.dispatchEvent(new Event('player:stop')); });
+  }
+  var listen = document.querySelector('[data-listen]');
+  if (listen) listen.addEventListener('click', function () { viewer.showModal(); measureBar(); show(0); });
+
   viewer.querySelectorAll('[data-fit]').forEach(function (b) { b.addEventListener('click', function () { setFit(b.dataset.fit); }); });
   viewer.querySelectorAll('[data-spread]').forEach(function (b) {
     b.addEventListener('click', function () { setSpread(Number(b.dataset.spread)); });
@@ -244,14 +270,16 @@
   });
   viewer.addEventListener('keydown', function (event) {
     var key = event.key;
+    if (event.target.tagName === 'INPUT') return;          // 빠르기 막대 등을 움직일 때는 쪽을 넘기지 않는다
     if (key === 'ArrowLeft' || key === 'PageUp') { step(-1); event.preventDefault(); }
     else if (key === 'ArrowRight' || key === 'PageDown' || key === ' ') { step(1); event.preventDefault(); }
     else if (key === 'w' || key === 'W') setFit('width');
     else if (key === 'h' || key === 'H') setFit('height');
     else if (key === '1' || key === '2') setSpread(Number(key));
+    else if ((key === 'p' || key === 'P') && viewer.querySelector('[data-play]')) viewer.querySelector('[data-play]').click();
   });
 })();
 </script>
 {% endif %}
-{% if omr.status == 'ok' %}<script src="{% static 'web/player.js' %}" defer></script>{% endif %}
+{% if omr.status == 'ok' and page_numbers %}<script src="{% static 'web/player.js' %}"></script>{% endif %}
 {% endblock %}

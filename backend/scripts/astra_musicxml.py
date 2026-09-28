@@ -458,6 +458,16 @@ def log_entry(log, pages, attempt, elapsed, usage, result, problems, notes):
                             'problems': problems, 'notes': notes}, ensure_ascii=False) + '\n')
 
 
+def page_measures(entries):
+    """조각마다 어느 쪽이 몇 마디부터 몇 마디까지 — 웹 들어보기가 쪽을 따라 넘긴다. 통과한 시도만, 같은 쪽은 마지막 것"""
+    found = {}
+    for entry in entries:
+        if not entry.get('problems') and entry.get('measures') and entry.get('pages'):
+            found[tuple(entry['pages'])] = {'pages': entry['pages'], 'first': entry['measures'][0],
+                                            'last': entry['measures'][1]}
+    return sorted(found.values(), key=lambda item: item['pages'][0])
+
+
 def write_result(args, status, problems, log):
     entries = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
     usage = {}
@@ -469,7 +479,8 @@ def write_result(args, status, problems, log):
     run = {'model': MODEL, 'effort': args.effort, 'dpi': args.dpi, 'pages_per_call': args.chunk, 'format': args.format,
            'calls': len(entries), 'elapsed_seconds': round(sum(e.get('elapsed', 0) for e in entries), 1),
            'usage': usage,
-           'notes': [f"pages {e['pages'][0]}-{e['pages'][-1]}: {e['notes']}" for e in entries if e.get('notes')][-40:]}
+           'notes': [f"pages {e['pages'][0]}-{e['pages'][-1]}: {e['notes']}" for e in entries if e.get('notes')][-40:],
+           'page_measures': page_measures(entries)}
     meta_file = args.outdir / 'metadata.json'
     metadata = json.loads(meta_file.read_text()) if meta_file.exists() else {}
     (args.outdir / 'result.json').write_text(json.dumps({'status': status, 'problems': problems, 'run': run,

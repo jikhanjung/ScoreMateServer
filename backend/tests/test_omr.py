@@ -110,6 +110,15 @@ class OmrTest(WebTestBase):
             self.ingest(musicxml='<score-partwise><part')
         self.assertFalse(ScoreAnalysis.objects.filter(analyzer=omr.ANALYZER).exists())
 
+    def test_page_map_backfill_command(self):
+        self.ingest()
+        log = '\n'.join(json.dumps(e) for e in [{'pages': [1], 'measures': [1, 1], 'problems': []},
+                                                 {'pages': [2], 'measures': [2, 2], 'problems': []}])
+        with patch('sys.stdin', io.StringIO(log)):
+            call_command('omr_page_map', str(self.version.pk), stdout=io.StringIO())
+        data = ScoreAnalysis.objects.get(version=self.version, analyzer=omr.ANALYZER).data
+        self.assertEqual(omr.page_map(data, 2), [{'page': 1, 'first': 1, 'last': 1}, {'page': 2, 'first': 2, 'last': 2}])
+
     def test_failure_is_recorded_and_not_retried(self):
         out = self.ingest(status='failed', musicxml='', problems=['P1 m3: 2 quarters, time signature wants 3'])
         self.assertIn('OMR_RESULT failed', out)
@@ -144,8 +153,10 @@ class OmrTest(WebTestBase):
         self.assertContains(page, '<dt>파트</dt><dd>2개</dd>', html=True)
         self.assertContains(page, '6/8 · 샵 1개')
         self.assertContains(page, 'name="part_P2" value="예진"')          # 고칠 수 있는 사람(리더)은 칸
-        self.assertContains(page, 'data-player')                           # 들어보기
+        self.assertContains(page, 'data-player')                           # 들어보기 — 쪽 보기 창 막대에
         self.assertContains(page, 'web/player.js')
+        self.assertContains(page, 'data-listen')
+        self.assertContains(page, 'id="page-map"')
         self.client.post(reverse('web:version_musicxml_parts', args=[self.score.pk, 1]), {'part_P1': '진호', 'part_P2': '예완'})
         self.client.force_login(self.member)
         page = self.client.get(detail)
@@ -175,6 +186,28 @@ class OmrTest(WebTestBase):
         self.score.refresh_from_db()
         delete_score(self.score)
         self.assertFalse((self.files_root / second_key).exists())
+
+
+class PageMapTest(SimpleTestCase):
+    """들어보기가 쪽을 따라 넘기는 데 쓰는 쪽별 마디 범위"""
+
+    def test_from_chunks(self):
+        data = {'run': {'page_measures': [{'pages': [1, 2], 'first': 1, 'last': 37}, {'pages': [3], 'first': 38, 'last': 50}]}}
+        self.assertEqual(omr.page_map(data, 3), [{'page': 1, 'first': 1, 'last': 18}, {'page': 2, 'first': 19, 'last': 37},
+                                                  {'page': 3, 'first': 38, 'last': 50}])
+
+    def test_estimate_without_chunks(self):
+        self.assertEqual(omr.page_map({'first_measure': '1', 'last_measure': '20'}, 2),
+                         [{'page': 1, 'first': 1, 'last': 10, 'estimated': True},
+                          {'page': 2, 'first': 11, 'last': 20, 'estimated': True}])
+        self.assertEqual(omr.page_map({}, 2), [])
+
+    def test_script_records_passed_chunks(self):
+        from scripts.astra_musicxml import page_measures
+        entries = [{'pages': [1], 'measures': [1, 13], 'problems': []},
+                   {'pages': [2], 'measures': [14, 20], 'problems': ['bad']},
+                   {'pages': [2], 'measures': [14, 25], 'problems': []}]
+        self.assertEqual(page_measures(entries), [{'pages': [1], 'first': 1, 'last': 13}, {'pages': [2], 'first': 14, 'last': 25}])
 
 
 class MergeChunksTest(SimpleTestCase):

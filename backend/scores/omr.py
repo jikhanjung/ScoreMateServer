@@ -163,6 +163,42 @@ def rename_parts(version, names):
     return changed
 
 
+def page_map(data, pages):
+    """[{'page', 'first', 'last'}] — 쪽마다 마디 범위. 인식 기록(run.page_measures)이 있으면 그것으로
+    (여러 쪽을 한 번에 옮긴 조각은 마디를 쪽 수로 나눈다), 없으면 전체 마디를 쪽 수로 고르게 나눈 짐작"""
+    result = []
+    for chunk in (data.get('run') or {}).get('page_measures') or []:
+        try:
+            first, last, chunk_pages = int(chunk['first']), int(chunk['last']), list(chunk['pages'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        span = (last - first + 1) / max(len(chunk_pages), 1)
+        for index, page in enumerate(chunk_pages):
+            result.append({'page': page, 'first': first + int(span * index),
+                           'last': first + int(span * (index + 1)) - 1 if index < len(chunk_pages) - 1 else last})
+    if result:
+        return sorted(result, key=lambda item: item['page'])
+    try:
+        first, last = int(data.get('first_measure')), int(data.get('last_measure'))
+    except (TypeError, ValueError):
+        return []
+    if not pages:
+        return []
+    span = (last - first + 1) / pages
+    return [{'page': p + 1, 'first': first + int(span * p), 'last': first + int(span * (p + 1)) - 1 if p < pages - 1 else last,
+             'estimated': True} for p in range(pages)]
+
+
+def set_page_measures(version, page_measures):
+    """이미 끝난 인식에 쪽별 마디를 채운다(호스트에 남은 조각 기록으로) — 들어보기가 쪽을 따라 넘기게"""
+    analysis = musicxml_of(version)
+    if analysis is None:
+        raise OmrError('No MusicXML for this version.')
+    data = dict(analysis.data)
+    data['run'] = dict(data.get('run') or {}, page_measures=page_measures)
+    ScoreAnalysis.objects.filter(pk=analysis.pk).update(data=data)
+
+
 def summary_for(version):
     """악보 상세의 "악보 인식" 칸 — {'status': ok|failed|waiting|none, …}"""
     if version is None:
@@ -190,7 +226,7 @@ def summary_for(version):
                 signatures.append(f"{text} ({change['measure']}마디부터)" if change['measure'] not in ('1', '0') else text)
         info.update(measures=data.get('measure_count'), first=data.get('first_measure'), last=data.get('last_measure'),
                     parts=data.get('parts') or [], signatures=signatures, bytes=data.get('musicxml_bytes'),
-                    renamed=bool(data.get('parts_renamed_at')))
+                    renamed=bool(data.get('parts_renamed_at')), page_map=page_map(data, version.pages))
     return info
 
 

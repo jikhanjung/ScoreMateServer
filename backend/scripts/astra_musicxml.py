@@ -17,6 +17,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -26,6 +27,11 @@ from fractions import Fraction
 from pathlib import Path
 
 import pymupdf
+
+try:
+    from . import omr_compact
+except ImportError:
+    import omr_compact
 
 MODEL = 'gpt-6-astra'
 SCHEMA = {'type': 'object', 'additionalProperties': False,
@@ -47,6 +53,25 @@ Rules:
 - Inspect the attached images directly. Do not read other files, run commands, or use external tools.
 {context}
 Return JSON: musicxml (the whole document as a string), first_measure and last_measure (measure numbers you used),
+notes (uncertainties, page by page)."""
+
+COMPACT_PROMPT = """You are an optical music recognition engine. The attached images are consecutive pages {pages} (of {total})
+of one printed score. Transcribe EVERYTHING on these pages: every part, every measure, clefs, key and time signatures,
+tempo and expression text, dynamics, every note and rest with correct pitch and duration, dots, ties, tuplets, chords,
+grace notes, articulations, slurs, and voices (a second voice on the same staff = another entry in "voices";
+the second staff of a piano/harp part = "staff": 2).
+
+Write it in this COMPACT form (not MusicXML — the program builds MusicXML from it):
+{format_help}
+Rules:
+- Every voice of every measure must add up exactly to the time signature (a pickup measure: "implicit": true).
+- The FIRST measure on these pages must give full attributes for every part (key, time, clef — and clef2 for a second
+  staff) even if they are not reprinted on the page. After that, give attributes only where something changes.
+- Each measure lists every part (use "R" for a whole-measure rest). Keep voice numbers stable from measure to measure.
+- Do not invent content. If something is unreadable, transcribe your best reading and say so in notes.
+- Inspect the attached images directly. Do not read other files, run commands, or use external tools.
+{context}
+Return JSON matching the schema: parts, measures, first_measure and last_measure (measure numbers you used),
 notes (uncertainties, page by page)."""
 
 META_SCHEMA = {'type': 'object', 'additionalProperties': False,
@@ -72,8 +97,37 @@ NEXT_CONTEXT = """- This continues a transcription already made from the previou
 {parts}
 - The previous pages ended with measure {last}. Continue numbering from {next} unless the printed measure numbers
   say otherwise.
-- State at the end of the previous pages (carry it into your first measure's <attributes>):
+- State at the end of the previous pages (carry it into your first measure's attributes):
 {state}"""
+
+
+def compact_state(state):
+    """end_state 한 파트 → 'key=2 time=6/8 clef=G2-8' (짧은 형식의 attributes 와 같은 꼴)"""
+    items = []
+    if state.get('key') is not None:
+        items.append(f"key={state['key']}")
+    if state.get('time'):
+        items.append(f"time={state['time']}")
+    for number, clef in sorted(state.get('clefs', {}).items()):
+        match = re.fullmatch(r'([GFC])(\d)(-?\d*)', clef)
+        text = clef
+        if match and match.group(3):
+            change = int(match.group(3))
+            text = f"{match.group(1)}{match.group(2)}{'-' if change < 0 else '+'}{8 if abs(change) == 1 else 15}"
+        items.append(f"{'clef' if number == '1' else 'clef' + number}={text}")
+    if state.get('staves'):
+        items.append(f"staves={state['staves']}")
+    return ' '.join(items)
+
+
+def time_state(merged):
+    """다음 쪽을 짧은 형식에서 바꿀 때 — 박자표가 다시 적히지 않은 마디의 길이"""
+    result = {}
+    for pid, s in end_state(merged).items():
+        if s.get('time'):
+            beats, beat_type = s['time'].split('/')
+            result[pid] = {'time': Fraction(int(beats) * 4, int(beat_type))}
+    return result
 
 
 def run(command, prompt, timeout):
@@ -227,10 +281,13 @@ def main():
     parser.add_argument('pdf', type=Path)
     parser.add_argument('outdir', type=Path)
     parser.add_argument('--chunk', type=int, default=1, help='pages per call (1 — 2 쪽 호출은 느리고 깨지기 쉬웠다, devlog 064)')
-    parser.add_argument('--effort', default='high', choices=('low', 'medium', 'high', 'xhigh', 'max'))
+    parser.add_argument('--effort', default='medium', choices=('low', 'medium', 'high', 'xhigh', 'max'),
+                        help='medium: K488 1쪽에서 high 와 34마디 중 33마디가 같았고 21%% 빨랐다(devlog 064)')
     parser.add_argument('--dpi', type=int, default=200)
     parser.add_argument('--timeout', type=float, default=3600)
     parser.add_argument('--pages', help='only these pages, e.g. 1-4 (for trials)')
+    parser.add_argument('--format', default='compact', choices=('compact', 'musicxml'),
+                        help='what the model writes: compact (short text → we build MusicXML, ~4x fewer tokens) or musicxml')
     args = parser.parse_args()
 
     pdf = pymupdf.open(args.pdf)
@@ -250,6 +307,7 @@ def main():
         print(f'metadata: {elapsed}s {meta.get("title")!r} / {meta.get("composer")!r} / {meta.get("arranger")!r}', flush=True)
 
     merged = None
+    ties = omr_compact.TieState()       # 쪽을 넘는 붙임줄 — 짧은 형식을 바꿀 때 이어 간다
     queue = list(chunks)
     while queue:
         pages = queue.pop(0)
@@ -258,7 +316,13 @@ def main():
         done, end = finished_from(args.outdir, pages[0])
         if done is not None:
             # 이미 끝난 조각 — 쪽 수가 지금 설정과 달라도(예전 두 쪽 조각) 그대로 쓰고 그만큼 건너뛴다
-            chunk = ET.parse(done).getroot()
+            compact = done.parent / 'chunk.json'
+            if compact.exists():     # 짧은 형식으로 끝난 조각 — 다시 바꿔 붙임줄 상태를 이어 간다(결과 XML 은 같다)
+                xml_text, _ = omr_compact.to_musicxml(json.loads(compact.read_text()), ties,
+                                                      time_state(merged) if merged is not None else None)
+                chunk = ET.fromstring(xml_text)
+            else:
+                chunk = ET.parse(done).getroot()
             queue = [group for group in ([p for p in g if p > end] for g in queue) if group]
         else:
             if merged is None:
@@ -266,16 +330,24 @@ def main():
             else:
                 expected = [pid for pid, _ in parts_of(merged)]
                 parts = '\n'.join(f'  {pid}: {name}' for pid, name in parts_of(merged))
-                state = '\n'.join(f'  {pid}: {json.dumps(s, ensure_ascii=False)}' for pid, s in end_state(merged).items())
+                if args.format == 'compact':
+                    state = '\n'.join(f'  {pid}: {compact_state(s)}' for pid, s in end_state(merged).items())
+                else:
+                    state = '\n'.join(f'  {pid}: {json.dumps(s, ensure_ascii=False)}' for pid, s in end_state(merged).items())
                 previous = int(last_measure(merged)) if last_measure(merged).isdigit() else 0
                 context = NEXT_CONTEXT.format(parts=parts, last=previous, next=previous + 1, state=state)
-            prompt = PROMPT.format(pages=pages, total=total, context=context)
+            if args.format == 'compact':
+                prompt = COMPACT_PROMPT.format(pages=pages, total=total, context=context,
+                                               format_help=omr_compact.FORMAT_HELP)
+                schema = omr_compact.SCHEMA
+            else:
+                prompt, schema = PROMPT.format(pages=pages, total=total, context=context), SCHEMA
             images = render(pdf, pages, args.outdir, args.dpi)
             result, problems = None, []
             for attempt in (1, 2):
                 try:
                     result, elapsed, usage = call_astra(images, prompt, workdir / f'attempt{attempt}', args.effort,
-                                                        args.timeout)
+                                                        args.timeout, schema)
                 except subprocess.TimeoutExpired:
                     result, problems = None, [f'no answer within {int(args.timeout)}s']
                     log_entry(log, pages, attempt, args.timeout, [], None, problems, '')
@@ -283,7 +355,14 @@ def main():
                     if len(pages) > 1:
                         break          # 여러 쪽이면 기다리지 말고 한 쪽씩으로
                     continue
-                problems = check(result['musicxml'], expected)
+                attempt_ties = omr_compact.TieState(ties)
+                if args.format == 'compact':
+                    xml_text, problems = omr_compact.to_musicxml(result, attempt_ties,
+                                                                 time_state(merged) if merged is not None else None)
+                    result['musicxml'] = xml_text
+                    problems = problems + ([] if problems else check(xml_text, expected))
+                else:
+                    problems = check(result['musicxml'], expected)
                 log_entry(log, pages, attempt, elapsed, usage, result, problems, result['notes'])
                 print(f'pages {pages} attempt {attempt}: {elapsed}s '
                       f"m{result['first_measure']}-{result['last_measure']} problems={len(problems)}", flush=True)
@@ -305,6 +384,11 @@ def main():
                 write_result(args, 'failed', [f'page {pages[0]}: {p}' for p in problems], log)
                 return 3
             workdir.mkdir(parents=True, exist_ok=True)
+            if args.format == 'compact':
+                ties.clear()
+                ties.update(attempt_ties)
+                page_data = {k: v for k, v in result.items() if k != 'musicxml'}
+                (workdir / 'chunk.json').write_text(json.dumps(page_data, ensure_ascii=False), encoding='utf-8')
             (workdir / 'chunk.musicxml').write_text(result['musicxml'])
             chunk = ET.fromstring(result['musicxml'])
         if merged is None:
@@ -362,7 +446,7 @@ def write_result(args, status, problems, log):
             for name, value in (turn or {}).items():
                 if isinstance(value, int):
                     usage[name] = usage.get(name, 0) + value
-    run = {'model': MODEL, 'effort': args.effort, 'dpi': args.dpi, 'pages_per_call': args.chunk,
+    run = {'model': MODEL, 'effort': args.effort, 'dpi': args.dpi, 'pages_per_call': args.chunk, 'format': args.format,
            'calls': len(entries), 'elapsed_seconds': round(sum(e.get('elapsed', 0) for e in entries), 1),
            'usage': usage,
            'notes': [f"pages {e['pages'][0]}-{e['pages'][-1]}: {e['notes']}" for e in entries if e.get('notes')][-40:]}

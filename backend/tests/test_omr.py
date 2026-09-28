@@ -217,7 +217,8 @@ class ChunkFallbackTest(SimpleTestCase):
                 return [str(exc)]
             return []
 
-        argv = ['astra_musicxml.py', str(pdf), str(out), '--dpi', '20'] + (['--chunk', str(chunk)] if chunk else [])
+        argv = ['astra_musicxml.py', str(pdf), str(out), '--dpi', '20', '--format', 'musicxml'] + \
+            (['--chunk', str(chunk)] if chunk else [])
         with patch.object(script, 'call_astra', fake_call), patch.object(script, 'check', fake_check), \
                 patch.object(sys, 'argv', argv):
             code = script.main()

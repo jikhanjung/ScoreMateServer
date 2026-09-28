@@ -61,6 +61,8 @@ docker cp "${CID}:/app/scripts/backup_db.py" "${ROOT}/scripts/backup_db.py" 2>/d
 # 악보 인식 레인(호스트 cron) — 인식 스크립트와 레인 셸. cron 등록 · codex 로그인 · venv 는 사람이 한 번(deploy/README.md §악보 인식)
 docker cp "${CID}:/app/scripts/astra_musicxml.py" "${ROOT}/scripts/astra_musicxml.py" 2>/dev/null \
     && echo "  extracted scripts/astra_musicxml.py" || true
+docker cp "${CID}:/app/scripts/omr_compact.py" "${ROOT}/scripts/omr_compact.py" 2>/dev/null \
+    && echo "  extracted scripts/omr_compact.py" || true
 if docker cp "${CID}:/app/deploy/host/omr_lane.sh" "${ROOT}/scripts/.omr_lane.sh.new" 2>/dev/null; then
     if bash -n "${ROOT}/scripts/.omr_lane.sh.new"; then
         chmod +x "${ROOT}/scripts/.omr_lane.sh.new" && mv -f "${ROOT}/scripts/.omr_lane.sh.new" "${ROOT}/scripts/omr_lane.sh" \

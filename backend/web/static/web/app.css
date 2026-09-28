@@ -193,3 +193,8 @@ details > summary { cursor: pointer; color: var(--accent); }
 .player-controls input[type=range] { vertical-align: middle; width: 9rem; }
 .player-controls input[type=text] { width: 4.5rem; display: inline-block; }
 .player [data-parts] { gap: .8rem; margin-top: .5rem; flex-wrap: wrap; }
+
+/* 목록 카드 — 썸네일 위 쪽수 */
+.card .thumb { position: relative; }
+.thumb-pages { position: absolute; right: .4rem; bottom: .4rem; padding: .05rem .4rem; border-radius: 999px;
+  background: rgba(0, 0, 0, .62); color: #fff; font-size: .72rem; line-height: 1.5; }

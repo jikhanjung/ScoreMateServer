@@ -9,7 +9,7 @@
   var tempoInput = root.querySelector('[data-tempo]'), tempoLabel = root.querySelector('[data-tempo-label]');
   var startInput = root.querySelector('[data-start]'), status = root.querySelector('[data-status]');
   var partsBox = root.querySelector('[data-parts]');
-  var score = null, audio = null, timer = null, state = 'stopped';
+  var score = null, audio = null, master = null, timer = null, state = 'stopped';
   var cursor = 0, playedFrom = 0, startedAt = 0, muted = {};
 
   function text(el, tag) { var x = el.querySelector(tag); return x ? x.textContent.trim() : null; }
@@ -66,30 +66,44 @@
 
   function secondsPerQuarter() { return 60 / Number(tempoInput.value); }
 
-  // 뜯는 소리 — 삼각파 + 배음, 빠른 어택 · 지수 감쇠. 파트마다 음색을 조금 다르게
-  function pluck(midi, when, length, index) {
+  // 여러 음이 겹쳐도 깨지지 않게 — 컴프레서 한 번 거쳐 내보낸다
+  function output() {
+    if (!master) {
+      master = audio.createDynamicsCompressor();
+      master.threshold.value = -18; master.knee.value = 12; master.ratio.value = 4;
+      master.attack.value = 0.005; master.release.value = 0.2;
+      master.connect(audio.destination);
+    }
+    return master;
+  }
+
+  // 음 하나 — 부드러운 어택, 적힌 길이 동안 이어지다(천천히 조금 줄어든다) 끝에서 자연스럽게 사라진다.
+  // (전엔 0.12초 만에 1/4 로 떨어져 모든 음이 스타카토처럼 들렸다)
+  function voice(midi, when, length, index) {
     var frequency = 440 * Math.pow(2, (midi - 69) / 12);
     var gain = audio.createGain(), out = audio.createGain();
     var body = audio.createOscillator(), overtone = audio.createOscillator();
-    body.type = index % 2 ? 'sawtooth' : 'triangle';
+    body.type = 'triangle';
     body.frequency.value = frequency;
+    body.detune.value = index % 2 ? 4 : -4;               // 파트마다 살짝 달리 — 겹쳐도 구분되게
     overtone.type = 'sine';
     overtone.frequency.value = frequency * 2;
     var overtoneGain = audio.createGain();
-    overtoneGain.gain.value = 0.25;
+    overtoneGain.gain.value = 0.18;
     var filter = audio.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = Math.min(4000, frequency * 6);
+    filter.frequency.value = Math.min(5000, frequency * (index % 2 ? 5 : 7));
     body.connect(gain); overtone.connect(overtoneGain); overtoneGain.connect(gain);
-    gain.connect(filter); filter.connect(out); out.connect(audio.destination);
-    out.gain.value = 0.18;
-    var ring = Math.min(Math.max(length, 0.25) + 0.35, 3);
+    gain.connect(filter); filter.connect(out); out.connect(output());
+    out.gain.value = 0.16;
+    var end = when + Math.max(length, 0.06);
+    var release = 0.18;
     gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.exponentialRampToValueAtTime(1, when + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.25, when + 0.12);
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + ring);
+    gain.gain.linearRampToValueAtTime(1, when + 0.012);
+    gain.gain.setTargetAtTime(0.7, when + 0.012, 0.25);          // 조금 줄어들어 이어진다
+    gain.gain.setTargetAtTime(0.0001, end, release / 3);         // 적힌 길이가 끝나면 사라진다
     body.start(when); overtone.start(when);
-    body.stop(when + ring + 0.05); overtone.stop(when + ring + 0.05);
+    body.stop(end + release * 2); overtone.stop(end + release * 2);
   }
 
   function beatNow() { return playedFrom + (audio.currentTime - startedAt) / secondsPerQuarter(); }
@@ -106,7 +120,7 @@
       var note = score.notes[cursor++];
       if (note.start < playedFrom - 1e-6 || muted[note.part]) continue;
       var when = startedAt + (note.start - playedFrom) * secondsPerQuarter();
-      pluck(note.midi, Math.max(when, audio.currentTime), note.length * secondsPerQuarter(), note.index);
+      voice(note.midi, Math.max(when, audio.currentTime), note.length * secondsPerQuarter(), note.index);
     }
     var beat = beatNow();
     status.textContent = beat >= score.end ? '끝' : measureAt(beat).number + '마디';
@@ -129,7 +143,7 @@
     halt();
     state = 'stopped';
     play.textContent = '재생';
-    if (audio) { audio.close(); audio = null; }
+    if (audio) { audio.close(); audio = null; master = null; }
   }
 
   function startBeat() {

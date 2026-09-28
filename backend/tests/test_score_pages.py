@@ -35,6 +35,10 @@ class ScorePagesTest(WebTestBase):
         self.assertContains(response, 'data-spread="1"')   # 한 쪽씩 · 두 쪽씩
         self.assertContains(response, 'data-spread="2"')
 
+    def test_list_card_shows_page_count(self):
+        self.assertContains(self.client.get(reverse('web:scores')), f'<span class="thumb-pages">{self.score.pages}쪽</span>',
+                            html=True)
+
     def test_page_is_rendered_once_and_redirected(self):
         with patch('scores.pages.render', wraps=pages.render) as render:
             first = self.page(2)

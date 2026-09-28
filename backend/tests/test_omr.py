@@ -73,6 +73,14 @@ class OmrTest(WebTestBase):
         ScoreVersion.objects.filter(pk=v2.pk).update(content_hash='cd' * 32)
         self.assertEqual([j['version_id'] for j in self.pending()], [v2.pk])
 
+    def test_pending_shortest_first(self):
+        ScoreVersion.objects.filter(pk=self.version.pk).update(pages=42)
+        short = ScoreFactory(user=self.leader, title='Clair de Lune', content_hash='cd' * 32)
+        ScoreVersion.objects.filter(score=short).update(content_hash='cd' * 32, pages=4)
+        unknown = ScoreFactory(user=self.leader, title='?', content_hash='ef' * 32)
+        ScoreVersion.objects.filter(score=unknown).update(content_hash='ef' * 32, pages=None)
+        self.assertEqual([j['title'] for j in self.pending()], ['Clair de Lune', 'Moldau', '?'])
+
     def test_ingest_ok_stores_file_and_summary(self):
         out = self.ingest()
         self.assertIn('OMR_RESULT ok', out)

@@ -34,11 +34,13 @@ def musicxml_key(version):
 
 
 def pending(limit=1):
-    """인식할 판 — 지금 쓰는 판 중 해시가 있고 이 분석이 (성공이든 실패든) 아직 없는 것, 오래된 것부터"""
+    """인식할 판 — 지금 쓰는 판 중 해시가 있고 이 분석이 (성공이든 실패든) 아직 없는 것. 쪽수가 적은 것부터
+    (한 쪽에 수 분 — 짧은 악보가 긴 악보 뒤에서 하루씩 기다리지 않게), 쪽수를 모르면 맨 뒤, 같으면 오래된 것부터"""
     done = ScoreAnalysis.objects.filter(analyzer=ANALYZER).values('version_id')
     versions = (ScoreVersion.objects.select_related('score')
                 .filter(score__current_version=F('pk'), mime='application/pdf')
-                .exclude(content_hash='').exclude(pk__in=done).order_by('pk'))
+                .exclude(content_hash='').exclude(pk__in=done)
+                .order_by(F('pages').asc(nulls_last=True), 'pk'))
     return list(versions[:limit])
 
 

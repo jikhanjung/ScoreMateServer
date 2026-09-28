@@ -136,7 +136,7 @@ class OmrTest(WebTestBase):
     def test_detail_shows_recognition_summary(self):
         detail = reverse('web:score_detail', args=[self.score.pk])
         self.client.force_login(self.leader)
-        self.assertContains(self.client.get(detail), '악보 인식 대기 중 — 1번째')
+        self.assertContains(self.client.get(detail), '악보 인식 중입니다')   # 맨 앞 = 레인이 처리 중
         self.ingest()
         page = self.client.get(detail)
         self.assertContains(page, 'id="omr"')

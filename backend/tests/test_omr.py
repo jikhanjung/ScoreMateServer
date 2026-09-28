@@ -29,6 +29,13 @@ from .test_web import WebTestBase
 SHA = 'ab' * 32
 
 
+def lay_out(version, staves=2):
+    """보표 · 마디 분석이 끝난 것으로 — 인식 대기열은 그 판만 고른다"""
+    from scores.layouts import ANALYZER, ANALYZER_VERSION
+    ScoreAnalysis.objects.update_or_create(version=version, analyzer=ANALYZER, defaults={
+        'analyzer_version': ANALYZER_VERSION, 'data': {'staves_counts': {str(staves): 3}, 'layout_key': 'x'}})
+
+
 def xml(measures=(('1', '6/8', '1'), ('2', None, None)), parts=(('P1', '진호'), ('P2', '예진'))):
     head = ''.join(f'<score-part id="{pid}"><part-name>{name}</part-name></score-part>' for pid, name in parts)
     body = ''
@@ -53,6 +60,7 @@ class OmrTest(WebTestBase):
         self.score = ScoreFactory(user=self.leader, ensemble=self.ensemble, title='Moldau', content_hash=SHA)
         ScoreVersion.objects.filter(score=self.score).update(content_hash=SHA)
         self.version = self.score.versions.get()
+        lay_out(self.version)
 
     def ingest(self, **bundle):
         bundle = {'version_id': self.version.pk, 'sha256': SHA, 'status': 'ok', 'musicxml': xml(),
@@ -70,7 +78,8 @@ class OmrTest(WebTestBase):
     def test_pending_lists_current_versions_with_hash(self):
         jobs = self.pending()
         self.assertEqual([j['version_id'] for j in jobs], [self.version.pk])
-        self.assertEqual((jobs[0]['sha256'], jobs[0]['key'], jobs[0]['title']), (SHA, self.version.s3_key, 'Moldau'))
+        self.assertEqual((jobs[0]['sha256'], jobs[0]['key'], jobs[0]['title'], jobs[0]['staves_per_system']),
+                         (SHA, self.version.s3_key, 'Moldau', 2))
 
         # 처리 중(해시 없음)인 판은 아직 아니다 · 지금 쓰지 않는 판도 아니다
         ScoreVersion.objects.filter(pk=self.version.pk).update(content_hash='')
@@ -79,7 +88,9 @@ class OmrTest(WebTestBase):
         v2 = add_version(self.score, user=self.leader, s3_key=f'{self.leader.pk}/uploads/v2/original.pdf',
                          size_bytes=1000, original_filename='v2.pdf')
         ScoreVersion.objects.filter(pk=v2.pk).update(content_hash='cd' * 32)
-        self.assertEqual([j['version_id'] for j in self.pending()], [v2.pk])
+        self.assertEqual(self.pending(), [])                     # 보표 · 마디 분석이 먼저
+        lay_out(v2, staves=3)
+        self.assertEqual([(j['version_id'], j['staves_per_system']) for j in self.pending()], [(v2.pk, 3)])
 
     def test_pending_shortest_first(self):
         ScoreVersion.objects.filter(pk=self.version.pk).update(pages=42)
@@ -87,6 +98,8 @@ class OmrTest(WebTestBase):
         ScoreVersion.objects.filter(score=short).update(content_hash='cd' * 32, pages=4)
         unknown = ScoreFactory(user=self.leader, title='?', content_hash='ef' * 32)
         ScoreVersion.objects.filter(score=unknown).update(content_hash='ef' * 32, pages=None)
+        for score in (short, unknown):
+            lay_out(score.versions.get())
         self.assertEqual([j['title'] for j in self.pending()], ['Clair de Lune', 'Moldau', '?'])
 
     def test_ingest_ok_stores_file_and_summary(self):
@@ -98,6 +111,7 @@ class OmrTest(WebTestBase):
         self.assertEqual([p['name'] for p in data['parts']], ['진호', '예진'])
         self.assertEqual((data['measure_count'], data['first_measure'], data['last_measure']), (2, '1', '2'))
         self.assertEqual(data['changes'], [{'measure': '1', 'time': '6/8'}, {'measure': '1', 'key_fifths': 1}])
+        self.assertEqual([p['staves'] for p in data['parts']], [1, 1])
         self.assertIsNone(analysis.uploaded_by)
         stored = (self.files_root / data['musicxml_key']).read_text(encoding='utf-8')
         self.assertIn('<score-partwise', stored)
@@ -150,7 +164,8 @@ class OmrTest(WebTestBase):
         page = self.client.get(detail)
         self.assertContains(page, 'id="omr"')
         self.assertContains(page, '<dt>마디</dt><dd>2마디', html=False)
-        self.assertContains(page, '<dt>파트</dt><dd>2개</dd>', html=True)
+        self.assertContains(page, '<dt>파트</dt><dd>2개 <span class="muted small">· 보표 2개</span></dd>', html=True)
+        self.assertContains(page, '<th>보표</th>')
         self.assertContains(page, '6/8 · 샵 1개')
         self.assertContains(page, 'name="part_P2" value="예진"')          # 고칠 수 있는 사람(리더)은 칸
         self.assertContains(page, 'data-player')                           # 들어보기 — 쪽 보기 창 막대에
@@ -171,13 +186,13 @@ class OmrTest(WebTestBase):
 
     def test_deleting_version_or_score_removes_musicxml(self):
         self.ingest()
-        first_key = ScoreAnalysis.objects.get(version=self.version).data['musicxml_key']
+        first_key = ScoreAnalysis.objects.get(version=self.version, analyzer=omr.ANALYZER).data['musicxml_key']
         v2 = add_version(self.score, user=self.leader, s3_key=f'{self.leader.pk}/uploads/v2/original.pdf',
                          size_bytes=1000, original_filename='v2.pdf')
         ScoreVersion.objects.filter(pk=v2.pk).update(content_hash='cd' * 32)
         self.version = v2
         self.ingest(sha256='cd' * 32)
-        second_key = ScoreAnalysis.objects.get(version=v2).data['musicxml_key']
+        second_key = ScoreAnalysis.objects.get(version=v2, analyzer=omr.ANALYZER).data['musicxml_key']
         self.assertNotEqual(first_key, second_key)
 
         delete_version(self.score, self.score.versions.get(number=1))

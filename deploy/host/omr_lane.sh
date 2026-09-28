@@ -42,7 +42,9 @@ JOB=$(manage omr_pending --limit 1 2>/dev/null | sed -n 's/^OMR_JOB //p' | head 
 [ -z "${JOB}" ] && exit 0
 
 field() { printf '%s' "${JOB}" | python3 -c "import json,sys; print(json.load(sys.stdin)['$1'])"; }
-VID=$(field version_id); KEY=$(field key); SHA=$(field sha256); TITLE=$(field title)
+VID=$(field version_id); KEY=$(field key); SHA=$(field sha256); TITLE=$(field title); STAVES=$(field staves_per_system)
+EXTRA=()
+[ "${STAVES}" != "None" ] && [ -n "${STAVES}" ] && EXTRA=(--staves "${STAVES}")   # 보표 분석이 잰 시스템마다 보표 수
 PDF="${ROOT}/files/${KEY}"
 WORK="${OMR}/work/v${VID}"
 mkdir -p "${WORK}"
@@ -55,7 +57,7 @@ if [ "${ACTUAL}" != "${SHA}" ]; then
 fi
 
 log "START v${VID} ${TITLE} (${KEY})"
-"${VENV}/bin/python" "${ROOT}/scripts/astra_musicxml.py" "${PDF}" "${WORK}" >> "${WORK}/run.log" 2>&1
+"${VENV}/bin/python" "${ROOT}/scripts/astra_musicxml.py" "${PDF}" "${WORK}" "${EXTRA[@]}" >> "${WORK}/run.log" 2>&1
 RC=$?
 
 bundle() {   # status → 표준 출력 JSON (omr_ingest 입력)

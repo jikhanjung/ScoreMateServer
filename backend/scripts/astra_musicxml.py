@@ -90,8 +90,12 @@ key_fifths (the key signature at the start of the FIRST staff: number of sharps,
 each accidental in the signature carefully, 0 if none), time (the time signature there, e.g. "6/8"), notes.
 Inspect the attached image directly. Do not read other files, run commands, or use external tools."""
 
-FIRST_CONTEXT = """- These are the first pages. Use the instrument names printed at the left as part names, part ids P1, P2, …
-  in score order. Number measures as printed (a pickup measure is 0)."""
+FIRST_CONTEXT = """- These are the first pages. Part ids P1, P2, … in score order. Number measures as printed (a pickup measure is 0).
+- Part names: ONLY the names printed at the start of the staves. If a staff has no printed name, call it "Staff 1",
+  "Staff 2", … in order. NEVER infer instruments from the title, subtitle or composer (a piece titled for piano may be
+  arranged for guitars). One part = one staff, unless one printed name (e.g. "Piano") spans two staves joined by a brace.{staves}"""
+STAVES_CONTEXT = """
+- Measured from the PDF drawing: every system here has exactly {count} staves. Your parts' staves must add up to {count}."""
 
 NEXT_CONTEXT = """- This continues a transcription already made from the previous pages. Use EXACTLY these parts, ids and order
   (a part may be printed with an abbreviated name or be absent on a page — still include it, filling absent measures
@@ -302,6 +306,7 @@ def main():
     parser.add_argument('--dpi', type=int, default=200)
     parser.add_argument('--timeout', type=float, default=3600)
     parser.add_argument('--pages', help='only these pages, e.g. 1-4 (for trials)')
+    parser.add_argument('--staves', type=int, help='staves per system measured by the layout analysis (checks the part list)')
     parser.add_argument('--format', default='compact', choices=('compact', 'musicxml'),
                         help='what the model writes: compact (short text → we build MusicXML, ~4x fewer tokens) or musicxml')
     args = parser.parse_args()
@@ -344,7 +349,8 @@ def main():
             queue = [group for group in ([p for p in g if p > end] for g in queue) if group]
         else:
             if merged is None:
-                context, expected = FIRST_CONTEXT, None
+                context = FIRST_CONTEXT.format(staves=STAVES_CONTEXT.format(count=args.staves) if args.staves else '')
+                expected = None
             else:
                 expected = [pid for pid, _ in parts_of(merged)]
                 parts = '\n'.join(f'  {pid}: {name}' for pid, name in parts_of(merged))
@@ -381,6 +387,12 @@ def main():
                     problems = problems + ([] if problems else check(xml_text, expected))
                     if merged is None and attempt == 1:
                         problems += key_disagreement(result, meta)
+                    if merged is None and args.staves:
+                        total = sum(max(1, int(p.get('staves') or 1)) for p in result.get('parts') or [])
+                        if total != args.staves:
+                            problems.append(f'staves: your parts have {total} staves in total, but every system has '
+                                            f'{args.staves} staves (measured from the PDF) — one part per staff unless a '
+                                            f'printed name spans two braced staves')
                 else:
                     problems = check(result['musicxml'], expected)
                 log_entry(log, pages, attempt, elapsed, usage, result, problems, result['notes'])

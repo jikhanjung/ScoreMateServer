@@ -112,3 +112,50 @@ class KeyCheckTest(SimpleTestCase):
         self.assertIn('key=3', key_disagreement(wrong, {'key_fifths': 2})[0])
         self.assertEqual(key_disagreement(wrong, {'key_fifths': 3}), [])
         self.assertEqual(key_disagreement(wrong, {}), [])                       # 예전 곡 정보(조표 없음)
+
+
+class StavesCheckTest(SimpleTestCase):
+    """보표 분석이 잰 시스템마다 보표 수와 첫 쪽 파트들의 보표 합이 달라야 걸린다 (Arpeggione: 기타 셋 → 아르페지오네 + 피아노)"""
+
+    def run_first_page(self, parts, staves):
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        import fitz
+        from scripts import astra_musicxml as script
+        tmp = Path(tempfile.mkdtemp(prefix='omr-'))
+        self.addCleanup(__import__('shutil').rmtree, tmp, ignore_errors=True)
+        document = fitz.open()
+        document.new_page()
+        document.save(tmp / 'score.pdf')
+        prompts = []
+
+        def fake_call(images, prompt, workdir, effort, timeout, schema=script.SCHEMA):
+            if schema is script.META_SCHEMA:
+                return {'title': 'T'}, 1.0, []
+            prompts.append(prompt)
+            voices = []
+            data = {'parts': parts, 'first_measure': 1, 'last_measure': 1, 'notes': '', 'measures': [{
+                'number': '1', 'implicit': False, 'parts': [
+                    {'id': p['id'], 'attributes': 'key=0 time=3/4 clef=G2' + (' clef2=F4' if p['staves'] == 2 else ''),
+                     'barline': '', 'voices': [{'voice': 1, 'staff': 1, 'events': 'R'}]} for p in parts]}]}
+            return data, 1.0, []
+        argv = ['astra_musicxml.py', str(tmp / 'score.pdf'), str(tmp / 'out'), '--dpi', '20', '--staves', str(staves)]
+        with patch.object(script, 'call_astra', fake_call), patch.object(script, 'check', lambda text, expected=None: []), \
+                patch.object(sys, 'argv', argv):
+            code = script.main()
+        return code, prompts
+
+    def test_wrong_part_list_is_rejected(self):
+        code, prompts = self.run_first_page([{'id': 'P1', 'name': 'Arpeggione', 'staves': 1},
+                                             {'id': 'P2', 'name': 'Pianoforte', 'staves': 2}], staves=2)
+        self.assertEqual(code, 3)
+        self.assertIn('every system here has exactly 2 staves', prompts[0])
+        self.assertIn('NEVER infer instruments from the title', prompts[0])
+        self.assertIn('your parts have 3 staves in total', prompts[1])
+
+    def test_matching_part_list_passes(self):
+        code, _ = self.run_first_page([{'id': f'P{i}', 'name': f'Staff {i}', 'staves': 1} for i in (1, 2, 3)], staves=3)
+        self.assertEqual(code, 0)

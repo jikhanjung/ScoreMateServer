@@ -54,9 +54,12 @@ def analyze_version(version, pdf_bytes=None):
             signatures.append({'page': page['pageIndex'] + 1, 'system': mark['systemIndex'] + 1,
                                'time': f"{mark['numerator']}/{mark['denominator']}"})
     labels = sorted({s['label'] for s in document['staves'] if s.get('label')})
+    from collections import Counter
+    staves_counts = dict(Counter(str(len(s['staffBands'])) for p in document['pages'] for s in p['systems']))
     data = {'status': 'ok', 'layout_key': key, 'layout_sha256': hashlib.sha256(raw).hexdigest(), 'layout_bytes': len(raw),
             'page_count': document['page_count'], 'system_count': document['system_count'],
             'measure_count': document['measure_count'], 'time_signatures': signatures[:50], 'labels': labels[:50],
+            'staves_counts': staves_counts,
             'source': score_layout.SOURCE}
     data.update(analyzer_version=ANALYZER_VERSION, app_commit=APP_COMMIT)
     with transaction.atomic():
@@ -65,6 +68,24 @@ def analyze_version(version, pdf_bytes=None):
             defaults={'analyzer_version': ANALYZER_VERSION, 'data': data, 'uploaded_by': None, 'device': None})
         Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())   # 기기가 다음 동기화에 알아채게
     return analysis
+
+
+def staves_per_system(version):
+    """이 판의 시스템마다 보표 수(가장 많은 값) — 없으면 None. 악보 인식이 파트를 지어내지 않게 알려 준다"""
+    from collections import Counter
+    analysis = next((a for a in version.analyses.all() if a.analyzer == ANALYZER), None) if hasattr(version, 'analyses') else None
+    if analysis is None:
+        return None
+    counts = (analysis.data or {}).get('staves_counts')
+    if not counts:
+        try:
+            document = json.loads(get_storage().read_bytes(analysis.data['layout_key']))
+        except Exception:  # noqa: BLE001
+            return None
+        counts = dict(Counter(str(len(s['staffBands'])) for p in document['pages'] for s in p['systems']))
+    if not counts:
+        return None
+    return int(max(counts.items(), key=lambda item: (item[1], item[0]))[0])
 
 
 def layout_of(version):

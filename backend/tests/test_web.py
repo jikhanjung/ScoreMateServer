@@ -172,6 +172,13 @@ class ScorePagesTest(WebTestBase):
 
 class UploadTest(WebTestBase):
 
+    def test_upload_page_has_big_dropzone(self):
+        self.as_user(self.member)
+        page = self.client.get(reverse('web:score_upload'))
+        self.assertContains(page, 'data-dropzone')
+        self.assertContains(page, 'PDF 를 여기에 끌어다 놓으세요')
+        self.assertContains(page, 'type="file"')
+
     def test_upload_personal_pdf(self):
         self.as_user(self.member)
         response = self.client.post(reverse('web:score_upload'), {'files': pdf_file('La Gazza Ladra.pdf'), 'title': ''})

@@ -36,18 +36,22 @@ def musicxml_key(version):
 def pending(limit=1):
     """인식할 판 — 지금 쓰는 판 중 해시가 있고 이 분석이 (성공이든 실패든) 아직 없는 것. 쪽수가 적은 것부터
     (한 쪽에 수 분 — 짧은 악보가 긴 악보 뒤에서 하루씩 기다리지 않게), 쪽수를 모르면 맨 뒤, 같으면 오래된 것부터"""
+    from .layouts import ANALYZER as LAYOUT
     done = ScoreAnalysis.objects.filter(analyzer=ANALYZER).values('version_id')
+    # 보표 · 마디 분석(scores/layouts.py)이 먼저 — 시스템마다 보표 수를 인식에 알려 준다(Arpeggione: 기타 셋을 아르페지오네 + 피아노로 지어냈다)
+    laid_out = ScoreAnalysis.objects.filter(analyzer=LAYOUT).values('version_id')
     versions = (ScoreVersion.objects.select_related('score')
-                .filter(score__current_version=F('pk'), mime='application/pdf')
+                .filter(score__current_version=F('pk'), mime='application/pdf', pk__in=laid_out)
                 .exclude(content_hash='').exclude(pk__in=done)
                 .order_by(F('pages').asc(nulls_last=True), 'pk'))
     return list(versions[:limit])
 
 
 def job(version):
+    from .layouts import staves_per_system
     return {'version_id': version.pk, 'score_id': version.score_id, 'number': version.number,
             'title': version.score.title, 'key': version.s3_key, 'sha256': version.content_hash,
-            'pages': version.pages}
+            'pages': version.pages, 'staves_per_system': staves_per_system(version)}
 
 
 def measure_summary(xml_text):
@@ -62,8 +66,11 @@ def measure_summary(xml_text):
     parts = root.findall('part')
     if not parts:
         raise OmrError('MusicXML has no parts')
-    summary = {'parts': [{'id': p.get('id'), 'name': names.get(p.get('id'), ''), 'measures': len(p.findall('measure'))}
-                         for p in parts]}
+    def staves(part):
+        text = part.findtext('measure/attributes/staves')
+        return int(text) if text and text.isdigit() else 1
+    summary = {'parts': [{'id': p.get('id'), 'name': names.get(p.get('id'), ''), 'measures': len(p.findall('measure')),
+                          'staves': staves(p)} for p in parts]}
     changes, time_sig, key = [], None, None
     for measure in parts[0].findall('measure'):
         for attributes in measure.findall('attributes'):
@@ -189,6 +196,20 @@ def page_map(data, pages):
              'estimated': True} for p in range(pages)]
 
 
+def refresh_summary(version):
+    """저장된 MusicXML 로 요약(parts 의 staves 등)을 다시 만든다 — 요약에 칸을 더했을 때 옛 결과를 맞춘다"""
+    analysis = musicxml_of(version)
+    if analysis is None:
+        return None
+    summary = measure_summary(get_storage().read_bytes(analysis.data['musicxml_key']).decode('utf-8'))
+    names = {p['id']: p['name'] for p in analysis.data.get('parts', [])}      # 사람이 고친 이름은 그대로
+    for part in summary['parts']:
+        part['name'] = names.get(part['id'], part['name'])
+    data = dict(analysis.data, **summary)
+    ScoreAnalysis.objects.filter(pk=analysis.pk).update(data=data)
+    return summary
+
+
 def set_page_measures(version, page_measures):
     """이미 끝난 인식에 쪽별 마디를 채운다(호스트에 남은 조각 기록으로) — 들어보기가 쪽을 따라 넘기게"""
     analysis = musicxml_of(version)
@@ -226,7 +247,8 @@ def summary_for(version):
                 signatures.append(f"{text} ({change['measure']}마디부터)" if change['measure'] not in ('1', '0') else text)
         info.update(measures=data.get('measure_count'), first=data.get('first_measure'), last=data.get('last_measure'),
                     parts=data.get('parts') or [], signatures=signatures, bytes=data.get('musicxml_bytes'),
-                    renamed=bool(data.get('parts_renamed_at')), page_map=page_map(data, version.pages))
+                    renamed=bool(data.get('parts_renamed_at')), page_map=page_map(data, version.pages),
+                    staves_total=sum(int(p.get('staves') or 1) for p in data.get('parts') or []))
     return info
 
 

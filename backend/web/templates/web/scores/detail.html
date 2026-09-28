@@ -43,7 +43,7 @@
   <dl class="meta">
     <dt>마디</dt><dd>{{ omr.measures }}마디{% if omr.first and omr.last %} <span class="muted small">({{ omr.first }}–{{ omr.last }})</span>{% endif %}</dd>
     <dt>쪽</dt><dd>{{ score.pages|default:'?' }}쪽</dd>
-    <dt>파트</dt><dd>{{ omr.parts|length }}개</dd>
+    <dt>파트</dt><dd>{{ omr.parts|length }}개{% if omr.staves_total %} <span class="muted small">· 보표 {{ omr.staves_total }}개{% if layout_staves and layout_staves != omr.staves_total %} — PDF 분석은 시스템마다 보표 {{ layout_staves }}개{% endif %}</span>{% endif %}</dd>
     {% if omr.signatures %}<dt>박자 · 조표</dt><dd>{{ omr.signatures|join:' · ' }}</dd>{% endif %}
     <dt>인식</dt><dd>{{ omr.updated_at|date:'Y-m-d H:i' }}{% if omr.elapsed_minutes %} <span class="muted small">· {{ omr.elapsed_minutes }}분 걸림</span>{% endif %}
       · <a href="{% url 'web:version_musicxml' score.pk current_version.number %}">MusicXML 받기</a>{% if omr.bytes %} <span class="muted small">({{ omr.bytes|filesizeformat }})</span>{% endif %}</dd>
@@ -52,12 +52,13 @@
   <form method="post" action="{% url 'web:version_musicxml_parts' score.pk current_version.number %}" class="omr-parts">{% csrf_token %}
   {% endif %}
     <table class="stacked">
-      <thead><tr><th>#</th><th>파트 이름</th><th>마디</th></tr></thead>
+      <thead><tr><th>#</th><th>파트 이름</th><th>보표</th><th>마디</th></tr></thead>
       <tbody>
       {% for p in omr.parts %}
         <tr>
           <td class="muted small">{{ forloop.counter }}</td>
           <td>{% if score.editable %}<input type="text" name="part_{{ p.id }}" value="{{ p.name }}" maxlength="100" aria-label="{{ forloop.counter }}번째 파트 이름">{% else %}{{ p.name }}{% endif %}</td>
+          <td class="small">{{ p.staves|default:1 }}</td>
           <td class="small">{{ p.measures }}</td>
         </tr>
       {% endfor %}

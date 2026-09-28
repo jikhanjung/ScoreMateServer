@@ -200,3 +200,15 @@ details > summary { cursor: pointer; color: var(--accent); }
 .card .thumb { position: relative; }
 .thumb-pages { position: absolute; right: .4rem; bottom: .4rem; padding: .05rem .4rem; border-radius: 999px;
   background: rgba(0, 0, 0, .62); color: #fff; font-size: .72rem; line-height: 1.5; }
+
+/* 올리기 드롭존 — 크게 */
+.dropzone { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem;
+  min-height: 15rem; padding: 2rem 1rem; text-align: center; cursor: pointer;
+  border: 2px dashed var(--line); border-radius: var(--radius); background: var(--surface-2); transition: border-color .15s, background .15s; }
+.dropzone:hover, .dropzone:focus-within { border-color: var(--accent); }
+.dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone-icon { font-size: 2.4rem; line-height: 1; color: var(--accent); }
+.dropzone strong { font-size: 1.1rem; }
+.dropzone input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.dropzone-files { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-top: .4rem; }
+.dropzone-file { padding: .15rem .55rem; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: .85rem; }

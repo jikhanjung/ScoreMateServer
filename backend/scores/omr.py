@@ -163,6 +163,37 @@ def rename_parts(version, names):
     return changed
 
 
+def summary_for(version):
+    """악보 상세의 "악보 인식" 칸 — {'status': ok|failed|waiting|none, …}"""
+    if version is None:
+        return {'status': 'none'}
+    analysis = next((a for a in version.analyses.all() if a.analyzer == ANALYZER), None)
+    if analysis is None:
+        if not version.content_hash or version.score.current_version_id != version.pk:
+            return {'status': 'none'}
+        queue = [v.pk for v in pending(limit=1000)]
+        return {'status': 'waiting', 'position': queue.index(version.pk) + 1 if version.pk in queue else None}
+    data = analysis.data or {}
+    run = data.get('run') or {}
+    info = {'status': data.get('status'), 'analysis': analysis, 'updated_at': analysis.updated_at,
+            'metadata': data.get('metadata') or {}, 'elapsed_minutes': round((run.get('elapsed_seconds') or 0) / 60),
+            'problems': data.get('problems') or []}
+    if data.get('status') == STATUS_OK:
+        signatures = []
+        for change in data.get('changes') or []:
+            if 'time' in change:
+                signatures.append(f"{change['time']} ({change['measure']}마디부터)" if change['measure'] not in ('1', '0')
+                                  else change['time'])
+            if 'key_fifths' in change:
+                fifths = change['key_fifths']
+                text = f'샵 {fifths}개' if fifths > 0 else f'플랫 {-fifths}개' if fifths < 0 else '조표 없음'
+                signatures.append(f"{text} ({change['measure']}마디부터)" if change['measure'] not in ('1', '0') else text)
+        info.update(measures=data.get('measure_count'), first=data.get('first_measure'), last=data.get('last_measure'),
+                    parts=data.get('parts') or [], signatures=signatures, bytes=data.get('musicxml_bytes'),
+                    renamed=bool(data.get('parts_renamed_at')))
+    return info
+
+
 def musicxml_filename(score, version):
     """받을 때 파일 이름 — PDF 와 같은 이름에 .musicxml (기기가 PDF 옆에 둔다)"""
     original = version.original_filename or score.original_filename or f'{score.title}.pdf'

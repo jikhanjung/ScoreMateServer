@@ -1,4 +1,5 @@
 {% extends 'web/base.html' %}
+{% load static %}
 {% block title %}{{ score.title }}{% endblock %}
 {% block content %}
 <div class="detail">
@@ -33,6 +34,61 @@
     {% if score.note %}<div class="box"><div class="muted small">메모</div>{{ score.note|linebreaksbr }}</div>{% endif %}
   </div>
 </div>
+
+{% if omr.status != 'none' %}
+<h2 id="omr">악보 인식</h2>
+<div class="box omr-box">
+  {% if omr.status == 'ok' %}
+  <dl class="meta">
+    <dt>마디</dt><dd>{{ omr.measures }}마디{% if omr.first and omr.last %} <span class="muted small">({{ omr.first }}–{{ omr.last }})</span>{% endif %}</dd>
+    <dt>쪽</dt><dd>{{ score.pages|default:'?' }}쪽</dd>
+    <dt>파트</dt><dd>{{ omr.parts|length }}개</dd>
+    {% if omr.signatures %}<dt>박자 · 조표</dt><dd>{{ omr.signatures|join:' · ' }}</dd>{% endif %}
+    <dt>인식</dt><dd>{{ omr.updated_at|date:'Y-m-d H:i' }}{% if omr.elapsed_minutes %} <span class="muted small">· {{ omr.elapsed_minutes }}분 걸림</span>{% endif %}
+      · <a href="{% url 'web:version_musicxml' score.pk current_version.number %}">MusicXML 받기</a>{% if omr.bytes %} <span class="muted small">({{ omr.bytes|filesizeformat }})</span>{% endif %}</dd>
+  </dl>
+  {% if score.editable %}
+  <form method="post" action="{% url 'web:version_musicxml_parts' score.pk current_version.number %}" class="omr-parts">{% csrf_token %}
+  {% endif %}
+    <table class="stacked">
+      <thead><tr><th>#</th><th>파트 이름</th><th>마디</th></tr></thead>
+      <tbody>
+      {% for p in omr.parts %}
+        <tr>
+          <td class="muted small">{{ forloop.counter }}</td>
+          <td>{% if score.editable %}<input type="text" name="part_{{ p.id }}" value="{{ p.name }}" maxlength="100" aria-label="{{ forloop.counter }}번째 파트 이름">{% else %}{{ p.name }}{% endif %}</td>
+          <td class="small">{{ p.measures }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% if score.editable %}
+    <div class="row" style="justify-content:space-between; margin-top:.6rem">
+      <span class="muted small">이름은 악보 인식이 읽은 것입니다 — 한글은 비슷한 글자(원/완)를 잘못 읽을 수 있습니다. 고치면 연결 기기가 새로 받습니다.</span>
+      <button class="btn sm primary" type="submit">파트 이름 저장</button>
+    </div>
+  </form>
+  {% endif %}
+  <div class="player" data-player data-url="{% url 'web:version_musicxml' score.pk current_version.number %}">
+    <h3>들어보기</h3>
+    <div class="row player-controls">
+      <button class="btn sm primary" type="button" data-play>재생</button>
+      <button class="btn sm" type="button" data-stop>정지</button>
+      <label class="small">빠르기 ♩=<span data-tempo-label></span> <input type="range" min="30" max="200" step="2" value="80" data-tempo aria-label="빠르기"></label>
+      <label class="small">시작 마디 <input type="text" inputmode="numeric" value="{{ omr.first|default:'1' }}" size="4" data-start aria-label="시작 마디"></label>
+      <span class="small muted" data-status></span>
+    </div>
+    <div class="row small" data-parts></div>
+    <p class="hint">악보 인식 결과를 소리로 들어 봅니다 — 인식이 맞는지 확인할 때. 적힌 순서대로 재생하고 도돌이표는 따르지 않습니다.</p>
+  </div>
+  {% elif omr.status == 'failed' %}
+  <p>악보 인식이 검산을 통과하지 못했습니다. <span class="muted small">({{ omr.updated_at|date:'Y-m-d H:i' }})</span></p>
+  {% if omr.problems %}<details><summary class="small">문제 {{ omr.problems|length }}개</summary><ul class="small">{% for p in omr.problems|slice:':10' %}<li>{{ p }}</li>{% endfor %}</ul></details>{% endif %}
+  {% elif omr.status == 'waiting' %}
+  <p class="muted">악보 인식 대기 중{% if omr.position %} — {{ omr.position }}번째{% endif %}. 쪽수가 적은 악보부터 차례로 처리합니다.</p>
+  {% endif %}
+</div>
+{% endif %}
 
 {% if page_numbers and score.current_version.content_hash %}
 <h2 id="pages">쪽 ({{ score.pages }})</h2>
@@ -78,7 +134,7 @@
           <div class="actions" style="justify-content:flex-end">
             <a class="btn sm" href="{% url 'web:version_view' score.pk v.number %}" target="_blank" rel="noopener">보기</a>
             <a class="btn sm" href="{% url 'web:version_download' score.pk v.number %}">받기</a>
-            {% for a in v.analyses.all %}{% if a.analyzer == 'astra-musicxml' and a.data.status == 'ok' %}<a class="btn sm" href="{% url 'web:version_musicxml' score.pk v.number %}">MusicXML</a>{% if score.editable %}<a class="btn sm" href="{% url 'web:version_musicxml_parts' score.pk v.number %}">파트 이름</a>{% endif %}{% endif %}{% endfor %}
+            {% for a in v.analyses.all %}{% if a.analyzer == 'astra-musicxml' and a.data.status == 'ok' %}<a class="btn sm" href="{% url 'web:version_musicxml' score.pk v.number %}">MusicXML</a>{% if score.editable and v.pk != score.current_version_id %}<a class="btn sm" href="{% url 'web:version_musicxml_parts' score.pk v.number %}">파트 이름</a>{% endif %}{% endif %}{% endfor %}
             {% if score.editable and v.pk != score.current_version_id %}
             <form method="post" action="{% url 'web:version_make_current' score.pk v.number %}" class="inline">{% csrf_token %}<button class="btn sm" type="submit">이 판으로</button></form>
             {% endif %}
@@ -196,4 +252,5 @@
 })();
 </script>
 {% endif %}
+{% if omr.status == 'ok' %}<script src="{% static 'web/player.js' %}" defer></script>{% endif %}
 {% endblock %}

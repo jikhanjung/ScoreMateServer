@@ -133,6 +133,25 @@ class OmrTest(WebTestBase):
         self.client.force_login(self.outsider)
         self.assertEqual(self.client.get(url).status_code, 404)
 
+    def test_detail_shows_recognition_summary(self):
+        detail = reverse('web:score_detail', args=[self.score.pk])
+        self.client.force_login(self.leader)
+        self.assertContains(self.client.get(detail), '악보 인식 대기 중 — 1번째')
+        self.ingest()
+        page = self.client.get(detail)
+        self.assertContains(page, 'id="omr"')
+        self.assertContains(page, '<dt>마디</dt><dd>2마디', html=False)
+        self.assertContains(page, '<dt>파트</dt><dd>2개</dd>', html=True)
+        self.assertContains(page, '6/8 · 샵 1개')
+        self.assertContains(page, 'name="part_P2" value="예진"')          # 고칠 수 있는 사람(리더)은 칸
+        self.assertContains(page, 'data-player')                           # 들어보기
+        self.assertContains(page, 'web/player.js')
+        self.client.post(reverse('web:version_musicxml_parts', args=[self.score.pk, 1]), {'part_P1': '진호', 'part_P2': '예완'})
+        self.client.force_login(self.member)
+        page = self.client.get(detail)
+        self.assertContains(page, '<td>예완</td>', html=True)              # 멤버는 보기만
+        self.assertNotContains(page, 'name="part_P2"')
+
     def test_no_download_for_failed_result(self):
         self.ingest(status='failed', musicxml='')
         self.client.force_login(self.member)

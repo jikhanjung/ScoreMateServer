@@ -1,0 +1,188 @@
+// 들어보기 — 악보 인식 결과(MusicXML)를 브라우저에서 소리로. 외부 라이브러리 없이 Web Audio.
+// 적힌 순서대로 재생한다(도돌이표 · D.S. 는 따르지 않는다). 붙임줄은 한 음으로 이어 소리 낸다.
+(function () {
+  'use strict';
+  var root = document.querySelector('[data-player]');
+  if (!root) return;
+  var STEPS = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  var play = root.querySelector('[data-play]'), stop = root.querySelector('[data-stop]');
+  var tempoInput = root.querySelector('[data-tempo]'), tempoLabel = root.querySelector('[data-tempo-label]');
+  var startInput = root.querySelector('[data-start]'), status = root.querySelector('[data-status]');
+  var partsBox = root.querySelector('[data-parts]');
+  var score = null, audio = null, timer = null, state = 'stopped';
+  var cursor = 0, playedFrom = 0, startedAt = 0, muted = {};
+
+  function text(el, tag) { var x = el.querySelector(tag); return x ? x.textContent.trim() : null; }
+
+  // MusicXML → {parts: [{id, name}], measures: [{number, start}], notes: [{part, start, length, midi}]} — 시간 단위는 4분음표
+  function parse(xml) {
+    var doc = new DOMParser().parseFromString(xml, 'application/xml');
+    var names = {};
+    doc.querySelectorAll('score-part').forEach(function (sp) { names[sp.getAttribute('id')] = text(sp, 'part-name') || sp.getAttribute('id'); });
+    var parts = [], notes = [], measures = [];
+    doc.querySelectorAll('part').forEach(function (part, partIndex) {
+      var id = part.getAttribute('id');
+      parts.push({ id: id, name: names[id] || id });
+      var divisions = 1, measureStart = 0, measureLength = 4, open = {};
+      part.querySelectorAll(':scope > measure').forEach(function (measure, index) {
+        var position = 0, lastStart = 0, longest = 0;
+        if (partIndex === 0) measures.push({ number: measure.getAttribute('number'), start: measureStart });
+        Array.prototype.forEach.call(measure.children, function (el) {
+          if (el.tagName === 'attributes') {
+            var d = text(el, 'divisions'); if (d) divisions = Number(d);
+            var beats = text(el, 'time > beats'), type = text(el, 'time > beat-type');
+            if (beats && type) measureLength = Number(beats) * 4 / Number(type);
+          } else if (el.tagName === 'backup' || el.tagName === 'forward') {
+            var amount = Number(text(el, 'duration') || 0) / divisions;
+            position += el.tagName === 'backup' ? -amount : amount;
+          } else if (el.tagName === 'note') {
+            if (el.querySelector('grace')) return;
+            var length = Number(text(el, 'duration') || 0) / divisions;
+            var chord = !!el.querySelector('chord');
+            var start = chord ? lastStart : position;
+            if (!chord) { lastStart = position; position += length; }
+            longest = Math.max(longest, position);
+            var pitch = el.querySelector('pitch');
+            if (!pitch || el.querySelector('rest')) return;
+            var midi = (Number(text(pitch, 'octave')) + 1) * 12 + STEPS[text(pitch, 'step')] + Number(text(pitch, 'alter') || 0);
+            var voice = text(el, 'voice') || '1', key = voice + ':' + midi;
+            var ties = Array.prototype.map.call(el.querySelectorAll('tie'), function (t) { return t.getAttribute('type'); });
+            if (ties.indexOf('stop') >= 0 && open[key]) {
+              open[key].length += length;                       // 붙임줄 — 앞 음을 늘린다
+              if (ties.indexOf('start') < 0) delete open[key];
+              return;
+            }
+            var note = { part: id, start: measureStart + start, length: length, midi: midi, index: partIndex };
+            notes.push(note);
+            if (ties.indexOf('start') >= 0) open[key] = note;
+          }
+        });
+        measureStart += measure.getAttribute('implicit') === 'yes' ? Math.max(longest, 0) || measureLength : measureLength;
+      });
+    });
+    notes.sort(function (a, b) { return a.start - b.start; });
+    return { parts: parts, measures: measures, notes: notes, end: notes.length ? Math.max.apply(null, notes.map(function (n) { return n.start + n.length; })) : 0 };
+  }
+
+  function secondsPerQuarter() { return 60 / Number(tempoInput.value); }
+
+  // 뜯는 소리 — 삼각파 + 배음, 빠른 어택 · 지수 감쇠. 파트마다 음색을 조금 다르게
+  function pluck(midi, when, length, index) {
+    var frequency = 440 * Math.pow(2, (midi - 69) / 12);
+    var gain = audio.createGain(), out = audio.createGain();
+    var body = audio.createOscillator(), overtone = audio.createOscillator();
+    body.type = index % 2 ? 'sawtooth' : 'triangle';
+    body.frequency.value = frequency;
+    overtone.type = 'sine';
+    overtone.frequency.value = frequency * 2;
+    var overtoneGain = audio.createGain();
+    overtoneGain.gain.value = 0.25;
+    var filter = audio.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = Math.min(4000, frequency * 6);
+    body.connect(gain); overtone.connect(overtoneGain); overtoneGain.connect(gain);
+    gain.connect(filter); filter.connect(out); out.connect(audio.destination);
+    out.gain.value = 0.18;
+    var ring = Math.min(Math.max(length, 0.25) + 0.35, 3);
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.exponentialRampToValueAtTime(1, when + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.25, when + 0.12);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + ring);
+    body.start(when); overtone.start(when);
+    body.stop(when + ring + 0.05); overtone.stop(when + ring + 0.05);
+  }
+
+  function beatNow() { return playedFrom + (audio.currentTime - startedAt) / secondsPerQuarter(); }
+
+  function measureAt(beat) {
+    var current = score.measures[0];
+    for (var i = 0; i < score.measures.length && score.measures[i].start <= beat + 1e-6; i++) current = score.measures[i];
+    return current;
+  }
+
+  function tick() {                                // 앞으로 0.25초 안의 음을 예약한다
+    var horizon = beatNow() + 0.25 / secondsPerQuarter();
+    while (cursor < score.notes.length && score.notes[cursor].start < horizon) {
+      var note = score.notes[cursor++];
+      if (note.start < playedFrom - 1e-6 || muted[note.part]) continue;
+      var when = startedAt + (note.start - playedFrom) * secondsPerQuarter();
+      pluck(note.midi, Math.max(when, audio.currentTime), note.length * secondsPerQuarter(), note.index);
+    }
+    var beat = beatNow();
+    status.textContent = beat >= score.end ? '끝' : measureAt(beat).number + '마디';
+    if (beat >= score.end + 1) finish();
+  }
+
+  function begin(fromBeat) {
+    playedFrom = fromBeat;
+    cursor = 0;
+    while (cursor < score.notes.length && score.notes[cursor].start < fromBeat - 1e-6) cursor++;
+    startedAt = audio.currentTime + 0.1;
+    timer = setInterval(tick, 25);
+    state = 'playing';
+    play.textContent = '일시정지';
+  }
+
+  function halt() { clearInterval(timer); timer = null; }
+
+  function finish() {
+    halt();
+    state = 'stopped';
+    play.textContent = '재생';
+    if (audio) { audio.close(); audio = null; }
+  }
+
+  function startBeat() {
+    var wanted = String(startInput.value || '').trim();
+    var found = score.measures.filter(function (m) { return m.number === wanted; })[0];
+    return found ? found.start : 0;
+  }
+
+  function load() {
+    if (score) return Promise.resolve(score);
+    status.textContent = '불러오는 중…';
+    return fetch(root.dataset.url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.text();
+    }).then(function (xml) {
+      score = parse(xml);
+      partsBox.innerHTML = '';
+      score.parts.forEach(function (part) {
+        var label = document.createElement('label');
+        label.className = 'choice small';
+        var box = document.createElement('input');
+        box.type = 'checkbox'; box.checked = true;
+        box.addEventListener('change', function () { muted[part.id] = !box.checked; });
+        label.appendChild(box);
+        label.appendChild(document.createTextNode(' ' + part.name));
+        partsBox.appendChild(label);
+      });
+      status.textContent = score.measures.length + '마디 · 준비';
+      return score;
+    });
+  }
+
+  play.addEventListener('click', function () {
+    load().then(function () {
+      if (state === 'playing') {                     // 일시정지 — 지금 박에서 멈추고 기억
+        var at = beatNow();
+        halt(); audio.suspend();
+        state = 'paused'; play.textContent = '이어서';
+        playedFrom = at;
+        return;
+      }
+      if (state === 'paused') {
+        audio.resume().then(function () { begin(playedFrom); });
+        return;
+      }
+      audio = new (window.AudioContext || window.webkitAudioContext)();
+      begin(startBeat());
+    }).catch(function () { status.textContent = '불러오지 못했습니다'; });
+  });
+  stop.addEventListener('click', function () { if (score) { finish(); status.textContent = '정지'; } });
+  tempoInput.addEventListener('input', function () {
+    tempoLabel.textContent = tempoInput.value;
+    if (state === 'playing') { var at = beatNow(); halt(); audio && begin(at); }   // 빠르기를 바꾸면 지금 박부터 새로
+  });
+  tempoLabel.textContent = tempoInput.value;
+})();

@@ -267,8 +267,11 @@ def score_detail(request, pk):
     score.editable = score.can_edit(request.user)
     versions = list(score.versions.select_related('uploaded_by').prefetch_related('analyses'))
     form = NewVersionForm(user=request.user) if score.editable else None
+    from scores.omr import summary_for
+    current = next((v for v in versions if v.pk == score.current_version_id), None)
     return render(request, 'web/scores/detail.html', {'score': score, 'versions': versions, 'version_form': form,
-                                                      'page_numbers': range(1, (score.pages or 0) + 1)})
+                                                      'page_numbers': range(1, (score.pages or 0) + 1),
+                                                      'omr': summary_for(current), 'current_version': current})
 
 
 @login_required
@@ -344,7 +347,7 @@ def version_musicxml_parts(request, pk, number):
         changed = rename_parts(version, names)
         messages.success(request, f'파트 이름 {changed}개를 고쳤습니다. 기기는 다음 동기화 때 새로 받습니다.' if changed
                          else '바뀐 이름이 없습니다.')
-        return redirect(reverse('web:score_detail', args=[pk]) + '#versions')
+        return redirect(reverse('web:score_detail', args=[pk]) + '#omr')
     return render(request, 'web/scores/musicxml_parts.html', {'score': score, 'version': version, 'parts': parts})
 
 

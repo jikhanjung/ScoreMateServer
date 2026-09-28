@@ -183,3 +183,13 @@ details > summary { cursor: pointer; color: var(--accent); }
 /* 높이 맞춤: 한 화면에 — 두 쪽이 화면보다 넓으면 가로로 스크롤 */
 .page-viewer.fit-height .page-viewer-pages { width: max-content; min-width: 100%; }
 .page-viewer.fit-height .page-viewer-pages img { width: auto; max-width: none; height: calc(100dvh - var(--bar-h, 3rem)); }
+
+/* 악보 인식 결과 */
+.omr-box table { margin-top: .6rem; }
+.omr-box td input[type=text] { width: 100%; max-width: 20rem; }
+.player { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+.player h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.player-controls { align-items: center; gap: .6rem; flex-wrap: wrap; }
+.player-controls input[type=range] { vertical-align: middle; width: 9rem; }
+.player-controls input[type=text] { width: 4.5rem; display: inline-block; }
+.player [data-parts] { gap: .8rem; margin-top: .5rem; flex-wrap: wrap; }

@@ -76,16 +76,18 @@ notes (uncertainties, page by page)."""
 
 META_SCHEMA = {'type': 'object', 'additionalProperties': False,
                'required': ['title', 'subtitle', 'composer', 'arranger', 'lyricist', 'instrumentation', 'part_name',
-                            'parts', 'notes'],
+                            'parts', 'key_fifths', 'time', 'notes'],
                'properties': {k: {'type': 'string'} for k in ('title', 'subtitle', 'composer', 'arranger', 'lyricist',
-                                                              'instrumentation', 'part_name', 'notes')} |
-               {'parts': {'type': 'array', 'items': {'type': 'string'}}}}
+                                                              'instrumentation', 'part_name', 'time', 'notes')} |
+               {'parts': {'type': 'array', 'items': {'type': 'string'}}, 'key_fifths': {'type': 'integer'}}}
 
 META_PROMPT = """The attached image is the first page of a printed music score. Read the header and the staff labels and
 return JSON with exactly what is PRINTED (empty string when absent — never guess from general knowledge):
 title, subtitle, composer, arranger (incl. "arr." / "편곡"), lyricist, instrumentation (e.g. "Guitar ensemble",
 "Piano solo", "String quartet" — describe the parts you see), part_name ("Full Score" if all parts are shown together,
-otherwise the single part printed, e.g. "Violin I"), parts (the staff names in order), notes.
+otherwise the single part printed, e.g. "Violin I"), parts (the staff names in order),
+key_fifths (the key signature at the start of the FIRST staff: number of sharps, or minus the number of flats — count
+each accidental in the signature carefully, 0 if none), time (the time signature there, e.g. "6/8"), notes.
 Inspect the attached image directly. Do not read other files, run commands, or use external tools."""
 
 FIRST_CONTEXT = """- These are the first pages. Use the instrument names printed at the left as part names, part ids P1, P2, …
@@ -99,6 +101,20 @@ NEXT_CONTEXT = """- This continues a transcription already made from the previou
   say otherwise.
 - State at the end of the previous pages (carry it into your first measure's attributes):
 {state}"""
+
+
+def key_disagreement(page, meta):
+    """첫 쪽의 조표를 곡 정보 호출(따로 읽은 것)과 맞춘다 — 조표를 잘못 세면 그 음이 모두 틀린다(K488: 샵 2 를 3 으로)"""
+    if not isinstance(meta.get('key_fifths'), int) or not page.get('measures'):
+        return []
+    first = page['measures'][0].get('parts') or []
+    spec = next((p.get('attributes', '') for p in first if 'key=' in p.get('attributes', '')), '')
+    match = re.search(r'key=(-?\d+)', spec)
+    if match and int(match.group(1)) != meta['key_fifths']:
+        return [f'key signature: you wrote key={match.group(1)}, an independent reading of the first staff found '
+                f'key={meta["key_fifths"]} — count the sharps/flats of the key signature again and make every pitch '
+                f'agree with the correct one']
+    return []
 
 
 def compact_state(state):
@@ -281,8 +297,8 @@ def main():
     parser.add_argument('pdf', type=Path)
     parser.add_argument('outdir', type=Path)
     parser.add_argument('--chunk', type=int, default=1, help='pages per call (1 — 2 쪽 호출은 느리고 깨지기 쉬웠다, devlog 064)')
-    parser.add_argument('--effort', default='medium', choices=('low', 'medium', 'high', 'xhigh', 'max'),
-                        help='medium: K488 1쪽에서 high 와 34마디 중 33마디가 같았고 21%% 빨랐다(devlog 064)')
+    parser.add_argument('--effort', default='high', choices=('low', 'medium', 'high', 'xhigh', 'max'),
+                        help='high — 짧은 형식 · medium 은 K488 1쪽 조표를 샵 3 으로 잘못 읽었다(devlog 064)')
     parser.add_argument('--dpi', type=int, default=200)
     parser.add_argument('--timeout', type=float, default=3600)
     parser.add_argument('--pages', help='only these pages, e.g. 1-4 (for trials)')
@@ -304,7 +320,9 @@ def main():
         meta, elapsed, _ = call_astra(images, META_PROMPT, args.outdir / 'chunks' / '000_metadata', 'medium',
                                       args.timeout, META_SCHEMA)
         meta_file.write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding='utf-8')
-        print(f'metadata: {elapsed}s {meta.get("title")!r} / {meta.get("composer")!r} / {meta.get("arranger")!r}', flush=True)
+        print(f'metadata: {elapsed}s {meta.get("title")!r} / {meta.get("composer")!r} / {meta.get("arranger")!r} '
+              f'key={meta.get("key_fifths")} time={meta.get("time")}', flush=True)
+    meta = json.loads(meta_file.read_text())
 
     merged = None
     ties = omr_compact.TieState()       # 쪽을 넘는 붙임줄 — 짧은 형식을 바꿀 때 이어 간다
@@ -361,6 +379,8 @@ def main():
                                                                  time_state(merged) if merged is not None else None)
                     result['musicxml'] = xml_text
                     problems = problems + ([] if problems else check(xml_text, expected))
+                    if merged is None and attempt == 1:
+                        problems += key_disagreement(result, meta)
                 else:
                     problems = check(result['musicxml'], expected)
                 log_entry(log, pages, attempt, elapsed, usage, result, problems, result['notes'])

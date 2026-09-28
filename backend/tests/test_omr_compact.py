@@ -102,3 +102,13 @@ class CompactTest(SimpleTestCase):
         text, problems = omr_compact.to_musicxml(data)
         self.assertEqual(problems, [])
         self.assertGreater(len(text), 8 * len(events))
+
+
+class KeyCheckTest(SimpleTestCase):
+
+    def test_first_key_must_agree_with_independent_reading(self):
+        from scripts.astra_musicxml import key_disagreement
+        wrong = page({'P1': [voice('F#5/8')]}, attributes='key=3 time=6/8')
+        self.assertIn('key=3', key_disagreement(wrong, {'key_fifths': 2})[0])
+        self.assertEqual(key_disagreement(wrong, {'key_fifths': 3}), [])
+        self.assertEqual(key_disagreement(wrong, {}), [])                       # 예전 곡 정보(조표 없음)

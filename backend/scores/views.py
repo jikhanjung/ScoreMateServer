@@ -35,7 +35,7 @@ class ScoreViewSet(viewsets.ModelViewSet):
     filterset_class = ScoreFilter
     ordering_fields = ['created_at', 'updated_at', 'title', 'composer', 'size_mb', 'pages']
     ordering = ['-updated_at']
-    throttle_scope = None   # download · analysis 동작만 'sync'(기기마다) — 나머지는 기본 제한
+    throttle_scope = None   # download · musicxml · analysis 동작만 'sync'(기기마다) — 나머지는 기본 제한
 
     # 앙상블 악보를 바꾸는 동작 — owner · leader 만 (멤버는 읽기만)
     WRITE_ACTIONS = {
@@ -87,6 +87,22 @@ class ScoreViewSet(viewsets.ModelViewSet):
             key, original = score.s3_key, score.original_filename
         url = get_storage().generate_presigned_download_url(
             key, expiry=300, filename=original or f'{score.title}.pdf')['url']
+        return HttpResponseRedirect(request.build_absolute_uri(url) if url.startswith('/') else url)
+
+    @action(detail=True, methods=['get'], throttle_classes=[PerDeviceScopedRateThrottle], throttle_scope='sync')
+    def musicxml(self, request, pk=None):
+        """악보 인식 결과(MusicXML) 받기 — 서명 URL 로 302. ?version=n 이면 그 판. 없으면 404"""
+        from .omr import musicxml_filename, musicxml_of
+        score = self.get_object()
+        number = request.query_params.get('version')
+        if number and not number.isdigit():
+            raise ValidationError({'version': 'Must be a version number.'})
+        version = self._version(score, number) if number else score.current_version
+        analysis = musicxml_of(version) if version else None
+        if analysis is None:
+            raise Http404('No MusicXML for this version')
+        url = get_storage().generate_presigned_download_url(
+            analysis.data['musicxml_key'], expiry=300, filename=musicxml_filename(score, version))['url']
         return HttpResponseRedirect(request.build_absolute_uri(url) if url.startswith('/') else url)
 
     # --- 분석 공유 (S6) ---

@@ -3,17 +3,25 @@
 
 모델 호출은 호스트 스크립트라 여기서는 결과를 받는 쪽과 조각 합치기(scripts/astra_musicxml.merge)만 본다.
 """
+import hashlib
 import io
 import json
 import xml.etree.ElementTree as ET
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.core.management import call_command
-from django.test import SimpleTestCase
+from django.test import Client, SimpleTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from devices import services as device_services
+from devices.models import DeviceSetlist
+from setlists.models import Setlist, SetlistItem
 
 from scores import omr
-from scores.models import ScoreAnalysis, ScoreVersion
+from scores.models import Score, ScoreAnalysis, ScoreVersion
 from scores.services import add_version, delete_score, delete_version
 from .factories import ScoreFactory
 from .test_web import WebTestBase
@@ -255,3 +263,58 @@ class ChunkFallbackTest(SimpleTestCase):
         (out / 'chunks' / 'p001-002').rename(out / 'chunks' / '001_p1-2')
         self.assertIsNotNone(script.finished_chunk(out, [1, 2]))
         self.assertIsNone(script.finished_chunk(out, [2]))
+
+
+@override_settings(SYNC_LAG_SECONDS=0)
+class MusicXmlSyncTest(WebTestBase):
+    """기기 동기화 — 인식 결과가 있으면 musicxml(받을 곳 · sha256)이 실리고, 인식이 끝나면 그 악보가 다시 온다"""
+
+    def setUp(self):
+        super().setUp()
+        self.score = ScoreFactory(user=self.owner, title='Moldau', original_filename='Moldau0607.pdf', content_hash=SHA)
+        ScoreVersion.objects.filter(score=self.score).update(content_hash=SHA, original_filename='Moldau0607.pdf')
+        Score.objects.filter(pk=self.score.pk).update(updated_at=timezone.now() - timedelta(days=1))
+        self.version = self.score.versions.get()
+        setlist = Setlist.objects.create(user=self.owner, title='연주회')
+        SetlistItem.objects.create(setlist=setlist, score=self.score)
+        SetlistItem.objects.filter(setlist=setlist).update(created_at=timezone.now() - timedelta(days=1))
+        authorization, _ = device_services.start_authorization('TV')
+        device = device_services.approve(authorization, self.owner)
+        device_services.set_sync(device, [setlist.pk])
+        DeviceSetlist.objects.filter(device=device).update(added_at=timezone.now() - timedelta(days=1))
+        self.tv = APIClient()
+        self.tv.credentials(HTTP_AUTHORIZATION=f"Bearer {device_services.issue_tokens(device)['access_token']}")
+
+    def ingest(self, **bundle):
+        bundle = {'version_id': self.version.pk, 'sha256': SHA, 'status': 'ok', 'musicxml': xml(), **bundle}
+        with patch('sys.stdin', io.StringIO(json.dumps(bundle))):
+            call_command('omr_ingest', stdout=io.StringIO())
+
+    def test_sync_carries_musicxml_and_device_can_download(self):
+        first = self.tv.get('/api/v1/sync/scores/').data
+        self.assertIsNone(first['scores'][0]['musicxml'])
+        self.assertEqual(self.tv.get(f'/api/v1/scores/{self.score.pk}/musicxml/').status_code, 404)
+
+        self.ingest()
+        again = self.tv.get('/api/v1/sync/scores/', {'cursor': first['cursor']}).data   # 인식이 끝나면 다시 온다
+        self.assertEqual([s['id'] for s in again['scores']], [self.score.pk])
+        info = again['scores'][0]['musicxml']
+        stored = ScoreAnalysis.objects.get(version=self.version, analyzer=omr.ANALYZER).data
+        self.assertEqual((info['sha256'], info['size_bytes'], info['filename'], info['parts'], info['measures']),
+                         (stored['musicxml_sha256'], stored['musicxml_bytes'], 'Moldau0607.musicxml', ['진호', '예진'], 2))
+        self.assertTrue(info['url'].endswith(f'/api/v1/scores/{self.score.pk}/musicxml/'))
+
+        redirect = self.tv.get(info['url'])
+        self.assertEqual(redirect.status_code, 302)
+        body = b''.join(Client().get(redirect['Location']).streaming_content)
+        self.assertEqual(hashlib.sha256(body).hexdigest(), info['sha256'])
+
+    def test_failed_recognition_is_not_offered(self):
+        self.ingest(status='failed', musicxml='')
+        self.assertIsNone(self.tv.get('/api/v1/sync/scores/').data['scores'][0]['musicxml'])
+
+    def test_outsider_cannot_download(self):
+        self.ingest()
+        other = APIClient()
+        other.force_authenticate(user=self.outsider)
+        self.assertEqual(other.get(f'/api/v1/scores/{self.score.pk}/musicxml/').status_code, 404)

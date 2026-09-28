@@ -125,6 +125,12 @@ def musicxml_of(version):
     return None
 
 
+def musicxml_filename(score, version):
+    """받을 때 파일 이름 — PDF 와 같은 이름에 .musicxml (기기가 PDF 옆에 둔다)"""
+    original = version.original_filename or score.original_filename or f'{score.title}.pdf'
+    return original.rsplit('.', 1)[0] + '.musicxml'
+
+
 def stored_keys(versions):
     """지울 때 함께 지울 MusicXML 파일들"""
     return [a.data['musicxml_key'] for a in ScoreAnalysis.objects.filter(version__in=versions, analyzer=ANALYZER)

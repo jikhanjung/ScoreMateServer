@@ -260,15 +260,17 @@ class SyncScoreSerializer(serializers.ModelSerializer):
     """TV 동기화용 악보 — 받을 파일을 판 번호와 SHA-256 으로 가리킨다
 
     version.sha256 이 비어 있으면 아직 처리 중이다(쪽수 · 해시가 채워지면 updated_at 이 바뀌어 다음 동기화에 다시 온다).
+    musicxml: 이 판의 악보 인식 결과(scores/omr.py)가 있으면 받을 곳과 sha256 — 없으면 null. 인식이 끝나면 updated_at 이 바뀌어 다시 온다
     """
     ensemble = serializers.SerializerMethodField()
     version = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
+    musicxml = serializers.SerializerMethodField()
 
     class Meta:
         model = Score
         fields = ['id', 'title', 'composer', 'arranger', 'instrumentation', 'part_name', 'tags', 'note',
-                  'ensemble', 'version', 'download_url', 'updated_at']
+                  'ensemble', 'version', 'download_url', 'musicxml', 'updated_at']
         read_only_fields = fields
 
     def get_ensemble(self, obj):
@@ -293,6 +295,25 @@ class SyncScoreSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         path = f'/api/v1/scores/{obj.pk}/download/'
         return request.build_absolute_uri(path) if request else path
+
+    def get_musicxml(self, obj):
+        from .omr import musicxml_filename, musicxml_of
+        v = obj.current_version
+        analysis = musicxml_of(v) if v else None
+        if analysis is None:
+            return None
+        request = self.context.get('request')
+        path = f'/api/v1/scores/{obj.pk}/musicxml/'
+        data = analysis.data
+        return {
+            'url': request.build_absolute_uri(path) if request else path,
+            'sha256': data.get('musicxml_sha256'),
+            'size_bytes': data.get('musicxml_bytes'),
+            'filename': musicxml_filename(obj, v),
+            'parts': [p.get('name', '') for p in data.get('parts', [])],
+            'measures': data.get('measure_count'),
+            'updated_at': analysis.updated_at,
+        }
 
 
 class AnalysisWriteSerializer(serializers.Serializer):

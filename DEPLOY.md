@@ -152,3 +152,9 @@
 - 너비 맞춤(2쪽이면 반씩) · 높이 맞춤(두 쪽이 화면보다 넓으면 가로 스크롤)과 함께. 고른 것은 브라우저에 기억
 - 마이그레이션 없음
 
+### 0.9.6 (2026-09-28) — 기기 동기화에 MusicXML
+- `sync/scores` 의 각 악보에 **`musicxml`**: 인식 결과가 있으면 `{url, sha256, size_bytes, filename, parts, measures, updated_at}`, 없으면 `null`(추가만)
+- 새 API `GET /api/v1/scores/{id}/musicxml/`(`?version=n`) — 서명 URL 로 302, 기기마다 'sync' 제한. 파일 이름은 PDF 이름 + `.musicxml`
+- 인식이 끝나면 악보 `updated_at` 이 바뀌어 다음 동기화에 그 악보가 다시 온다(기존 동작). TV 앱이 받게 하려면 앱 쪽 작업 — P06 §11
+- 마이그레이션 없음
+

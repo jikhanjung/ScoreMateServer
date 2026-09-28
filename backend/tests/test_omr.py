@@ -157,3 +157,77 @@ class MergeChunksTest(SimpleTestCase):
         self.assertEqual(m5.find('time').findtext('beats'), '3')                  # 바뀐 박자표는 남는다
         self.assertIsNotNone(m5.find('key'))    # 조각 가운데는 모델이 적은 그대로 — 지우는 건 조각 첫 마디의 되풀이뿐
         self.assertEqual(end_state(base)['P2']['time'], '3/4')
+
+
+class ChunkFallbackTest(SimpleTestCase):
+    """두 쪽 조각이 안 되면(검산 실패 두 번 · 시간 초과) 한 쪽씩 다시 — 끝난 조각은 다시 부르지 않는다"""
+
+    def run_script(self, answers, pages=3):
+        import subprocess
+        import sys
+        import tempfile
+        from pathlib import Path
+        import fitz
+        from scripts import astra_musicxml as script
+
+        tmp = Path(tempfile.mkdtemp(prefix='omr-'))
+        self.addCleanup(__import__('shutil').rmtree, tmp, ignore_errors=True)
+        document = fitz.open()
+        for _ in range(pages):
+            document.new_page()
+        pdf = tmp / 'score.pdf'
+        document.save(pdf)
+        calls = []
+
+        def fake_call(images, prompt, workdir, effort, timeout, schema=script.SCHEMA):
+            if schema is script.META_SCHEMA:
+                return {'title': 'T'}, 1.0, []
+            numbers = [int(Path(i).stem[4:]) for i in images]
+            calls.append(numbers)
+            answer = answers.get(tuple(numbers), 'ok')
+            if answer == 'timeout':
+                raise subprocess.TimeoutExpired('codex', timeout)
+            if answer == 'bad':
+                return {'musicxml': '<score-partwise><part', 'first_measure': 0, 'last_measure': 0, 'notes': ''}, 1.0, []
+            measures = tuple((str(n), '6/8' if n == numbers[0] else None, '1' if n == numbers[0] else None) for n in numbers)
+            return {'musicxml': xml(measures=measures), 'first_measure': numbers[0], 'last_measure': numbers[-1],
+                    'notes': ''}, 1.0, []
+
+        def fake_check(text, expected=None):
+            try:
+                ET.fromstring(text)
+            except ET.ParseError as exc:
+                return [str(exc)]
+            return []
+
+        argv = ['astra_musicxml.py', str(pdf), str(tmp / 'out'), '--dpi', '20']
+        with patch.object(script, 'call_astra', fake_call), patch.object(script, 'check', fake_check), \
+                patch.object(sys, 'argv', argv):
+            code = script.main()
+        return code, calls, tmp / 'out'
+
+    def test_bad_pair_is_split_into_single_pages(self):
+        code, calls, out = self.run_script({(1, 2): 'bad'})
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [[1, 2], [1, 2], [1], [2], [3]])
+        merged = ET.parse(out / 'score.musicxml').getroot()
+        self.assertEqual([m.get('number') for m in merged.find('part').findall('measure')], ['1', '2', '3'])
+        self.assertEqual(json.loads((out / 'result.json').read_text())['metadata'], {'title': 'T'})
+
+    def test_timeout_splits_at_once(self):
+        code, calls, _ = self.run_script({(1, 2): 'timeout'})
+        self.assertEqual((code, calls), (0, [[1, 2], [1], [2], [3]]))
+
+    def test_single_page_still_bad_is_a_verdict(self):
+        code, calls, out = self.run_script({(1, 2): 'bad', (2,): 'bad'})
+        self.assertEqual(code, 3)
+        self.assertEqual(json.loads((out / 'result.json').read_text())['status'], 'failed')
+
+    def test_finished_chunks_are_not_called_again(self):
+        code, calls, out = self.run_script({})
+        self.assertEqual(calls, [[1, 2], [3]])
+        # 같은 출력 폴더로 다시 — 부르지 않는다(예전 이름 NNN_pA-B 도 알아본다)
+        from scripts import astra_musicxml as script
+        (out / 'chunks' / 'p001-002').rename(out / 'chunks' / '001_p1-2')
+        self.assertIsNotNone(script.finished_chunk(out, [1, 2]))
+        self.assertIsNone(script.finished_chunk(out, [2]))

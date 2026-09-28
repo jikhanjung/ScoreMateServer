@@ -229,7 +229,7 @@ def main():
     parser.add_argument('--chunk', type=int, default=2, help='pages per call')
     parser.add_argument('--effort', default='high', choices=('low', 'medium', 'high', 'xhigh', 'max'))
     parser.add_argument('--dpi', type=int, default=200)
-    parser.add_argument('--timeout', type=float, default=2400)
+    parser.add_argument('--timeout', type=float, default=3600)
     parser.add_argument('--pages', help='only these pages, e.g. 1-4 (for trials)')
     args = parser.parse_args()
 
@@ -250,10 +250,13 @@ def main():
         print(f'metadata: {elapsed}s {meta.get("title")!r} / {meta.get("composer")!r} / {meta.get("arranger")!r}', flush=True)
 
     merged = None
-    for index, pages in enumerate(chunks, 1):
-        workdir = args.outdir / 'chunks' / f'{index:03d}_p{pages[0]}-{pages[-1]}'
-        done = workdir / 'chunk.musicxml'
-        if done.exists():
+    queue = list(chunks)
+    while queue:
+        pages = queue.pop(0)
+        name = f'p{pages[0]:03d}-{pages[-1]:03d}'
+        workdir = args.outdir / 'chunks' / name
+        done = finished_chunk(args.outdir, pages)
+        if done is not None:
             chunk = ET.parse(done).getroot()
         else:
             if merged is None:
@@ -266,25 +269,41 @@ def main():
                 context = NEXT_CONTEXT.format(parts=parts, last=previous, next=previous + 1, state=state)
             prompt = PROMPT.format(pages=pages, total=total, context=context)
             images = render(pdf, pages, args.outdir, args.dpi)
+            result, problems = None, []
             for attempt in (1, 2):
-                result, elapsed, usage = call_astra(images, prompt, workdir / f'attempt{attempt}', args.effort, args.timeout)
+                try:
+                    result, elapsed, usage = call_astra(images, prompt, workdir / f'attempt{attempt}', args.effort,
+                                                        args.timeout)
+                except subprocess.TimeoutExpired:
+                    result, problems = None, [f'no answer within {int(args.timeout)}s']
+                    log_entry(log, pages, attempt, args.timeout, [], None, problems, '')
+                    print(f'pages {pages} attempt {attempt}: timeout', flush=True)
+                    if len(pages) > 1:
+                        break          # 여러 쪽이면 기다리지 말고 한 쪽씩으로
+                    continue
                 problems = check(result['musicxml'], expected)
-                with log.open('a') as f:
-                    f.write(json.dumps({'chunk': index, 'pages': pages, 'attempt': attempt, 'elapsed': elapsed,
-                                        'usage': usage, 'measures': [result['first_measure'], result['last_measure']],
-                                        'problems': problems, 'notes': result['notes']}, ensure_ascii=False) + '\n')
-                print(f'chunk {index}/{len(chunks)} pages {pages} attempt {attempt}: {elapsed}s '
+                log_entry(log, pages, attempt, elapsed, usage, result, problems, result['notes'])
+                print(f'pages {pages} attempt {attempt}: {elapsed}s '
                       f"m{result['first_measure']}-{result['last_measure']} problems={len(problems)}", flush=True)
                 if not problems:
                     break
                 prompt = prompt + '\n\nYour previous answer failed these checks — fix them and answer again:\n- ' + \
                     '\n- '.join(problems)
-            else:
+            if problems:
+                if len(pages) > 1:
+                    # 두 쪽이 한 번에 안 되면 한 쪽씩 — 짧을수록 답이 온전하다(긴 XML 을 JSON 문자열로 쓰다 깨지는 일)
+                    print(f'pages {pages}: split into single pages', flush=True)
+                    queue[0:0] = [[p] for p in pages]
+                    continue
+                if result is None:
+                    raise RuntimeError(f'page {pages[0]}: no answer within {int(args.timeout)}s twice')   # 실행 문제 — 레인이 다시
+                workdir.mkdir(parents=True, exist_ok=True)
                 (workdir / 'failed.musicxml').write_text(result['musicxml'])
-                print(f'STOP: chunk {index} still fails: {problems}', file=sys.stderr)
-                write_result(args, 'failed', [f'pages {pages[0]}-{pages[-1]}: {p}' for p in problems], log)
+                print(f'STOP: page {pages[0]} still fails: {problems}', file=sys.stderr)
+                write_result(args, 'failed', [f'page {pages[0]}: {p}' for p in problems], log)
                 return 3
-            done.write_text(result['musicxml'])
+            workdir.mkdir(parents=True, exist_ok=True)
+            (workdir / 'chunk.musicxml').write_text(result['musicxml'])
             chunk = ET.fromstring(result['musicxml'])
         if merged is None:
             merged = chunk
@@ -299,6 +318,22 @@ def main():
     print(f'-> {out}  parts/measures={summary}  final check problems={problems}')
     write_result(args, 'failed' if problems else 'ok', problems, log)
     return 3 if problems else 0
+
+
+def finished_chunk(outdir, pages):
+    """이미 끝난 조각 — 지금 이름(pNNN-NNN) 또는 예전 이름(NNN_pA-B)"""
+    for path in (outdir / 'chunks' / f'p{pages[0]:03d}-{pages[-1]:03d}' / 'chunk.musicxml',
+                 *(outdir / 'chunks').glob(f'[0-9][0-9][0-9]_p{pages[0]}-{pages[-1]}/chunk.musicxml')):
+        if path.exists():
+            return path
+    return None
+
+
+def log_entry(log, pages, attempt, elapsed, usage, result, problems, notes):
+    with log.open('a') as f:
+        f.write(json.dumps({'pages': pages, 'attempt': attempt, 'elapsed': elapsed, 'usage': usage,
+                            'measures': [result['first_measure'], result['last_measure']] if result else None,
+                            'problems': problems, 'notes': notes}, ensure_ascii=False) + '\n')
 
 
 def write_result(args, status, problems, log):

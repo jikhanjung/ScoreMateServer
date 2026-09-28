@@ -63,7 +63,9 @@ docker cp "${CID}:/app/scripts/astra_musicxml.py" "${ROOT}/scripts/astra_musicxm
     && echo "  extracted scripts/astra_musicxml.py" || true
 docker cp "${CID}:/app/scripts/omr_compact.py" "${ROOT}/scripts/omr_compact.py" 2>/dev/null \
     && echo "  extracted scripts/omr_compact.py" || true
-for lane in layout_lane.sh; do
+docker cp "${CID}:/app/scripts/model_layout.py" "${ROOT}/scripts/model_layout.py" 2>/dev/null \
+    && echo "  extracted scripts/model_layout.py" || true
+for lane in layout_lane.sh model_layout_lane.sh; do
     if docker cp "${CID}:/app/deploy/host/${lane}" "${ROOT}/scripts/.${lane}.new" 2>/dev/null && bash -n "${ROOT}/scripts/.${lane}.new"; then
         chmod +x "${ROOT}/scripts/.${lane}.new" && mv -f "${ROOT}/scripts/.${lane}.new" "${ROOT}/scripts/${lane}" && echo "  extracted scripts/${lane}"
     else

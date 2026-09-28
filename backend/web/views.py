@@ -275,7 +275,14 @@ def score_detail(request, pk):
                                                       'page_numbers': range(1, (score.pages or 0) + 1),
                                                       'omr': summary_for(current), 'current_version': current,
                                                       'layout': layout.data if layout else None,
-                                                      'layout_staves': staves_per_system(current) if layout else None})
+                                                      'layout_staves': staves_per_system(current) if layout else None,
+                                                      'model_layout': _model_layout(current)})
+
+
+def _model_layout(version):
+    from scores.model_layouts import model_layout_of
+    analysis = model_layout_of(version) if version else None
+    return analysis.data if analysis else None
 
 
 @login_required

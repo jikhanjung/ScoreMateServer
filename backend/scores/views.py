@@ -108,13 +108,13 @@ class ScoreViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], throttle_classes=[PerDeviceScopedRateThrottle], throttle_scope='sync')
     def layout(self, request, pk=None):
         """보표 · 마디 분석 파일(JSON) 받기 — 서명 URL 로 302. ?version=n 이면 그 판. 없으면 404"""
-        from .layouts import layout_filename, layout_of
+        from .layouts import delivered_layout, layout_filename
         score = self.get_object()
         number = request.query_params.get('version')
         if number and not number.isdigit():
             raise ValidationError({'version': 'Must be a version number.'})
         version = self._version(score, number) if number else score.current_version
-        analysis = layout_of(version) if version else None
+        analysis, _ = delivered_layout(version) if version else (None, None)
         if analysis is None:
             raise Http404('No layout for this version')
         url = get_storage().generate_presigned_download_url(

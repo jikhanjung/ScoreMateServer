@@ -234,3 +234,13 @@
 - 상세 "악보 인식"에 "줄 · 쪽 바뀜: N곳 · PDF 분석으로 확정"
 - 마이그레이션 없음
 
+### 0.11.0 (2026-09-29) — 모델 위치 레인 (모든 악보)
+- 새 호스트 레인 `scripts/model_layout_lane.sh`(10분, 악보 인식과 따로): 쪽마다 Codex CLI 가 시스템 · 보표 · 마디선 · 보표 이름 ·
+  박자표를 0..1000 좌표로 읽고(`scripts/model_layout.py`), 컨테이너가 pt · 앱 ScoreLayout 모양으로(`manage.py model_layout_ingest`)
+  → 분석 `model-layout` + `files/…/model_layout/v{N}.json`
+- 벡터 PDF: PDF 분석과 쪽마다 구조 · pt 오차를 비교해 남긴다(상세 "위치(모델): PDF 분석과 N/M쪽 같음, 평균 오차")
+- 스캔 PDF(PDF 분석이 시스템 0): 동기화 `layout` 이 모델 위치로 — **`layout.source`: `pdf` | `model`**(추가만)
+- 호스트 1회: cron `*/10 * * * * /srv/scoremate/scripts/model_layout_lane.sh >> /srv/scoremate/omr/model_layout.log 2>&1`
+  (새 추출 규칙은 다음 배포부터 → 이번엔 스크립트 둘을 직접 복사)
+- 마이그레이션 없음
+

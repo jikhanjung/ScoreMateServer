@@ -1,6 +1,6 @@
 # HANDOFF — ScoreMateServer 지금 상태
 
-_Last updated: 2026-09-28 09:40 UTC · 운영 **0.10.2** · 백엔드 테스트 476 통과_
+_Last updated: 2026-09-29 · 운영 **0.11.0** · 백엔드 테스트 485 통과_
 
 다음 작업을 이어받을 사람(사람 · 에이전트)이 가장 먼저 읽을 문서. 자세한 설계는 `ARCHITECTURE.md`, 배포는 `deploy/README.md`,
 릴리스별 변화는 `DEPLOY.md`, 과정은 `devlog/`.
@@ -15,8 +15,8 @@ PDF + MusicXML(악보 인식) + 보표 · 마디 분석 파일과 함께 받아 
 | 사이트 | https://scoremate.noematica.kr — 컨테이너 하나(Gunicorn), `127.0.0.1:8016` 뒤 nginx(TLS · X-Accel) |
 | 데이터 | `db/db.sqlite3` · `files/`(PDF · 표지 · 쪽 이미지 · MusicXML · layout JSON) |
 | 배포 | 빌드 호스트 m710q: `./deploy/build.sh X.Y.Z && ./deploy/remote-prod.sh X.Y.Z` |
-| 호스트 cron | 매시 `scripts/backup_db.py` · 10분 `scripts/omr_lane.sh`(악보 인식) · 5분 `scripts/layout_lane.sh`(보표 · 마디 분석) |
-| 로그 | `omr/lane.log` · `omr/work/v<판 id>/run.log` · `omr/layout.log` · `backup/backup.log` · `docker compose logs api` |
+| 호스트 cron | 매시 `scripts/backup_db.py` · 10분 `scripts/omr_lane.sh`(악보 인식) · 5분 `scripts/layout_lane.sh`(보표 · 마디 분석) · 10분 `scripts/model_layout_lane.sh`(모델 위치) |
+| 로그 | `omr/lane.log` · `omr/work/v<판 id>/run.log` · `omr/layout.log` · `omr/model_layout.log` · `backup/backup.log` · `docker compose logs api` |
 | 백업 | pre-deploy · hourly(DB) · **daily 오프사이트(m710q 05:25, DB + `files/` 전체 + NAS)** |
 | manage.py | 컨테이너 안에서 DB 소유 uid 로: `docker compose exec -u "$(stat -c %u db)" api python manage.py …` |
 
@@ -46,6 +46,11 @@ PDF + MusicXML(악보 인식) + 보표 · 마디 분석 파일과 함께 받아 
   - 곡 정보(편곡 · PDF 제목 · 제안) · 목록 카드 쪽수 · 올리기 드롭존
   - "연결 기기"(기기마다 세트리스트만)
 
+## 2026-09-29
+- 줄 · 쪽 바뀜을 MusicXML 에(0.10.3) — PDF 분석과 마디 수가 같으면 그 값으로. 네 곡에 채움
+- 모델 위치 정확도 실험(devlog 070): 벡터 8쪽 개수 모두 일치 · 평균 0.1~0.4pt
+- **모델 위치 레인**(0.11.0, devlog 071): 모든 악보. 벡터는 검산, 스캔은 기기 layout(`source: model`)
+
 ## 규칙 (꼭 지킬 것)
 - 악보 조회는 늘 `Score.objects.readable_by(user)` / `writable_by(user)`. 규칙은 `scores/services.py` · `ensembles/services.py` 한 곳
 - 파일은 Django 를 지나가지 않는다(서명 URL · X-Accel)
@@ -63,5 +68,5 @@ PDF + MusicXML(악보 인식) + 보표 · 마디 분석 파일과 함께 받아 
 2. 새 판을 인식할 때 앞 판에서 고친 파트 이름 이어 받기
 3. 음높이 검수를 돕는 화면(들어보기 + 쪽 이미지를 마디 단위로, 틀린 쪽만 다시 인식)
 4. 곡(Work) 단위 합주 · 파트보 — `devlog/20260928_P01_…` §3. 마디 지도 두 벌(인식 · PDF 분석)이 판본 검사에 쓰인다
-5. 스캔 악보로 인식 시험(지금까지는 모두 벡터 PDF)
+5. 스캔 악보로 인식 · 모델 위치 시험(지금까지는 모두 벡터 PDF) — 스캔본에서는 모델 위치가 유일한 위치 정보다
 6. 앙상블 웹 메뉴 다시 켜기(`WEB_ENSEMBLES`) · Google 로그인 설정(클라이언트 ID)

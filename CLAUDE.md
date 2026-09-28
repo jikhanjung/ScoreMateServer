@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-28) — 476 backend tests passing, 0.10.2 in production (see HANDOFF.md)
+### Status (2026-09-29) — 485 backend tests passing, 0.11.0 in production (see HANDOFF.md)
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -33,6 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | — | Score metadata: arranger field, title/part from PDF document properties on upload, edit-page suggestions (PDF + OMR first-page read) | ✅ devlog 066 |
 | — | Page view on score detail: per-page images rendered on first view, cached per version in storage, signed-URL redirect | ✅ devlog 067 |
 | — | Score layout files: the TV app's Kotlin PDF analysis ported (scores/score_layout.py), stored per version, synced as `layout` | ✅ devlog 068 |
+| — | Model layout lane: the model reads systems/staves/barlines per page (±0.4pt on vector PDFs); cross-check for PDF analysis, the synced `layout` for scanned scores (`source: model`) | ✅ devlog 070, 071 |
 
 ## Development Commands
 

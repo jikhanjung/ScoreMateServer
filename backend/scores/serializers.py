@@ -299,9 +299,9 @@ class SyncScoreSerializer(serializers.ModelSerializer):
 
     def get_layout(self, obj):
         """보표 · 마디 분석 파일(앱 분석과 같은 결과, scores/layouts.py) — 없으면 null"""
-        from .layouts import layout_filename, layout_of
+        from .layouts import delivered_layout, layout_filename
         v = obj.current_version
-        analysis = layout_of(v) if v else None
+        analysis, source = delivered_layout(v) if v else (None, None)
         if analysis is None:
             return None
         request = self.context.get('request')
@@ -313,6 +313,7 @@ class SyncScoreSerializer(serializers.ModelSerializer):
             'filename': layout_filename(obj, v), 'analyzer_version': analysis.analyzer_version,
             'pdf_sha256': v.content_hash or None,
             'measures': data.get('measure_count'), 'systems': data.get('system_count'),
+            'source': source,          # 'pdf' = PDF 벡터 분석(정확) · 'model' = 모델이 쪽 이미지에서 읽은 위치(스캔 악보)
             'updated_at': analysis.updated_at,
         }
 

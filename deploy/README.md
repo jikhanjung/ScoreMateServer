@@ -111,6 +111,15 @@ TV 앱의 PDF 분석(`score/`, Kotlin)을 옮긴 `scores/score_layout.py` 가 �
 ```
 `manage.py score_layout` = 분석 파일이 없는 판 전부, `--version-id N` = 그 판을 다시.
 
+## 모델 위치 (devlog 070 · 071)
+
+쪽마다 모델이 시스템 · 보표 · 마디선 · 보표 이름 · 박자표 좌표를 읽는다(쪽당 20~40초). 벡터 PDF 는 PDF 분석의 검산,
+스캔 PDF 는 이것이 기기에 내려가는 layout 이 된다(`layout.source = model`).
+```
+*/10 * * * * /srv/scoremate/scripts/model_layout_lane.sh >> /srv/scoremate/omr/model_layout.log 2>&1
+```
+작업 폴더 `omr/model_layout/v<판 id>/`(쪽마다 `pages/pNNN.json` — 끊겨도 이어 한다). 다시 하려면 admin 에서 그 판의 `model-layout` 분석을 지운다.
+
 ## 악보 인식 (OMR, devlog P01)
 
 PDF → MusicXML 을 **운영 호스트의 cron** 이 만든다. 모델 호출(Codex CLI, `gpt-6-astra`, ChatGPT 로그인)은 호스트에서, 결과 저장은 컨테이너에서.

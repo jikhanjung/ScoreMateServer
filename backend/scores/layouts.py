@@ -114,6 +114,19 @@ def layout_of(version):
     return None
 
 
+def delivered_layout(version):
+    """기기에 내릴 보표 · 마디 위치 → (분석, 'pdf' | 'model') 또는 (None, None).
+    PDF 분석이 시스템을 찾았으면 그것(정답), 못 찾았으면(스캔 악보 · 작성기 형식을 모름) 모델이 읽은 위치(scores/model_layouts.py)"""
+    from .model_layouts import model_layout_of
+    pdf = layout_of(version)
+    if pdf is not None and (pdf.data or {}).get('system_count'):
+        return pdf, 'pdf'
+    model = model_layout_of(version)
+    if model is not None and (model.data or {}).get('system_count'):
+        return model, 'model'
+    return (pdf, 'pdf') if pdf is not None else (None, None)
+
+
 def layout_filename(score, version):
     original = version.original_filename or score.original_filename or f'{score.title}.pdf'
     return original.rsplit('.', 1)[0] + '.layout.json'

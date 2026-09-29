@@ -16,6 +16,7 @@ Django 한 컨테이너가 웹(템플릿) · REST API · 기기 동기화를 맡
 - 연결 기기(TV · 태블릿, 코드 + QR) — 기기마다 고른 세트리스트의 곡만 받는다
 - 기기 동기화: PDF + **MusicXML**(악보 인식) + **보표 · 마디 분석 파일**(앱 분석과 같은 결과) + 곡 정보
 - 악보 인식(OMR): 운영 호스트 cron 이 Codex CLI(`gpt-6-astra`)로 한 쪽씩 옮긴다 — devlog 064 · 069
+- 사용자 관리(관리자만, 웹 "사용자 관리"): 사용자 추가 · 등급(기본 200 · 프로 1000 · 단체 5000MB) · 저장 공간 한도 · 관리자 권한 · 비밀번호 다시 정하기 · 사용 중지 — devlog 075
 
 ## 스택
 - 백엔드: Django 5.2, DRF, SQLite(기본; `DATABASE_URL`로 PostgreSQL 가능), PyMuPDF, Celery(선택 — `REDIS_URL`이 없으면 요청 안에서 바로 실행)
@@ -42,6 +43,7 @@ CONTRIBUTING.md    # 기여 방법
 cd backend
 pip install -r requirements.txt
 python manage.py migrate      # backend/data/db.sqlite3
+python manage.py createsuperuser   # 첫 관리자 — 그다음 사용자는 웹 "사용자 관리"에서 추가
 python manage.py runserver
 python -m pytest tests/
 ```

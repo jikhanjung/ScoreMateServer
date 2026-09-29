@@ -18,6 +18,7 @@ PDF + MusicXML(악보 인식) + 보표 · 마디 분석 파일과 함께 받아 
 | 호스트 cron | 매시 `scripts/backup_db.py` · 5분 **`scripts/score_pipeline.sh`**(① PDF 분석 → ② 모델 위치 → ③ 악보 인식, 쪽 단위) |
 | 로그 | `omr/pipeline.log` · `omr/work/v<판 id>/run.log`(③) · `omr/model_layout/v<판 id>/run.log`(②) · `backup/backup.log` · `docker compose logs api` |
 | 백업 | pre-deploy · hourly(DB) · **daily 오프사이트(m710q 05:25, DB + `files/` 전체 + NAS)** |
+| 관리자 | 웹 "사용자 관리"(`/manage/users/`) — 사용자 추가 · 등급 · 한도 · 비밀번호 · 사용 중지. 운영 관리자는 admin 한 명 |
 | manage.py | 컨테이너 안에서 DB 소유 uid 로: `docker compose exec -u "$(stat -c %u db)" api python manage.py …` |
 
 ⚠️ ② · ③은 **호스트 사용자의 ChatGPT 로그인(Codex CLI)** 을 쓴다. 토큰이 만료되면 `pipeline.log` 에

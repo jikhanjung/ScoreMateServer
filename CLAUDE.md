@@ -137,7 +137,7 @@ Before moving to the next stage:
 ```
 backend/
   scoremateserver/   # settings (env vars), urls, celery
-  core/              # auth, users, quota, referrals; services.py = user management rules (grade/quota/admin/active)
+  core/              # auth, users, quota, referrals; services.py = user management rules (grade/quota/admin/active/create/password)
   ensembles/         # Ensemble, Membership, Invite; services.py = membership/invite rules (API + web)
   devices/           # TV linking (RFC 8628): Device, DeviceAuthorization, device-aware JWT auth + refresh
   web/               # web UI (Django templates, session auth) — uses the same services/permissions as the API
@@ -166,20 +166,21 @@ All under `/api/v1/`:
 - `scores/` - score CRUD, search, tagging, bulk operations
 - `setlists/` - setlist management
 - `files/` - `upload-url/`, `upload-confirm/`, `upload-cancel/`, `download-url/`, `thumbnail/…`
-- `admin/` - admin API (`scoremate_admin`)
+- `admin/` - admin API (`scoremate_admin`); `admin/users/` is superuser-only and goes through `core/services.py`
 - `ensembles/` - ensembles, `members/{user_id}/`, `invites/`, `invite/{code}/` preview, `join/`
 - `device/code`, `device/token` (RFC 8628, TV), `devices/` (+ `me/`); web `/activate/`, `/devices/`
 - `sync/setlists/` (all readable setlists), `scores/{id}/analysis/` (GET/PUT shared TV analysis); web `/setlists/`, `/auth/google/`
 - `sync/scores/` (TV sync: `cursor`, `has_more`, `scores`, `ids`), `scores/{id}/download/` (302 to signed URL), `devices/me/heartbeat/`
 - `scores/{id}/musicxml/`, `scores/{id}/layout/` (302 to signed URL); sync entries carry `musicxml` / `layout` objects (null when absent)
-- Web-only: `/scores/{id}/pages/{n}/?size=thumb|view` (page images), `/scores/{id}/versions/{n}/musicxml/parts/` (rename recognized parts)
+- Web-only: `/scores/{id}/pages/{n}/?size=thumb|view` (page images), `/scores/{id}/versions/{n}/musicxml/parts/` (rename recognized parts), `/manage/users/` (+ `new/`, `{id}/`, `{id}/password/`; superuser only)
 
 ## Environment Configuration
 See `.env.example`:
 - `DATA_DIR`: directory for the SQLite file (default `backend/data`)
 - `DATABASE_URL`: optional; e.g. Postgres for the compose stack
 - `REDIS_URL`: optional; when set, tasks go through the broker to a worker
-- `REGISTRATION_OPEN`: `false` in production — only people arriving with a usable invite can register (and they join that ensemble)
+- `REGISTRATION_OPEN`: `false` in production — only people arriving with a usable invite can register (and they join that ensemble); administrators can always add users on the web
+- `GRADE_SOLO_MB` / `GRADE_PRO_MB` / `GRADE_ENTERPRISE_MB`: default quota per user grade (200 / 1000 / 5000; `settings.USER_GRADES`)
 - `WEB_ENSEMBLES`: `false` by default (2026-09-27) — ensemble menus/selectors hidden on the web; API, invite links and direct URLs keep working. Web tests run with it on (conftest); hidden mode is `tests/test_web_ensembles_hidden.py`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: enable Google login on the web (redirect URI `/auth/google/callback/`)
 - `STORAGE_*`: MinIO/S3 configuration
@@ -233,7 +234,7 @@ def process_pdf(self, score_id):
 
 ## Security Considerations
 - Every score query must go through `Score.objects.readable_by(user)` or `writable_by(user)` — never `filter(user=...)` alone
-- Rules live once: `scores/services.py`, `ensembles/services.py`. API views and web views both call them — don't re-implement a rule in a view
+- Rules live once: `scores/services.py`, `ensembles/services.py`, `core/services.py` (users: grade, quota, admin role, active, create, password). API views and web views both call them — don't re-implement a rule in a view
 - Presigned URLs with short TTL (5-15 minutes)
 - Validate MIME types and file sizes before upload
 - Never expose storage credentials to clients

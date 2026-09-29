@@ -77,7 +77,7 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
 ## 3) Data Model
 
 ### Existing
-- **User**(email, plan, total_quota_mb, used_quota_mb, referral_code, …)
+- **User**(email (login), username, plan = grade (solo|pro|enterprise), total_quota_mb, used_quota_mb (float MB), is_superuser (= is_staff), is_active, referral_code, …)
 - **Score**(user, title, original_filename, composer, arranger (0.9.0), instrumentation, pages, s3_key, size_bytes, mime, thumbnail_key, tags (JSON list), note, content_hash, created_at, updated_at)
 - **Setlist**(user, title, description) / **SetlistItem**(setlist, score, order_index, notes)
 - **Task**(user, score, kind, status, try_count, celery_task_id, log, result_json, error_message, …)
@@ -122,6 +122,14 @@ Quota is charged to the uploader (no ensemble quota for now).
 
 Implemented as `Score.objects.readable_by(user)` / `writable_by(user)`; every score lookup (viewset, bulk actions, downloads) goes through one of them. Non-members get 404, members attempting writes get 403. Role changes: owner only; at least one owner must remain.
 
+### Service-wide roles and grades (devlog 075)
+- **Administrator** = `is_superuser` (kept equal to `is_staff`, so `/admin/` works too). Only administrators manage users: web `/manage/users/` and `/api/v1/admin/users/`.
+- Actions: add a user (works while `REGISTRATION_OPEN=false`), change grade / quota limit, grant/remove admin, set a password, deactivate.
+- **Grade** = `User.plan`; `settings.USER_GRADES` maps it to a label and a default quota (200 / 1000 / 5000 MB, env `GRADE_*_MB`). Changing the grade applies its default quota unless a limit is given. Grades only set quota for now.
+- Guards: no removing your own admin role, no deactivating yourself, at least one active administrator remains.
+- Deactivated users: web session ends, login fails, user and device JWTs (access and refresh) are rejected; their data stays.
+- Rules live in `core/services.py` (`update_user`, `create_user`, `set_password`), used by both the web and the admin API.
+
 ---
 
 ## 4) API Surface (`/api/v1/`)
@@ -131,7 +139,7 @@ Implemented as `Score.objects.readable_by(user)` / `writable_by(user)`; every sc
 - Scores: `scores/` (list/search/filter, CRUD, bulk operations, tag stats)
 - Files: `files/upload-url/`, `files/upload-confirm/`, `files/upload-cancel/`, `files/download-url/`, `files/thumbnail/<key>`
 - Setlists: `setlists/` (CRUD, items, ordering)
-- Admin: `admin/…`
+- Admin (superuser only): `admin/users/` (list, `POST` add, `PATCH` grade/quota/admin/active, `POST {id}/reset_password/`), `admin/scores/`, `admin/setlists/`, `admin/tasks/`
 - Ensembles (S1): `ensembles/`, `ensembles/{id}/members/{user_id}/`, `ensembles/{id}/invites/[{invite_id}/]`, `ensembles/invite/{code}/` (preview), `ensembles/join/`
 - Scores accept/return `ensemble`, `part_name`, `version`, `version_count`; filter `?ensemble=<id>|personal`
 - S6 ✅: `sync/setlists/`; `scores/{id}/analysis/` (PUT requires the version's sha256; members replace only with a newer analyzer); web `/setlists/`, Google login `/auth/google/`

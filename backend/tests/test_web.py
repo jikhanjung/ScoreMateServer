@@ -172,6 +172,15 @@ class ScorePagesTest(WebTestBase):
 
 class UploadTest(WebTestBase):
 
+    def test_title_starts_with_scoremate_and_upload_is_under_scores(self):
+        self.as_user(self.member)
+        page = self.client.get(reverse('web:scores'))
+        self.assertContains(page, '<title>ScoreMate · 악보</title>', html=True)
+        self.assertContains(page, '>악보 추가</a>')
+        self.assertNotContains(page, '>올리기</a>')                     # 위쪽 메뉴에서 뺐다
+        upload = self.client.get(reverse('web:score_upload'))
+        self.assertContains(upload, '<title>ScoreMate · 악보 추가</title>', html=True)
+
     def test_upload_page_has_big_dropzone(self):
         self.as_user(self.member)
         page = self.client.get(reverse('web:score_upload'))

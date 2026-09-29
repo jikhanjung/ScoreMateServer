@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}ScoreMate{% endblock %} · ScoreMate</title>
+<title>ScoreMate · {% block title %}악보{% endblock %}</title>
 <link rel="stylesheet" href="{% static 'web/app.css' %}">
 </head>
 <body>
@@ -13,10 +13,9 @@
     {% if user.is_authenticated %}
     {% with url_name=request.resolver_match.url_name %}
     <nav class="nav">
-      <a href="{% url 'web:scores' %}" class="{% if url_name == 'scores' or url_name == 'score_detail' or url_name == 'score_edit' %}on{% endif %}">악보</a>
+      <a href="{% url 'web:scores' %}" class="{% if url_name == 'scores' or url_name == 'score_detail' or url_name == 'score_edit' or url_name == 'score_upload' %}on{% endif %}">악보</a>
 {% if ensembles_enabled %}<a href="{% url 'web:ensembles' %}" class="{% if 'ensemble' in url_name %}on{% endif %}">앙상블</a>{% endif %}
       <a href="{% url 'web:setlists' %}" class="{% if 'setlist' in url_name %}on{% endif %}">세트리스트</a>
-      <a href="{% url 'web:score_upload' %}" class="{% if url_name == 'score_upload' %}on{% endif %}">올리기</a>
       <a href="{% url 'web:devices' %}" class="{% if url_name == 'devices' or url_name == 'activate' %}on{% endif %}">연결 기기</a>
     </nav>
     {% endwith %}

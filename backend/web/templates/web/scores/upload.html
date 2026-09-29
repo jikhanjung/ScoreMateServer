@@ -1,7 +1,7 @@
 {% extends 'web/base.html' %}
-{% block title %}올리기{% endblock %}
+{% block title %}악보 추가{% endblock %}
 {% block content %}
-<div class="head"><div><h1>악보 올리기</h1><p class="muted">PDF, 파일당 {{ max_mb }}MB 까지.{% if ensembles_enabled %} 앙상블에 올리면 멤버 모두가 봅니다.{% endif %}</p></div></div>
+<div class="head"><div><h1>악보 추가</h1><p class="muted">PDF, 파일당 {{ max_mb }}MB 까지.{% if ensembles_enabled %} 앙상블에 올리면 멤버 모두가 봅니다.{% endif %}</p></div></div>
 {% if duplicates %}
 <ul class="messages"><li class="warning">
   같은 곳에 제목 · 파트가 같은 악보가 이미 있습니다:

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="head">
   <div><h1>악보</h1><p class="muted">{% if ensembles_enabled %}내 악보와 내가 속한 앙상블의 악보{% else %}내 악보{% endif %} {{ page.paginator.count }}개</p></div>
-  <a class="btn primary" href="{% url 'web:score_upload' %}">올리기</a>
+  <a class="btn primary" href="{% url 'web:score_upload' %}">악보 추가</a>
 </div>
 <form method="get" class="row" style="margin-bottom:1rem">
   <input type="search" name="q" value="{{ q }}" placeholder="제목 · 작곡가 · 편성 · 파트" aria-label="검색">

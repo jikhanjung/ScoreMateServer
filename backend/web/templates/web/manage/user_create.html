@@ -1,0 +1,15 @@
+{% extends 'web/base.html' %}
+{% block title %}사용자 추가 · 사용자 관리{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>사용자 추가</h1><p class="muted"><a href="{% url 'web:users' %}">← 사용자 관리</a></p></div>
+</div>
+<div class="box" style="max-width:640px">
+  <form method="post" class="stack">{% csrf_token %}
+    {% include 'web/_form_errors.html' %}
+    {% for field in form %}{% include 'web/_field.html' %}{% endfor %}
+    <p class="muted small">가입이 닫혀 있어도 관리자는 사용자를 만들 수 있습니다. 저장 공간은 등급의 기본 한도로 시작합니다(사용자 화면에서 바꿀 수 있습니다).</p>
+    <button class="btn primary" type="submit">추가</button>
+  </form>
+</div>
+{% endblock %}

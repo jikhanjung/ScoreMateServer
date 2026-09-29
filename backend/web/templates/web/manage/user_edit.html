@@ -1,5 +1,18 @@
 {% extends 'web/base.html' %}
-{% block title %}{{ target.username }} · 사용자 관리{% endblock %}
+{% block title %}{{ target.username }} · 사용자 관리
+<h2>비밀번호 다시 정하기</h2>
+<div class="box" style="max-width:640px">
+  {% if is_self %}
+  <p class="muted small">자기 비밀번호는 <a href="{% url 'web:account' %}">계정</a> 화면에서 바꿉니다.</p>
+  {% else %}
+  <form method="post" action="{% url 'web:user_password' target.pk %}" class="stack">{% csrf_token %}
+    {% for field in password_form %}{% include 'web/_field.html' %}{% endfor %}
+    <p class="muted small">새 비밀번호를 본인에게 따로 알려 주세요. 로그인해 있던 웹 세션은 끝나고, 연결된 기기는 그대로입니다.{% if not target.has_usable_password %} 지금은 비밀번호가 없습니다(Google 로 가입) — 정하면 이메일로도 로그인할 수 있습니다.{% endif %}</p>
+    <button class="btn" type="submit" data-confirm="{{ target.username }} 의 비밀번호를 새로 정할까요?">비밀번호 정하기</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
 {% block content %}
 <div class="head">
   <div><h1>{{ target.username }}</h1><p class="muted"><a href="{% url 'web:users' %}">← 사용자 관리</a></p></div>
@@ -37,5 +50,18 @@
     {% endif %}
     <button class="btn primary" type="submit">저장</button>
   </form>
+</div>
+
+<h2>비밀번호 다시 정하기</h2>
+<div class="box" style="max-width:640px">
+  {% if is_self %}
+  <p class="muted small">자기 비밀번호는 <a href="{% url 'web:account' %}">계정</a> 화면에서 바꿉니다.</p>
+  {% else %}
+  <form method="post" action="{% url 'web:user_password' target.pk %}" class="stack">{% csrf_token %}
+    {% for field in password_form %}{% include 'web/_field.html' %}{% endfor %}
+    <p class="muted small">새 비밀번호를 본인에게 따로 알려 주세요. 로그인해 있던 웹 세션은 끝나고, 연결된 기기는 그대로입니다.{% if not target.has_usable_password %} 지금은 비밀번호가 없습니다(Google 로 가입) — 정하면 이메일로도 로그인할 수 있습니다.{% endif %}</p>
+    <button class="btn" type="submit" data-confirm="{{ target.username }} 의 비밀번호를 새로 정할까요?">비밀번호 정하기</button>
+  </form>
+  {% endif %}
 </div>
 {% endblock %}

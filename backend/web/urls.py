@@ -53,7 +53,9 @@ urlpatterns = [
     path('devices/<uuid:pk>/sync/', views.device_sync, name='device_sync'),
 
     path('manage/users/', views.user_list, name='users'),
+    path('manage/users/new/', views.user_create, name='user_create'),
     path('manage/users/<int:pk>/', views.user_edit, name='user_edit'),
+    path('manage/users/<int:pk>/password/', views.user_password, name='user_password'),
 
     path('join/', views.join, name='join_form'),
     path('join/<str:code>/', views.join, name='join'),

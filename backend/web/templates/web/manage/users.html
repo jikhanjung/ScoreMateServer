@@ -3,6 +3,7 @@
 {% block content %}
 <div class="head">
   <div><h1>사용자 관리</h1><p class="muted">등급 · 저장 공간 · 관리자 권한 · 사용 중지를 바꿉니다. 관리자만 볼 수 있습니다.</p></div>
+  <a class="btn primary" href="{% url 'web:user_create' %}">사용자 추가</a>
 </div>
 <form method="get" class="row" style="margin-bottom:1rem">
   <input type="search" name="q" value="{{ q }}" placeholder="이름 · 이메일" aria-label="검색">

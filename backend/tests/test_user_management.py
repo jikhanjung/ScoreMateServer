@@ -1,7 +1,9 @@
 """
 사용자 관리 — 관리자(superuser)만: 등급 · 저장 공간 · 관리자 권한 · 사용 중지 (core/services.py · 웹 /manage/users/ · API). devlog 075
 """
+from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient
 
@@ -66,8 +68,9 @@ class UserManagementTest(WebTestBase):
         api = APIClient()
         api.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}")
         self.assertEqual(api.get('/api/v1/sync/scores/').status_code, 200)
+        self.assertTrue(self.client_class().login(username=self.member.email, password='testpass123'))
         services.update_user(self.admin, self.member, is_active=False)
-        self.assertFalse(self.client.login(username='member', password='testpass123'))
+        self.assertFalse(self.client.login(username=self.member.email, password='testpass123'))
         self.assertEqual(api.get('/api/v1/sync/scores/').status_code, 401)
         self.assertEqual(APIClient().post('/api/v1/auth/token/refresh/', {'refresh': tokens['refresh_token']},
                                           format='json').status_code, 401)
@@ -130,3 +133,86 @@ class UserManagementTest(WebTestBase):
         staff = UserFactory(username='staff', is_staff=True)
         api.force_authenticate(staff)
         self.assertEqual(api.get('/api/v1/admin/users/').status_code, 403)
+
+    # --- 비밀번호 다시 정하기 ---
+    def test_reset_password_on_web(self):
+        member_client = self.client_class()
+        member_client.force_login(self.member)
+        self.client.force_login(self.admin)
+        url = reverse('web:user_password', args=[self.member.pk])
+        page = self.client.post(url, {'new_password1': 'Fresh-pass-2026', 'new_password2': 'Fresh-pass-2026'}, follow=True)
+        self.assertContains(page, '비밀번호를 새로 정했습니다')
+        self.member.refresh_from_db()
+        self.assertTrue(self.member.check_password('Fresh-pass-2026'))
+        self.assertEqual(member_client.get(reverse('web:scores')).status_code, 302)     # 웹 세션이 끝났다
+        self.assertTrue(self.client_class().login(username=self.member.email, password='Fresh-pass-2026'))
+
+    def test_reset_password_checks(self):
+        self.client.force_login(self.admin)
+        url = reverse('web:user_password', args=[self.member.pk])
+        self.client.post(url, {'new_password1': 'Fresh-pass-2026', 'new_password2': 'other-pass-2026'})   # 서로 다름
+        self.client.post(url, {'new_password1': '1234', 'new_password2': '1234'})                         # 너무 짧음
+        self.member.refresh_from_db()
+        self.assertTrue(self.member.check_password('testpass123'))
+        page = self.client.post(reverse('web:user_password', args=[self.admin.pk]),
+                                {'new_password1': 'Fresh-pass-2026', 'new_password2': 'Fresh-pass-2026'}, follow=True)
+        self.assertContains(page, '자기 비밀번호는 계정 화면에서')
+        self.assertNotContains(self.client.get(reverse('web:user_edit', args=[self.admin.pk])), '비밀번호 정하기</button>')
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.post(url, {'new_password1': 'Fresh-pass-2026',
+                                                'new_password2': 'Fresh-pass-2026'}).status_code, 404)
+
+    def test_reset_password_api(self):
+        api = APIClient()
+        api.force_authenticate(self.admin)
+        url = f'/api/v1/admin/users/{self.member.pk}/reset_password/'
+        self.assertEqual(api.post(url, {'new_password': '1234'}, format='json').status_code, 400)
+        self.assertEqual(api.post(url, {'new_password': 'Fresh-pass-2026'}, format='json').status_code, 200)
+        self.member.refresh_from_db()
+        self.assertTrue(self.member.check_password('Fresh-pass-2026'))
+
+    # --- 사용자 추가 ---
+    def test_create_user_on_web(self):
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse('web:users')), '사용자 추가')
+        page = self.client.post(reverse('web:user_create'), {
+            'email': 'New@Example.com', 'username': 'newbie', 'password1': 'Fresh-pass-2026',
+            'password2': 'Fresh-pass-2026', 'grade': 'pro'}, follow=True)
+        self.assertContains(page, 'newbie (new@example.com) 을 추가했습니다')
+        user = get_user_model().objects.get(email='new@example.com')
+        self.assertEqual((user.plan, user.total_quota_mb, user.is_superuser, user.is_active), ('pro', 1000, False, True))
+        self.assertTrue(self.client_class().login(username='new@example.com', password='Fresh-pass-2026'))
+
+    def test_create_user_checks(self):
+        self.client.force_login(self.admin)
+        url = reverse('web:user_create')
+        base = {'username': 'x2', 'password1': 'Fresh-pass-2026', 'password2': 'Fresh-pass-2026', 'grade': 'solo'}
+        self.assertContains(self.client.post(url, dict(base, email=self.member.email)), '이미 가입된 이메일')
+        self.assertContains(self.client.post(url, dict(base, email='a@b.kr', username='member')), '이미 쓰는 이름')
+        self.client.post(url, dict(base, email='c@d.kr', password1='1234', password2='1234'))
+        self.assertFalse(get_user_model().objects.filter(email__in=['a@b.kr', 'c@d.kr']).exists())
+        with self.assertRaises(services.UserRuleError):
+            services.create_user(self.admin, email='e@f.kr', username='e', password='Fresh-pass-2026', grade='gold')
+        with self.assertRaises(PermissionDenied):
+            services.create_user(self.owner, email='e@f.kr', username='e', password='Fresh-pass-2026')
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    @override_settings(REGISTRATION_OPEN=False)
+    def test_create_user_while_registration_closed(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse('web:user_create'), {'email': 'g@h.kr', 'username': 'g', 'password1': 'Fresh-pass-2026',
+                                                      'password2': 'Fresh-pass-2026', 'grade': 'solo', 'is_superuser': 'on'})
+        user = get_user_model().objects.get(email='g@h.kr')
+        self.assertTrue(user.is_superuser and user.is_staff)
+
+    def test_create_user_api(self):
+        api = APIClient()
+        api.force_authenticate(self.admin)
+        response = api.post('/api/v1/admin/users/', {'email': 'i@j.kr', 'username': 'ij', 'password': 'Fresh-pass-2026',
+                                                      'plan': 'enterprise'}, format='json')
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()['total_quota_mb'], 5000)
+        self.assertEqual(api.post('/api/v1/admin/users/', {'email': 'i@j.kr', 'username': 'ij2',
+                                                           'password': 'Fresh-pass-2026'}, format='json').status_code, 400)
+

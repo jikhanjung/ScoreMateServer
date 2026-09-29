@@ -2,7 +2,6 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import BasePermission, IsAdminUser
 from rest_framework.response import Response
-from django.contrib.auth.hashers import make_password
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
@@ -30,7 +29,18 @@ class AdminUserViewSet(viewsets.ModelViewSet):
     search_fields = ['email', 'username']
     ordering_fields = ['date_joined', 'last_login', 'used_quota_mb']
 
-    http_method_names = ['get', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        try:
+            user = user_services.create_user(
+                request.user, email=data.get('email'), username=data.get('username'), password=data.get('password') or '',
+                grade=data.get('plan') or 'solo', quota_mb=data.get('total_quota_mb'),
+                is_superuser=bool(data.get('is_superuser')))
+        except (user_services.UserRuleError, TypeError, ValueError) as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(user).data, status=status.HTTP_201_CREATED)
 
     def partial_update(self, request, *args, **kwargs):
         user = self.get_object()
@@ -51,8 +61,10 @@ class AdminUserViewSet(viewsets.ModelViewSet):
         new_password = request.data.get('new_password')
         if not new_password:
             return Response({'detail': 'new_password is required'}, status=status.HTTP_400_BAD_REQUEST)
-        user.password = make_password(new_password)
-        user.save(update_fields=['password'])
+        try:
+            user_services.set_password(request.user, user, new_password)
+        except user_services.UserRuleError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'detail': 'Password reset successfully'})
 
 

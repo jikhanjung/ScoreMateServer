@@ -70,6 +70,19 @@ def managed_ensembles(user):
     return Ensemble.objects.filter(memberships__user=user, memberships__role__in=Membership.MANAGER_ROLES).order_by('name')
 
 
+class UserCreateForm(RegisterForm):
+    """관리자가 사용자 추가 — 가입 폼 + 등급 · 관리자. 규칙은 core/services.create_user"""
+    grade = forms.ChoiceField(label='등급', choices=())
+    is_superuser = forms.BooleanField(label='관리자', required=False)
+
+    def __init__(self, *args, **kwargs):
+        from core import services as user_services
+        super().__init__(*args, **kwargs)
+        self.fields['grade'].choices = [(key, f'{label} — 기본 {quota}MB') for key, label, quota in user_services.grades()]
+        self.fields['username'].help_text = '목록 · 멤버 목록에 보이는 이름'
+        self.fields['password1'].help_text = '본인에게 따로 알려 주세요. 로그인 뒤 계정 화면에서 바꿀 수 있습니다.'
+
+
 class UploadForm(forms.Form):
     files = MultipleFileField(label='PDF 파일', help_text='여러 파일을 한 번에 고를 수 있습니다.')
     ensemble = forms.ModelChoiceField(label='올릴 곳', queryset=Ensemble.objects.none(), required=False,

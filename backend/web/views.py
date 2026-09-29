@@ -41,7 +41,7 @@ from scores.services import (
 from . import google
 from .forms import (
     ActivateForm, DeviceNameForm, EnsembleForm, SetlistForm, InviteForm, JoinCodeForm, LoginForm, MemberForm, NewVersionForm, RegisterForm, ScoreEditForm,
-    UploadForm,
+    UploadForm, UserCreateForm,
     managed_ensembles,
 )
 
@@ -952,6 +952,24 @@ def user_list(request):
 
 
 @login_required
+def user_create(request):
+    _superuser_only(request)
+    form = UserCreateForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        data = form.cleaned_data
+        try:
+            user = user_services.create_user(request.user, email=data['email'], username=data['username'],
+                                             password=data['password1'], grade=data['grade'],
+                                             is_superuser=data['is_superuser'])
+        except user_services.UserRuleError as exc:
+            messages.error(request, _USER_RULE_MESSAGES.get(str(exc), str(exc)))
+        else:
+            messages.success(request, f'{user.username} ({user.email}) 을 추가했습니다.')
+            return redirect('web:user_edit', pk=user.pk)
+    return render(request, 'web/manage/user_create.html', {'form': form})
+
+
+@login_required
 def user_edit(request, pk):
     _superuser_only(request)
     target = get_object_or_404(get_user_model(), pk=pk)
@@ -980,10 +998,35 @@ def user_edit(request, pk):
         'score_count': Score.objects.filter(user=target).count(),
         'devices': Device.objects.filter(user=target, revoked_at__isnull=True).order_by('-last_seen_at'),
         'is_self': target.pk == request.user.pk,
+        'password_form': SetPasswordForm(target),
     })
 
 
+@login_required
+@require_POST
+def user_password(request, pk):
+    _superuser_only(request)
+    target = get_object_or_404(get_user_model(), pk=pk)
+    form = SetPasswordForm(target, request.POST)
+    if form.is_valid():
+        try:
+            user_services.set_password(request.user, target, form.cleaned_data['new_password1'])
+        except user_services.UserRuleError as exc:
+            messages.error(request, _USER_RULE_MESSAGES.get(str(exc), str(exc)))
+        else:
+            messages.success(request, f'{target.username}: 비밀번호를 새로 정했습니다. 로그인해 있던 웹 세션은 끝났습니다.')
+    else:
+        for errors in form.errors.values():
+            for error in errors:
+                messages.error(request, error)
+    return redirect('web:user_edit', pk=target.pk)
+
+
 _USER_RULE_MESSAGES = {
+    'This email is already registered.': '이미 가입된 이메일입니다.',
+    'This name is already taken.': '이미 쓰는 이름입니다.',
+    'Email and name are required.': '이메일과 이름을 적어 주세요.',
+    'Change your own password on the account page.': '자기 비밀번호는 계정 화면에서 바꿉니다.',
     'You cannot remove your own administrator role.': '자기 자신의 관리자 권한은 뺄 수 없습니다.',
     'You cannot deactivate yourself.': '자기 자신은 사용 중지할 수 없습니다.',
     'At least one active administrator must remain.': '사용 중인 관리자가 적어도 한 명 있어야 합니다.',

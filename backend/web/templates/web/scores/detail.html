@@ -24,6 +24,11 @@
       {% if score.arranger %}<dt>편곡</dt><dd>{{ score.arranger }}</dd>{% endif %}
       {% if score.instrumentation %}<dt>편성</dt><dd>{{ score.instrumentation }}</dd>{% endif %}
       <dt>쪽수</dt><dd>{{ score.pages|default:'처리 중' }}</dd>
+      {% if pipeline %}<dt>처리</dt><dd class="pipeline">
+        <span class="{% if pipeline.pdf == 'ok' %}done{% endif %}">① PDF 분석{% if pipeline.pdf == 'ok' %} ✓{% endif %}</span> ·
+        <span class="{% if pipeline.model != 'none' %}done{% endif %}">② 위치{% if pipeline.model == 'ok' %} ✓{% elif pipeline.model == 'failed' %} ✗{% elif pipeline.progress.stage == 'model' %} {{ pipeline.progress.done }}/{{ pipeline.progress.total }}쪽{% endif %}</span> ·
+        <span>③ 악보 인식{% if pipeline.progress.stage == 'omr' %} {{ pipeline.progress.done }}/{{ pipeline.progress.total }}쪽{% endif %}</span>
+        <span class="muted small">— 5분마다 이어서 처리합니다</span></dd>{% endif %}
       {% if layout %}<dt>보표 분석</dt><dd>{{ layout.system_count }}시스템 · {{ layout.measure_count }}마디{% if layout.time_signatures %} · {% for t in layout.time_signatures|slice:':3' %}{{ t.time }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}{% if omr.status == 'ok' and omr.measures != layout.measure_count %} <span class="muted small">(악보 인식 {{ omr.measures }}마디 — 도돌이 · 못갖춘마디로 다를 수 있음)</span>{% endif %}</dd>{% endif %}
       {% if model_layout %}<dt>위치(모델)</dt><dd>{{ model_layout.system_count }}시스템 · {{ model_layout.measure_count }}마디{% if model_layout.agreement %} <span class="muted small">— PDF 분석과 {{ model_layout.agreement.pages_same }}/{{ model_layout.agreement.pages_compared }}쪽 같음{% if model_layout.agreement.mean_pt is not None %}, 평균 오차 {{ model_layout.agreement.mean_pt }}pt{% endif %}</span>{% elif not layout.system_count %} <span class="muted small">— PDF 분석이 없는 악보라 기기에는 이 위치가 내려갑니다</span>{% endif %}</dd>{% endif %}
       <dt>크기</dt><dd>{{ score.size_bytes|filesizeformat }}</dd>
@@ -79,8 +84,7 @@
   <p>악보 인식이 검산을 통과하지 못했습니다. <span class="muted small">({{ omr.updated_at|date:'Y-m-d H:i' }})</span></p>
   {% if omr.problems %}<details><summary class="small">문제 {{ omr.problems|length }}개</summary><ul class="small">{% for p in omr.problems|slice:':10' %}<li>{{ p }}</li>{% endfor %}</ul></details>{% endif %}
   {% elif omr.status == 'waiting' %}
-  {% if omr.position == 1 %}<p class="muted">악보 인식 중입니다(한 쪽에 몇 분). 끝나면 여기에 결과가 나옵니다.</p>
-  {% else %}<p class="muted">악보 인식 대기 중{% if omr.position %} — {{ omr.position }}번째{% endif %}. 쪽수가 적은 악보부터 차례로 처리합니다.</p>{% endif %}
+  <p class="muted">악보 인식 전입니다 — 위의 "처리"에서 진행을 볼 수 있습니다. 끝나면 여기에 결과가 나옵니다.</p>
   {% endif %}
 </div>
 {% endif %}

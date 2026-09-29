@@ -276,7 +276,19 @@ def score_detail(request, pk):
                                                       'omr': summary_for(current), 'current_version': current,
                                                       'layout': layout.data if layout else None,
                                                       'layout_staves': staves_per_system(current) if layout else None,
-                                                      'model_layout': _model_layout(current)})
+                                                      'model_layout': _model_layout(current),
+                                                      'pipeline': _pipeline(current)})
+
+
+def _pipeline(version):
+    """처리 단계(① PDF 분석 · ③ 위치 · ② 인식)와 쪽 진행 — 다 끝났으면 None"""
+    from scores import pipeline
+    if version is None or not version.content_hash:
+        return None
+    status = pipeline.stage_status(version)
+    if status['pdf'] == 'ok' and status['model'] != 'none' and status['omr'] != 'none':
+        return None
+    return {**status, 'progress': pipeline.progress(version)}
 
 
 def _model_layout(version):

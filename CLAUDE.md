@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-29) — 485 backend tests passing, 0.11.0 in production (see HANDOFF.md)
+### Status (2026-09-29) — 494 backend tests passing, 0.12.0 in production (see HANDOFF.md)
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -34,6 +34,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | — | Page view on score detail: per-page images rendered on first view, cached per version in storage, signed-URL redirect | ✅ devlog 067 |
 | — | Score layout files: the TV app's Kotlin PDF analysis ported (scores/score_layout.py), stored per version, synced as `layout` | ✅ devlog 068 |
 | — | Model layout lane: the model reads systems/staves/barlines per page (±0.4pt on vector PDFs); cross-check for PDF analysis, the synced `layout` for scanned scores (`source: model`) | ✅ devlog 070, 071 |
+| — | One score pipeline (host cron `score_pipeline.sh`): ① PDF analysis → ② model layout → ③ recognition, page-by-page interleaving, hints from the trusted layout | ✅ devlog 072 |
 
 ## Development Commands
 
@@ -213,8 +214,8 @@ item = SetlistItemFactory(setlist=setlist, score=score)
 - Score file fields mirror `current_version`; change them only through `scores/services.py` (`add_version`, `make_current`, `delete_version`)
 - `scores/score_layout.py` is a port of the TV app's Kotlin `score/` — keep thresholds/rounding identical; after changing it bump
   `SERVER_REVISION` in `scores/layouts.py` (re-analyzes every version and makes devices re-download). Tests: `tests/test_score_layout*.py`
-- Recognition (OMR) never runs in the container: the host lane calls the Codex CLI; the container only lists jobs (`omr_pending`)
-  and stores results (`omr_ingest`). Analysis files live under `files/` and are removed with their version/score (`omr.stored_keys`)
+- Model calls never run in the container: the host pipeline (`scripts/score_pipeline.py`) calls the Codex CLI; the container only
+  reports what is left (`pipeline_status`) and stores results (`model_layout_ingest`, `omr_ingest`). Analysis files live under `files/` and are removed with their version/score (`omr.stored_keys`)
 
 ## Background Task Patterns
 ```python

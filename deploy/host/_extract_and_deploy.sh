@@ -58,28 +58,22 @@ docker cp "${CID}:/app/deploy/host/.env.example" "${ROOT}/.env.example" 2>/dev/n
 mkdir -p "${ROOT}/scripts"
 docker cp "${CID}:/app/scripts/backup_db.py" "${ROOT}/scripts/backup_db.py" 2>/dev/null \
     && echo "  extracted scripts/backup_db.py" || true
-# 악보 인식 레인(호스트 cron) — 인식 스크립트와 레인 셸. cron 등록 · codex 로그인 · venv 는 사람이 한 번(deploy/README.md §악보 인식)
+# 악보 처리 파이프라인(호스트 cron) — 스크립트와 셸. cron 등록 · codex 로그인 · venv 는 사람이 한 번(deploy/README.md §악보 처리 파이프라인)
 docker cp "${CID}:/app/scripts/astra_musicxml.py" "${ROOT}/scripts/astra_musicxml.py" 2>/dev/null \
     && echo "  extracted scripts/astra_musicxml.py" || true
 docker cp "${CID}:/app/scripts/omr_compact.py" "${ROOT}/scripts/omr_compact.py" 2>/dev/null \
     && echo "  extracted scripts/omr_compact.py" || true
 docker cp "${CID}:/app/scripts/model_layout.py" "${ROOT}/scripts/model_layout.py" 2>/dev/null \
     && echo "  extracted scripts/model_layout.py" || true
-for lane in layout_lane.sh model_layout_lane.sh; do
+docker cp "${CID}:/app/scripts/score_pipeline.py" "${ROOT}/scripts/score_pipeline.py" 2>/dev/null \
+    && echo "  extracted scripts/score_pipeline.py" || true
+for lane in score_pipeline.sh; do
     if docker cp "${CID}:/app/deploy/host/${lane}" "${ROOT}/scripts/.${lane}.new" 2>/dev/null && bash -n "${ROOT}/scripts/.${lane}.new"; then
         chmod +x "${ROOT}/scripts/.${lane}.new" && mv -f "${ROOT}/scripts/.${lane}.new" "${ROOT}/scripts/${lane}" && echo "  extracted scripts/${lane}"
     else
         rm -f "${ROOT}/scripts/.${lane}.new"
     fi
 done
-if docker cp "${CID}:/app/deploy/host/omr_lane.sh" "${ROOT}/scripts/.omr_lane.sh.new" 2>/dev/null; then
-    if bash -n "${ROOT}/scripts/.omr_lane.sh.new"; then
-        chmod +x "${ROOT}/scripts/.omr_lane.sh.new" && mv -f "${ROOT}/scripts/.omr_lane.sh.new" "${ROOT}/scripts/omr_lane.sh" \
-            && echo "  extracted scripts/omr_lane.sh"
-    else
-        rm -f "${ROOT}/scripts/.omr_lane.sh.new"; echo "  WARN omr_lane.sh 문법 오류 — 이전 것 유지"
-    fi
-fi
 
 # 부트스트랩 래퍼 — exec 로 넘어와 안전하지만, 깨진 걸 심으면 다음 배포가 막히니 bash -n 검증 후 교체.
 for f in deploy-prod.sh; do safe_extract_sh "$f"; done

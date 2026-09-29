@@ -1,6 +1,6 @@
 # HANDOFF — ScoreMateServer 지금 상태
 
-_Last updated: 2026-09-29 · 운영 **0.11.0** · 백엔드 테스트 485 통과_
+_Last updated: 2026-09-29 · 운영 **0.12.0** · 백엔드 테스트 494 통과_
 
 다음 작업을 이어받을 사람(사람 · 에이전트)이 가장 먼저 읽을 문서. 자세한 설계는 `ARCHITECTURE.md`, 배포는 `deploy/README.md`,
 릴리스별 변화는 `DEPLOY.md`, 과정은 `devlog/`.
@@ -15,13 +15,13 @@ PDF + MusicXML(악보 인식) + 보표 · 마디 분석 파일과 함께 받아 
 | 사이트 | https://scoremate.noematica.kr — 컨테이너 하나(Gunicorn), `127.0.0.1:8016` 뒤 nginx(TLS · X-Accel) |
 | 데이터 | `db/db.sqlite3` · `files/`(PDF · 표지 · 쪽 이미지 · MusicXML · layout JSON) |
 | 배포 | 빌드 호스트 m710q: `./deploy/build.sh X.Y.Z && ./deploy/remote-prod.sh X.Y.Z` |
-| 호스트 cron | 매시 `scripts/backup_db.py` · 10분 `scripts/omr_lane.sh`(악보 인식) · 5분 `scripts/layout_lane.sh`(보표 · 마디 분석) · 10분 `scripts/model_layout_lane.sh`(모델 위치) |
-| 로그 | `omr/lane.log` · `omr/work/v<판 id>/run.log` · `omr/layout.log` · `omr/model_layout.log` · `backup/backup.log` · `docker compose logs api` |
+| 호스트 cron | 매시 `scripts/backup_db.py` · 5분 **`scripts/score_pipeline.sh`**(① PDF 분석 → ② 모델 위치 → ③ 악보 인식, 쪽 단위) |
+| 로그 | `omr/pipeline.log` · `omr/work/v<판 id>/run.log`(③) · `omr/model_layout/v<판 id>/run.log`(②) · `backup/backup.log` · `docker compose logs api` |
 | 백업 | pre-deploy · hourly(DB) · **daily 오프사이트(m710q 05:25, DB + `files/` 전체 + NAS)** |
 | manage.py | 컨테이너 안에서 DB 소유 uid 로: `docker compose exec -u "$(stat -c %u db)" api python manage.py …` |
 
-⚠️ 악보 인식은 **호스트 사용자의 ChatGPT 로그인(Codex CLI)** 을 쓴다. 토큰이 만료되면 `lane.log` 에
-"codex 로그인 필요"가 찍히고 악보는 기다린다(실패로 기록하지 않는다) → `codex logout && codex login --device-auth`.
+⚠️ ② · ③은 **호스트 사용자의 ChatGPT 로그인(Codex CLI)** 을 쓴다. 토큰이 만료되면 `pipeline.log` 에
+"codex 로그인 필요"가 찍히고 파이프라인이 멈춘다(실패로 기록하지 않는다) → `codex logout && codex login --device-auth`.
 
 ## 데이터 (2026-09-28)
 사용자 1 · 악보 4 · 연결 기기 1(`Z18TV_Test`, 앱 0.3.3, 세트리스트 "2027 연주회").
@@ -49,7 +49,8 @@ PDF + MusicXML(악보 인식) + 보표 · 마디 분석 파일과 함께 받아 
 ## 2026-09-29
 - 줄 · 쪽 바뀜을 MusicXML 에(0.10.3) — PDF 분석과 마디 수가 같으면 그 값으로. 네 곡에 채움
 - 모델 위치 정확도 실험(devlog 070): 벡터 8쪽 개수 모두 일치 · 평균 0.1~0.4pt
-- **모델 위치 레인**(0.11.0, devlog 071): 모든 악보. 벡터는 검산, 스캔은 기기 layout(`source: model`)
+- **모델 위치**(0.11.0, devlog 071): 모든 악보. 벡터는 검산, 스캔은 기기 layout(`source: model`)
+- **파이프라인 하나로**(0.12.0, devlog 072): 레인 셋 → `score_pipeline.sh`. ① → ② → ③, 쪽 단위로 번갈아, 힌트는 믿을 수 있는 위치에서
 
 ## 규칙 (꼭 지킬 것)
 - 악보 조회는 늘 `Score.objects.readable_by(user)` / `writable_by(user)`. 규칙은 `scores/services.py` · `ensembles/services.py` 한 곳

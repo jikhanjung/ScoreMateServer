@@ -212,3 +212,5 @@ details > summary { cursor: pointer; color: var(--accent); }
 .dropzone input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .dropzone-files { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem; margin-top: .4rem; }
 .dropzone-file { padding: .15rem .55rem; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: .85rem; }
+
+.pipeline span.done { color: var(--ok); }

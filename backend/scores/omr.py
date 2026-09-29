@@ -96,7 +96,7 @@ def layout_breaks(xml_text, layout_document):
 def apply_layout_breaks(version):
     """이미 끝난 인식 결과에 PDF 분석의 줄 · 쪽 바뀜을 넣는다(파일 · sha256 을 새로, 기기가 다시 받는다). 바꿨으면 True"""
     from django.utils import timezone
-    from .layouts import layout_document
+    from .layouts import delivered_layout_document
     from .models import Score
 
     analysis = musicxml_of(version)
@@ -104,7 +104,7 @@ def apply_layout_breaks(version):
         return False
     storage = get_storage()
     key = analysis.data['musicxml_key']
-    xml, stats = layout_breaks(storage.read_bytes(key).decode('utf-8'), layout_document(version))
+    xml, stats = layout_breaks(storage.read_bytes(key).decode('utf-8'), delivered_layout_document(version))
     if xml is None:
         return False
     raw = xml.encode('utf-8')
@@ -177,10 +177,11 @@ def ingest(version, *, sha256, status, musicxml='', run=None, problems=None, met
         raise OmrError('MusicXML is empty or too large.')
     summary = measure_summary(musicxml)
     # 줄 · 쪽 바뀜: PDF 분석과 마디 수가 같으면 그 값(정확)으로, 아니면 모델이 표시한 그대로(스캔 악보 등)
-    from .layouts import layout_document
-    with_layout, stats = layout_breaks(musicxml, layout_document(version))
+    from .layouts import delivered_layout, delivered_layout_document
+    delivered = delivered_layout_document(version)          # PDF 분석, 없으면(스캔) 모델 위치
+    with_layout, stats = layout_breaks(musicxml, delivered)
     if with_layout is not None:
-        musicxml, breaks = with_layout, {'source': 'layout', **stats}
+        musicxml, breaks = with_layout, {'source': 'layout', 'layout_source': delivered_layout(version)[1], **stats}
     else:
         marked = len(ET.fromstring(musicxml).findall('part/measure/print'))
         breaks = {'source': 'model' if marked else 'none', 'model': marked}
@@ -188,7 +189,10 @@ def ingest(version, *, sha256, status, musicxml='', run=None, problems=None, met
     key = musicxml_key(version)
     get_storage().write_bytes(key, raw, 'application/vnd.recordare.musicxml+xml')
     data = {'status': STATUS_OK, 'musicxml_key': key, 'musicxml_sha256': hashlib.sha256(raw).hexdigest(),
-            'musicxml_bytes': len(raw), **summary, 'run': run, 'metadata': metadata, 'breaks': breaks}
+            'musicxml_bytes': len(raw), **summary, 'run': run, 'metadata': metadata, 'breaks': breaks,
+            # 인식 마디 수와 위치 분석 마디 수 — 같으면 마디 경계가 맞다는 좋은 증거(069)
+            'layout_check': {'layout_measures': (delivered or {}).get('measure_count'),
+                             'match': (delivered or {}).get('measure_count') == summary['measure_count']} if delivered else None}
     analysis, _ = save_analysis(version.score, user=version.score.user, analyzer=ANALYZER,
                                 analyzer_version=ANALYZER_VERSION, sha256=sha256, data=data, version=version)
     ScoreAnalysis.objects.filter(pk=analysis.pk).update(uploaded_by=None)   # 사람이 올린 것이 아니다
@@ -299,8 +303,7 @@ def summary_for(version):
     if analysis is None:
         if not version.content_hash or version.score.current_version_id != version.pk:
             return {'status': 'none'}
-        queue = [v.pk for v in pending(limit=1000)]
-        return {'status': 'waiting', 'position': queue.index(version.pk) + 1 if version.pk in queue else None}
+        return {'status': 'waiting'}          # 진행은 파이프라인(scores/pipeline.py)이 보여 준다
     data = analysis.data or {}
     run = data.get('run') or {}
     info = {'status': data.get('status'), 'analysis': analysis, 'updated_at': analysis.updated_at,

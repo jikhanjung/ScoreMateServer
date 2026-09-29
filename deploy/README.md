@@ -102,30 +102,29 @@ m710q `~/backups/scoremate/current/files/`(미러) · `files_snapshots/monthly/Y
 NAS `scoremate_backup/current/files` + `files_snapshots`(-H). 2026-09-28 확인: PDF 6 · 표지 5 모두 미러에 있다.
 한계: 하루 한 번(05:25)이라 그날 올린 파일은 다음 새벽까지 운영 디스크에만 있다 — 필요하면 files 만 더 자주 rsync.
 
-## 보표 · 마디 분석 (devlog 068)
+## 악보 처리 파이프라인 (devlog 072)
 
-TV 앱의 PDF 분석(`score/`, Kotlin)을 옮긴 `scores/score_layout.py` 가 판마다 보표 · 시스템 · 마디선 · 박자표 · 보표 이름을 JSON 파일로 남긴다.
-기기는 동기화 응답의 `layout` 으로 받아 스스로 분석하지 않고 쓸 수 있다.
+cron 에서 스크립트 **하나**. 새 판마다 쪽 단위로 번갈아 처리한다:
 ```
-*/5 * * * * /srv/scoremate/scripts/layout_lane.sh >> /srv/scoremate/omr/layout.log 2>&1
-```
-`manage.py score_layout` = 분석 파일이 없는 판 전부, `--version-id N` = 그 판을 다시.
+*/5 * * * * /srv/scoremate/scripts/score_pipeline.sh >> /srv/scoremate/omr/pipeline.log 2>&1
 
-## 모델 위치 (devlog 070 · 071)
-
-쪽마다 모델이 시스템 · 보표 · 마디선 · 보표 이름 · 박자표 좌표를 읽는다(쪽당 20~40초). 벡터 PDF 는 PDF 분석의 검산,
-스캔 PDF 는 이것이 기기에 내려가는 layout 이 된다(`layout.source = model`).
+① PDF 분석    manage.py score_layout (컨테이너, 수 초) — TV 앱 Kotlin 분석을 옮긴 것, 벡터 PDF 의 정답
+② 모델 위치   scripts/model_layout.py (쪽당 20~40초) — 벡터는 ①의 검산, 스캔은 기기 layout
+③ 악보 인식   scripts/astra_musicxml.py (쪽당 2~4분) — PDF → MusicXML, 믿을 수 있는 위치(① 또는 ②)로 검산
 ```
-*/10 * * * * /srv/scoremate/scripts/model_layout_lane.sh >> /srv/scoremate/omr/model_layout.log 2>&1
-```
-작업 폴더 `omr/model_layout/v<판 id>/`(쪽마다 `pages/pNNN.json` — 끊겨도 이어 한다). 다시 하려면 admin 에서 그 판의 `model-layout` 분석을 지운다.
+- 우선순위: ① 전부 → ② 한 쪽 → ③ 한 쪽 → 다시(짧은 악보부터). 한 번 부르면 할 일이 없어질 때까지(최대 3시간) 돈다
+- 작업 폴더: `omr/model_layout/v<판 id>/`(②) · `omr/work/v<판 id>/`(③) — 끊겨도 끝난 쪽부터 이어 한다
+- 실행 실패는 그 판을 이번 실행에서 건너뛰고 다음에 다시(3번째에 실패 기록). 검산 실패(종료 3)는 실패로 기록
+- 다시 하려면: 그 단계의 분석(`score-layout` · `model-layout` · `astra-musicxml`)을 admin 에서 지운다
+- ⚠️ ② · ③은 호스트 사용자의 ChatGPT 로그인(Codex CLI). 만료되면 파이프라인이 멈추고 로그에 "codex 로그인 필요" →
+  `codex logout && codex login --device-auth`
 
 ## 악보 인식 (OMR, devlog P01)
 
 PDF → MusicXML 을 **운영 호스트의 cron** 이 만든다. 모델 호출(Codex CLI, `gpt-6-astra`, ChatGPT 로그인)은 호스트에서, 결과 저장은 컨테이너에서.
 
 ```
-*/10 cron → scripts/omr_lane.sh
+(파이프라인 ③) scripts/score_pipeline.py →
   1. docker compose exec api manage.py omr_pending    인식할 판(지금 쓰는 판 · 해시 있음 · 인식 기록 없음) 하나
   2. sha256 확인 후 omr/venv/bin/python scripts/astra_musicxml.py files/<key> omr/work/v<id>
        2쪽씩 호출 → 조각마다 파트 구성 · 마디별 박 길이 검산(실패 시 오류를 알려 한 번 더) → 이어 붙이기
@@ -141,6 +140,6 @@ PDF → MusicXML 을 **운영 호스트의 cron** 이 만든다. 모델 호출(C
 # codex 는 nvm node 에 있다 (cron 은 nvm 을 안 읽으므로 레인이 ~/.nvm/versions/node/*/bin 을 스스로 PATH 에 넣는다)
 codex login --device-auth            # 만료되면 codex logout 후 다시
 python3 -m venv /srv/scoremate/omr/venv && /srv/scoremate/omr/venv/bin/pip install music21 pymupdf
-( crontab -l; echo '*/10 * * * * /srv/scoremate/scripts/omr_lane.sh >> /srv/scoremate/omr/lane.log 2>&1' ) | crontab -
+( crontab -l; echo '*/5 * * * * /srv/scoremate/scripts/score_pipeline.sh >> /srv/scoremate/omr/pipeline.log 2>&1' ) | crontab -
 ```
-멈추기: 그 cron 줄을 지운다(주석 처리). 진행 확인: `tail -f /srv/scoremate/omr/lane.log`, `omr/work/v<id>/run.log`.
+멈추기: 파이프라인 cron 줄을 지운다(주석 처리). 진행 확인: `tail -f /srv/scoremate/omr/pipeline.log`, `omr/work/v<id>/run.log`.

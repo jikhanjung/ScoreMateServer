@@ -11,7 +11,7 @@ a chunk that fails is retried once with the error, then the run stops (nothing i
 
 Writes out/result.json — {"status": "ok"|"failed", "problems": [...], "run": {...}} — and exits
 0 = ok (out/score.musicxml), 3 = transcription failed the checks (a verdict: do not retry),
-anything else = could not run (codex missing, login, timeout — retry later).
+4 = paused by --budget-pages (more pages to do — run again), anything else = could not run (codex missing, login, timeout).
 """
 import argparse
 import copy
@@ -319,6 +319,8 @@ def main():
     parser.add_argument('--dpi', type=int, default=200)
     parser.add_argument('--timeout', type=float, default=3600)
     parser.add_argument('--pages', help='only these pages, e.g. 1-4 (for trials)')
+    parser.add_argument('--budget-pages', type=int, default=0,
+                        help='stop after this many newly transcribed calls (exit 4 = more to do); 0 = all')
     parser.add_argument('--staves', type=int, help='staves per system measured by the layout analysis (checks the part list)')
     parser.add_argument('--page-systems', help='systems per page from the layout analysis, e.g. 2,2,3 (checks system_start)')
     parser.add_argument('--format', default='compact', choices=('compact', 'musicxml'),
@@ -346,6 +348,7 @@ def main():
     merged = None
     ties = omr_compact.TieState()       # 쪽을 넘는 붙임줄 — 짧은 형식을 바꿀 때 이어 간다
     queue = list(chunks)
+    new_chunks = 0
     while queue:
         pages = queue.pop(0)
         name = f'p{pages[0]:03d}-{pages[-1]:03d}'
@@ -447,10 +450,14 @@ def main():
                 (workdir / 'chunk.json').write_text(json.dumps(page_data, ensure_ascii=False), encoding='utf-8')
             (workdir / 'chunk.musicxml').write_text(result['musicxml'])
             chunk = ET.fromstring(result['musicxml'])
+            new_chunks += 1
         if merged is None:
             merged = chunk
         else:
             merge(merged, chunk)
+        if args.budget_pages and new_chunks >= args.budget_pages and queue:
+            print(f'paused after {new_chunks} new call(s): pages {queue[0][0]}–{queue[-1][-1]} remain', flush=True)
+            return 4          # 파이프라인이 다른 일을 끼워 넣고 다음에 이어 한다(끝난 조각은 다시 부르지 않는다)
 
     xml = ET.tostring(merged, encoding='unicode')
     out = args.outdir / 'score.musicxml'

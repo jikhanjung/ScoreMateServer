@@ -67,6 +67,8 @@ def analyze_version(version, pdf_bytes=None):
             version=version, analyzer=ANALYZER,
             defaults={'analyzer_version': ANALYZER_VERSION, 'data': data, 'uploaded_by': None, 'device': None})
         Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())   # 기기가 다음 동기화에 알아채게
+    from .model_layouts import refresh_agreement
+    refresh_agreement(version)            # 모델 위치가 먼저 있었으면 새 PDF 분석과 다시 맞춘다
     return analysis
 
 
@@ -125,6 +127,35 @@ def delivered_layout(version):
     if model is not None and (model.data or {}).get('system_count'):
         return model, 'model'
     return (pdf, 'pdf') if pdf is not None else (None, None)
+
+
+def delivered_layout_document(version):
+    """기기에 내리는 쪽(PDF 분석 또는 모델 위치)의 파일 내용 — 없으면 None"""
+    analysis, _ = delivered_layout(version)
+    if analysis is None or not (analysis.data or {}).get('layout_key'):
+        return None
+    try:
+        return json.loads(get_storage().read_bytes(analysis.data['layout_key']))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def pipeline_hints(version):
+    """악보 인식(③)에 줄 힌트 — 믿을 수 있는 위치에서: PDF 분석에 시스템이 있으면 그것(모델 위치와 어긋난 쪽은 0 = 검사 안 함),
+    없으면(스캔 악보) 모델 위치. {'staves': 시스템마다 보표 수, 'page_systems': 'a,b,…'} — 값이 없으면 None"""
+    from collections import Counter
+    from .model_layouts import model_layout_of
+    analysis, source = delivered_layout(version)
+    document = delivered_layout_document(version)
+    if document is None or not document.get('system_count'):
+        return {'staves': None, 'page_systems': None, 'source': None}
+    differ = set()
+    if source == 'pdf':
+        model = model_layout_of(version)
+        differ = set(((model.data or {}).get('agreement') or {}).get('pages_differ') or []) if model else set()
+    counts = Counter(len(s['staffBands']) for p in document['pages'] for s in p['systems'])
+    page_systems = ','.join('0' if p['pageIndex'] + 1 in differ else str(len(p['systems'])) for p in document['pages'])
+    return {'staves': counts.most_common(1)[0][0] if counts else None, 'page_systems': page_systems, 'source': source}
 
 
 def layout_filename(score, version):

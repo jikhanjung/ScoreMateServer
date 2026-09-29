@@ -60,8 +60,8 @@ History: the 2025-08 MVP was a private personal library with "no server-side sha
    /srv/scoremate/db/db.sqlite3     /srv/scoremate/files/
                                      ^
  host cron (outside the container)   |  results written back via manage.py
-  */10 omr_lane.sh    PDF → MusicXML (Codex CLI, ChatGPT login on the host) → omr_ingest
-  */5  layout_lane.sh manage.py score_layout (staves/measures analysis, in the container)
+  */5  score_pipeline.sh  per version: ① manage.py score_layout (PDF analysis) → ② model_layout.py (model reads layout)
+                          → ③ astra_musicxml.py (PDF → MusicXML); one page at a time, shortest score first (devlog 072)
   hourly backup_db.py · daily offsite pull (m710q) incl. files/
 ```
 
@@ -211,8 +211,8 @@ All of it is inside `files/`, so the daily offsite backup (m710q rsync + hardlin
 - SQLite + files bind-mounted; verified backup before deploy; migrate inside the container; roll back `.env` on failure (`deploy.sh`).
 - Read-only container, `cap_drop: ALL`, log size limits; Gunicorn ~2 workers × 4 threads.
 - `deploy/` follows the fcmanager convention (`deploy.toml`); host scripts are extracted from the image on deploy.
-- Host cron lanes: `scripts/omr_lane.sh` (10 min, flock, needs `codex login --device-auth` on the host and `omr/venv`),
-  `scripts/layout_lane.sh` (5 min). See `deploy/README.md` §악보 인식 · §보표 · 마디 분석.
+- Host cron: `scripts/score_pipeline.sh` (5 min, flock; needs `codex login --device-auth` on the host and `omr/venv`).
+  See `deploy/README.md` §악보 처리 파이프라인.
 
 ### Legacy / development
 `docker-compose.yml` (and `docker-compose.prod.yml`, to be replaced in S5): web, worker, Postgres, Redis, MinIO, frontend, nginx.

@@ -136,6 +136,22 @@ def ingest(version, *, sha256, status, pages=None, run=None, problems=None):
     return analysis
 
 
+def refresh_agreement(version):
+    """PDF 분석이 새로 생기거나 바뀌었을 때 모델 위치의 검산을 다시 — 어느 쪽이 먼저 끝나도 최신으로"""
+    from .layouts import layout_document
+    analysis = ScoreAnalysis.objects.filter(version=version, analyzer=ANALYZER).first()
+    if analysis is None or (analysis.data or {}).get('status') != 'ok':
+        return None
+    try:
+        document = json.loads(get_storage().read_bytes(analysis.data['layout_key']))
+    except Exception:  # noqa: BLE001
+        return None
+    version = ScoreVersion.objects.prefetch_related('analyses').get(pk=version.pk)
+    result = agreement(document, layout_document(version))
+    ScoreAnalysis.objects.filter(pk=analysis.pk).update(data=dict(analysis.data, agreement=result))
+    return result
+
+
 def model_layout_of(version):
     analysis = next((a for a in version.analyses.all() if a.analyzer == ANALYZER), None)
     if analysis is not None and (analysis.data or {}).get('status') == 'ok' and analysis.data.get('layout_key'):

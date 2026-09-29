@@ -133,7 +133,7 @@ class OmrTest(WebTestBase):
         ScoreAnalysis.objects.filter(version=self.version, analyzer=LAYOUT).update(data={'layout_key': 'layout.json'})
         self.ingest()
         data = ScoreAnalysis.objects.get(version=self.version, analyzer=omr.ANALYZER).data
-        self.assertEqual(data['breaks'], {'source': 'layout', 'agree': 0, 'total': 1, 'model': 0})
+        self.assertEqual(data['breaks'], {'source': 'layout', 'layout_source': 'pdf', 'agree': 0, 'total': 1, 'model': 0})
         stored = (self.files_root / data['musicxml_key']).read_text()
         self.assertEqual(stored.count('<print new-page="yes" />'), 2)          # 파트 둘의 2마디
         # 이미 끝난 결과에 다시 — 그대로(같은 바뀜)
@@ -177,7 +177,7 @@ class OmrTest(WebTestBase):
     def test_detail_shows_recognition_summary(self):
         detail = reverse('web:score_detail', args=[self.score.pk])
         self.client.force_login(self.leader)
-        self.assertContains(self.client.get(detail), '악보 인식 중입니다')   # 맨 앞 = 레인이 처리 중
+        self.assertContains(self.client.get(detail), '악보 인식 전입니다')   # 진행은 "처리" 줄(파이프라인)
         self.ingest()
         page = self.client.get(detail)
         self.assertContains(page, 'id="omr"')

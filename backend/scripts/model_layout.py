@@ -8,7 +8,8 @@ where the vector analysis finds nothing, and as a cross-check of the vector anal
     ~/venv/omr/bin/python model_layout.py score.pdf out/v12 [--effort high]
 
 Resumable (pages/pNNN.json). Writes out/result.json {"status", "pages": [{page, systems, notes}], "run"} and exits
-0 = ok, 3 = a page failed the checks twice (a verdict), anything else = could not run (retry later).
+0 = ok, 3 = a page failed the checks twice (a verdict), 4 = paused by --budget-pages (more to do),
+anything else = could not run (retry later).
 """
 import argparse
 import json
@@ -78,11 +79,23 @@ def main():
     parser.add_argument('--effort', default='high', choices=('low', 'medium', 'high', 'xhigh', 'max'))
     parser.add_argument('--dpi', type=int, default=200)
     parser.add_argument('--timeout', type=float, default=1200)
+    parser.add_argument('--budget-pages', type=int, default=0,
+                        help='stop after this many newly read pages (exit 4 = more to do); 0 = all')
     args = parser.parse_args()
 
     pdf = pymupdf.open(args.pdf)
     (args.outdir / 'pages').mkdir(parents=True, exist_ok=True)
-    started, pages, calls, usage = time.monotonic(), [], 0, {}
+    # 여러 번에 나눠 돌 수 있다(--budget-pages) — 호출 수 · 시간 · 토큰은 run.json 에 쌓는다
+    run_file = args.outdir / 'run.json'
+    total = json.loads(run_file.read_text()) if run_file.exists() else {'calls': 0, 'elapsed_seconds': 0.0, 'usage': {}}
+    started, pages, calls, usage, new_pages = time.monotonic(), [], 0, total['usage'], 0
+
+    def save_run():
+        total.update(calls=total['calls'] + calls, usage=usage,
+                     elapsed_seconds=round(total['elapsed_seconds'] + time.monotonic() - started, 1))
+        run_file.write_text(json.dumps(total))
+        return total
+
     for number in range(1, len(pdf) + 1):
         done = args.outdir / 'pages' / f'p{number:03d}.json'
         if done.exists():
@@ -105,14 +118,21 @@ def main():
                 break
             prompt = PROMPT + '\n\nYour previous answer failed these checks — fix them:\n- ' + '\n- '.join(problems)
         if problems:
+            save_run()
             (args.outdir / 'result.json').write_text(json.dumps(
                 {'status': 'failed', 'problems': [f'page {number}: {p}' for p in problems]}, ensure_ascii=False))
             return 3
         page = {'page': number, 'systems': result.get('systems') or [], 'notes': result.get('notes', '')}
         done.write_text(json.dumps(page, ensure_ascii=False))
         pages.append(page)
-    run = {'model': MODEL, 'effort': args.effort, 'dpi': args.dpi, 'calls': calls,
-           'elapsed_seconds': round(time.monotonic() - started, 1), 'usage': usage}
+        new_pages += 1
+        if args.budget_pages and new_pages >= args.budget_pages and number < len(pdf):
+            save_run()
+            print(f'paused after page {number}: pages {number + 1}–{len(pdf)} remain', flush=True)
+            return 4          # 파이프라인이 다른 일을 끼워 넣고 다음에 이어 한다
+    total = save_run()
+    run = {'model': MODEL, 'effort': args.effort, 'dpi': args.dpi, 'calls': total['calls'],
+           'elapsed_seconds': total['elapsed_seconds'], 'usage': total['usage']}
     (args.outdir / 'result.json').write_text(json.dumps({'status': 'ok', 'pages': pages, 'run': run}, ensure_ascii=False))
     print(f'-> {len(pages)} pages, {sum(len(p["systems"]) for p in pages)} systems', flush=True)
     return 0

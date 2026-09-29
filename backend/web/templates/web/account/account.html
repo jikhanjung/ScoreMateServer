@@ -9,7 +9,7 @@
     <dt>올린 악보</dt><dd>{{ score_count }}개</dd>
     <dt>Google</dt><dd>{% if google_account %}{{ google_account.email }} 연결됨{% else %}연결 안 됨{% if google_login %} — 로그아웃 후 "Google 로 계속하기"로 로그인하면 이 계정에 연결됩니다(같은 이메일){% endif %}{% endif %}</dd>
   </dl>
-  <div class="small">저장 공간 {{ user.used_quota_mb }}MB / {{ user.total_quota_mb }}MB</div>
+  <div class="small">저장 공간 {{ user.used_quota_mb|floatformat:-1 }}MB / {{ user.total_quota_mb }}MB</div>
   <div class="quota"><span style="width:{{ used_pct }}%"></span></div>
   {% if ensembles_enabled %}<p class="muted small">앙상블에 올린 악보도 올린 사람의 공간을 씁니다.</p>{% endif %}
 </div>

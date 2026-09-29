@@ -235,8 +235,8 @@ class ScoreCreateSerializer(serializers.ModelSerializer):
         score = super().create(validated_data)
         
         # Update user quota
-        size_mb = size_bytes // (1024 * 1024)
-        user.used_quota_mb += size_mb
+        from core.models import bytes_to_mb
+        user.used_quota_mb += bytes_to_mb(size_bytes)
         user.save(update_fields=['used_quota_mb'])
         
         # Trigger background tasks for PDF processing (asynchronously)

@@ -211,7 +211,7 @@ class UploadTest(WebTestBase):
         self.assertTrue((self.files_root / score.s3_key).is_file())
         self.assertTrue((self.files_root / score.thumbnail_key).is_file())
         self.member.refresh_from_db()
-        self.assertEqual(self.member.used_quota_mb, len(PDF) // (1024 * 1024))
+        self.assertEqual(self.member.used_quota_mb, len(PDF) / (1024 * 1024))    # 실수 MB — 1MB 보다 작은 파일도 센다
 
     def test_upload_parts_into_ensemble(self):
         self.as_user(self.leader)

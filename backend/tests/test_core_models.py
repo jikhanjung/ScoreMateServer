@@ -181,3 +181,20 @@ class TestReferralLogModel(TestCase):
                 referred_user=self.referred,
                 bonus_mb=50
             )
+
+class FractionalQuotaTest(TestCase):
+    """쿼터는 실수 MB — 1MB 보다 작은 PDF 도 센다(예전엔 파일마다 MB 아래를 버려 0 이었다)"""
+
+    def test_small_files_add_up(self):
+        from scores.services import create_score, delete_score
+        user = UserFactory(used_quota_mb=0)
+        sizes = [315457, 1399807, 918978, 145534]        # 운영 admin 의 네 PDF — 합 2.65MB
+        scores = [create_score(user=user, s3_key=f'{user.pk}/uploads/{i}/original.pdf', size_bytes=size, title=str(i))
+                  for i, size in enumerate(sizes)]
+        user.refresh_from_db()
+        self.assertAlmostEqual(user.used_quota_mb, sum(sizes) / (1024 * 1024))
+        self.assertAlmostEqual(round(user.used_quota_mb, 2), 2.65)
+        for score in scores:
+            delete_score(score)
+        user.refresh_from_db()
+        self.assertEqual(user.used_quota_mb, 0.0)                # 더하고 뺀 값이 정확히 0 으로 돌아온다

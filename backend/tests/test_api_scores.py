@@ -232,7 +232,7 @@ class ScoreAPITest(TestCase):
     def test_score_delete_own(self):
         """Test deleting own score"""
         initial_quota = self.user.used_quota_mb
-        score_size_mb = self.score1.size_bytes // (1024 * 1024)
+        score_size_mb = self.score1.size_bytes / (1024 * 1024)   # 쿼터는 실수 MB
         
         response = self.client.delete(self.detail_url(self.score1.id))
         
@@ -244,7 +244,7 @@ class ScoreAPITest(TestCase):
         # Verify quota was updated
         self.user.refresh_from_db()
         expected_quota = initial_quota - score_size_mb
-        self.assertEqual(self.user.used_quota_mb, expected_quota)
+        self.assertAlmostEqual(self.user.used_quota_mb, expected_quota)
     
     def test_score_delete_other_user_forbidden(self):
         """Test that users cannot delete other users' scores"""

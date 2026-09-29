@@ -4,6 +4,11 @@ from django.utils import timezone
 import uuid
 
 
+def bytes_to_mb(size_bytes):
+    """쿼터 단위(MB, 실수) — 올릴 때 더하고 지울 때 빼는 값이 같아야 한다"""
+    return (size_bytes or 0) / (1024 * 1024)
+
+
 class User(AbstractUser):
     """Custom User model extending Django's AbstractUser"""
     
@@ -16,7 +21,9 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='solo')
     total_quota_mb = models.IntegerField(default=200)
-    used_quota_mb = models.IntegerField(default=0)
+    # MB 단위 실수 — 파일마다 bytes / 2**20 을 더하고 뺀다(2 의 거듭제곱으로 나눈 값이라 더하고 빼도 오차가 쌓이지 않는다).
+    # 예전엔 정수(파일마다 MB 아래 버림)라 1MB 보다 작은 PDF 는 0 으로 셌다
+    used_quota_mb = models.FloatField(default=0)
     referral_code = models.CharField(max_length=20, unique=True, blank=True, null=True)
     
     USERNAME_FIELD = 'email'

@@ -13,8 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 def size_mb(size_bytes):
-    """쿼터 단위 — 올릴 때 더하고 지울 때 빼는 값이 같아야 한다"""
-    return size_bytes // (1024 * 1024)
+    """쿼터 단위(MB, 실수) — 올릴 때 더하고 지울 때 빼는 값이 같아야 한다(core.models.bytes_to_mb)"""
+    from core.models import bytes_to_mb
+    return bytes_to_mb(size_bytes)
 
 
 def start_processing(score):

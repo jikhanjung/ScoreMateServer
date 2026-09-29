@@ -339,7 +339,8 @@ class QuotaManager:
             raise ValueError(f"Quota reservation belongs to different user")
         
         size_bytes = reservation_data['size_bytes']
-        size_mb = size_bytes // (1024 * 1024)
+        from core.models import bytes_to_mb
+        size_mb = bytes_to_mb(size_bytes)
         
         # Update user quota
         user.used_quota_mb += size_mb
@@ -363,7 +364,8 @@ class QuotaManager:
         """
         Release quota (step 3 - for file deletion)
         """
-        size_mb = size_bytes // (1024 * 1024)
+        from core.models import bytes_to_mb
+        size_mb = bytes_to_mb(size_bytes)
         user.used_quota_mb = max(0, user.used_quota_mb - size_mb)
         user.save(update_fields=['used_quota_mb'])
         

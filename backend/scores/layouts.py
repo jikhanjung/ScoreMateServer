@@ -9,6 +9,7 @@
 import hashlib
 import json
 import logging
+import re
 
 from files.utils import get_storage
 from . import score_layout
@@ -69,7 +70,8 @@ def analyze_version(version, pdf_bytes=None):
         Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())   # 기기가 다음 동기화에 알아채게
     from .model_layouts import refresh_agreement
     refresh_agreement(version)            # 모델 위치가 먼저 있었으면 새 PDF 분석과 다시 맞춘다
-    return analysis
+    apply_part_labels(version)            # 인식 결과가 먼저 있었으면 파트 이름을 보표 이름으로
+    return ScoreAnalysis.objects.get(pk=analysis.pk)
 
 
 def staves_per_system(version):
@@ -127,6 +129,70 @@ def delivered_layout(version):
     if model is not None and (model.data or {}).get('system_count'):
         return model, 'model'
     return (pdf, 'pdf') if pdf is not None else (None, None)
+
+
+PLACEHOLDER_NAME = re.compile(r'^(staff|보표)\s*\d+$', re.I)
+LABELS_FROM = 'musicxml-parts'
+
+
+def part_labels(version):
+    """악보 인식 결과의 파트 이름(사람이 고친 것 포함)을 보표 순서로 — 파트마다 보표 수만큼. 자리표시("Staff 1")는 None.
+    인식이 없으면 None"""
+    from .omr import ANALYZER as OMR, STATUS_OK
+    analysis = ScoreAnalysis.objects.filter(version=version, analyzer=OMR).first()    # 캐시된 prefetch 가 아니라 지금 값
+    if analysis is None or (analysis.data or {}).get('status') != STATUS_OK:
+        return None
+    labels = []
+    for part in (analysis.data or {}).get('parts') or []:
+        name = ' '.join(str(part.get('name') or '').split())
+        labels += [None if not name or PLACEHOLDER_NAME.match(name) else name] * max(1, int(part.get('staves') or 1))
+    return labels or None
+
+
+def apply_part_labels(version):
+    """보표 · 마디 위치 파일(PDF 분석 · 모델 위치)의 staffLabels 를 파트 이름으로 — 보표 수가 맞는 시스템만.
+    파일이 바뀌면 sha256 · 크기를 맞추고 악보 updated_at 을 올린다(기기가 다시 받는다). 바뀐 파일 수를 돌려준다"""
+    from django.utils import timezone
+    from .models import Score
+    labels = part_labels(version)
+    if not labels or not any(labels):          # 인식이 없거나 이름이 모두 자리표시("Staff 1") — PDF 에서 읽은 것을 그대로
+        return 0
+    storage = get_storage()
+    changed = 0
+    for analysis in ScoreAnalysis.objects.filter(version=version, analyzer__in=[ANALYZER, 'model-layout']):
+        data = analysis.data or {}
+        if not data.get('layout_key'):
+            continue
+        try:
+            document = json.loads(storage.read_bytes(data['layout_key']))
+        except Exception:  # noqa: BLE001
+            continue
+        before = json.dumps(document, sort_keys=True)
+        by_system = {}
+        for page in document['pages']:
+            for index, system in enumerate(page['systems']):
+                if len(system['staffBands']) != len(labels):
+                    continue                        # 이 시스템은 보표 수가 다르다(숨긴 보표 등) — 그대로
+                old = system.get('staffLabels') or [None] * len(labels)
+                system['staffLabels'] = [new if new else (old[k] if k < len(old) else None) for k, new in enumerate(labels)]
+                by_system[(page['pageIndex'], index)] = system['staffLabels']
+        for staff in document.get('staves') or []:
+            names = by_system.get((staff['pageIndex'], staff['systemIndex']))
+            if names is not None and staff['staffIndex'] < len(names):
+                staff['label'] = names[staff['staffIndex']]
+        if by_system:
+            document['labels_from'] = LABELS_FROM
+        if json.dumps(document, sort_keys=True) == before:
+            continue
+        raw = json.dumps(document, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        storage.write_bytes(data['layout_key'], raw, 'application/json')
+        new_data = dict(data, layout_sha256=hashlib.sha256(raw).hexdigest(), layout_bytes=len(raw),
+                        labels=sorted({l for l in labels if l}), labels_from=LABELS_FROM)
+        ScoreAnalysis.objects.filter(pk=analysis.pk).update(data=new_data, updated_at=timezone.now())
+        changed += 1
+    if changed:
+        Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())
+    return changed
 
 
 def delivered_layout_document(version):

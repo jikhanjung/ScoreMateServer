@@ -196,6 +196,8 @@ def ingest(version, *, sha256, status, musicxml='', run=None, problems=None, met
     analysis, _ = save_analysis(version.score, user=version.score.user, analyzer=ANALYZER,
                                 analyzer_version=ANALYZER_VERSION, sha256=sha256, data=data, version=version)
     ScoreAnalysis.objects.filter(pk=analysis.pk).update(uploaded_by=None)   # 사람이 올린 것이 아니다
+    from .layouts import apply_part_labels
+    apply_part_labels(version)            # 파트 이름을 보표 · 마디 위치 파일의 보표 이름으로
     return analysis
 
 
@@ -242,6 +244,8 @@ def rename_parts(version, names):
     with transaction.atomic():
         ScoreAnalysis.objects.filter(pk=analysis.pk).update(data=data, updated_at=timezone.now())
         Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())
+    from .layouts import apply_part_labels
+    apply_part_labels(version)            # 고친 이름을 보표 · 마디 위치 파일에도
     return changed
 
 

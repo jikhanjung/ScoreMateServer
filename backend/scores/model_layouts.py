@@ -139,7 +139,9 @@ def ingest(version, *, sha256, status, pages=None, run=None, problems=None):
         analysis, _ = ScoreAnalysis.objects.update_or_create(version=version, analyzer=ANALYZER, defaults={
             'analyzer_version': ANALYZER_VERSION, 'data': data, 'uploaded_by': None, 'device': None})
         Score.objects.filter(pk=version.score_id).update(updated_at=timezone.now())
-    return analysis
+    from .layouts import apply_part_labels
+    apply_part_labels(version)
+    return ScoreAnalysis.objects.get(pk=analysis.pk)
 
 
 def refresh_agreement(version):

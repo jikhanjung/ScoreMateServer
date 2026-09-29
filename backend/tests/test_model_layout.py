@@ -144,3 +144,53 @@ class ModelLayoutTest(WebTestBase):
         body = b''.join(Client().get(tv.get(info['url'])['Location']).streaming_content)
         self.assertEqual(hashlib.sha256(body).hexdigest(), info['sha256'])
         self.assertEqual(json.loads(body)['measured_by'], 'model')
+
+
+class PartLabelsTest(WebTestBase):
+    """악보 인식의 파트 이름(고친 것)을 보표 · 마디 위치 파일의 staffLabels 로 — 기기의 파트 보기 이름"""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.owner)
+        self.client.post(reverse('web:score_upload'), {
+            'files': [pdf_file('Moldau0607.pdf', (FIXTURES / 'Moldau0607.pdf').read_bytes())], 'title': 'Moldau'})
+        self.score = Score.objects.get(user=self.owner)
+        self.version = self.score.current_version
+        layouts.analyze_version(self.version)
+
+    def omr_ingest(self, names):
+        from .test_omr import xml
+        parts = tuple((f'P{i}', n) for i, n in enumerate(names, 1))
+        bundle = {'version_id': self.version.pk, 'sha256': self.version.content_hash, 'status': 'ok',
+                  'musicxml': xml(parts=parts)}
+        with patch('sys.stdin', io.StringIO(json.dumps(bundle))):
+            call_command('omr_ingest', stdout=io.StringIO())
+
+    def labels(self):
+        data = ScoreAnalysis.objects.get(version=self.version, analyzer=layouts.ANALYZER).data
+        document = json.loads((self.files_root / data['layout_key']).read_text())
+        return data, document
+
+    def test_part_names_become_staff_labels_and_follow_renames(self):
+        before = self.labels()[0]['layout_sha256']
+        self.omr_ingest(['진호', '예진', '하진', '예원', '은석'])
+        data, document = self.labels()
+        self.assertEqual(document['pages'][0]['systems'][0]['staffLabels'], ['진호', '예진', '하진', '예원', '은석'])
+        self.assertEqual([s['label'] for s in document['staves'][:5]], ['진호', '예진', '하진', '예원', '은석'])
+        self.assertEqual(document['labels_from'], 'musicxml-parts')
+        self.assertNotEqual(data['layout_sha256'], before)
+
+        from scores.omr import rename_parts
+        rename_parts(self.score.current_version, {'P4': '예완'})               # 사람이 고친다 → 기기 파일도
+        data, document = self.labels()
+        self.assertEqual(document['pages'][12]['systems'][1]['staffLabels'][3], '예완')
+
+    def test_placeholders_and_mismatched_systems_are_left_alone(self):
+        self.omr_ingest(['Staff 1', 'Staff 2', 'Staff 3', 'Staff 4', 'Staff 5'])  # 이름 없는 악보
+        _, document = self.labels()
+        self.assertNotIn('labels_from', document)
+        self.assertEqual(document['pages'][0]['systems'][0]['staffLabels'], [None] * 5)
+        ScoreAnalysis.objects.filter(analyzer='astra-musicxml').delete()
+        self.omr_ingest(['A', 'B'])                                           # 보표 5 개인데 파트 둘 — 넣지 않는다
+        _, document = self.labels()
+        self.assertEqual(document['pages'][0]['systems'][0]['staffLabels'], [None] * 5)

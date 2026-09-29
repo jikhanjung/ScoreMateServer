@@ -19,7 +19,8 @@ from . import score_layout
 from .models import Score, ScoreAnalysis, ScoreVersion
 
 ANALYZER = 'model-layout'
-ANALYZER_VERSION = '1'
+ANALYZER_VERSION = '2'           # 2: 보표마다 적힌 같은 박자표를 시스템당 하나로(PDF 분석과 같은 모양)
+TIME_SIGNATURE_X_TOL = 3         # 앱 TimeSignatureDetector 의 X_TOL 과 같다
 
 
 class ModelLayoutError(ValueError):
@@ -72,9 +73,14 @@ def to_pages(read_pages, sizes):
                 staff_bands=[(score_layout.round1(t * fy), score_layout.round1(b * fy)) for t, b in s['staves']],
                 barlines=[left] + [score_layout.round1(x * fx) for x in s['barlines'] if x * fx > left + 4],
                 staff_labels=[(n or '').strip() or None for n in names]))
-            for mark in s.get('time_signatures') or []:
-                marks.append(score_layout.TimeSignatureMark(system_index, score_layout.f32(mark['x'] * fx),
-                                                            int(mark['numerator']), int(mark['denominator'])))
+            # 모델은 보표마다 하나씩 적는다 — PDF 분석처럼 시스템에서 x 가 가깝고 박자가 같은 것은 하나로
+            for mark in sorted(s.get('time_signatures') or [], key=lambda m: m['x']):
+                x = score_layout.f32(mark['x'] * fx)
+                n, d = int(mark['numerator']), int(mark['denominator'])
+                if any(m.system_index == system_index and abs(m.x - x) <= TIME_SIGNATURE_X_TOL and
+                       (m.numerator, m.denominator) == (n, d) for m in marks):
+                    continue
+                marks.append(score_layout.TimeSignatureMark(system_index, x, n, d))
         pages.append(score_layout.PageLayout(index, width, height, systems, marks))
     return pages
 

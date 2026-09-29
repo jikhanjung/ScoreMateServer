@@ -102,6 +102,16 @@ class ModelLayoutTest(WebTestBase):
         page = self.client.get(reverse('web:score_detail', args=[self.score.pk]))
         self.assertContains(page, 'PDF 분석과 13/13쪽 같음')
 
+    def test_time_signatures_repeated_per_staff_become_one_per_system(self):
+        reading = as_model_reading(self.pdf_document)
+        mark = reading[0]['systems'][0]['time_signatures'][0]
+        reading[0]['systems'][0]['time_signatures'] = [dict(mark, x=mark['x'] + dx) for dx in (0, 1, -1, 2, 0)]  # 보표 다섯
+        self.ingest(reading)
+        data = ScoreAnalysis.objects.get(version=self.version, analyzer=model_layouts.ANALYZER).data
+        document = json.loads((self.files_root / data['layout_key']).read_text())
+        self.assertEqual([(t['systemIndex'], t['numerator'], t['denominator']) for t in document['pages'][0]['timeSignatures']],
+                         [(0, 6, 8)])
+
     def test_structure_difference_is_reported(self):
         reading = as_model_reading(self.pdf_document)
         reading[2]['systems'][0]['barlines'].pop(0)              # 3쪽 첫 시스템 마디선 하나를 놓쳤다

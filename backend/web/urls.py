@@ -52,6 +52,9 @@ urlpatterns = [
     path('devices/<uuid:pk>/revoke/', views.device_revoke, name='device_revoke'),
     path('devices/<uuid:pk>/sync/', views.device_sync, name='device_sync'),
 
+    path('manage/users/', views.user_list, name='users'),
+    path('manage/users/<int:pk>/', views.user_edit, name='user_edit'),
+
     path('join/', views.join, name='join_form'),
     path('join/<str:code>/', views.join, name='join'),
 ]

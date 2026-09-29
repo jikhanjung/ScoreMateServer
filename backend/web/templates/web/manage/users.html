@@ -1,0 +1,40 @@
+{% extends 'web/base.html' %}
+{% block title %}사용자 관리{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>사용자 관리</h1><p class="muted">등급 · 저장 공간 · 관리자 권한 · 사용 중지를 바꿉니다. 관리자만 볼 수 있습니다.</p></div>
+</div>
+<form method="get" class="row" style="margin-bottom:1rem">
+  <input type="search" name="q" value="{{ q }}" placeholder="이름 · 이메일" aria-label="검색">
+  <button class="btn sm" type="submit">찾기</button>
+</form>
+<div class="box table-wrap">
+  <table class="stacked">
+    <thead><tr><th>이름</th><th>이메일</th><th>등급</th><th>저장 공간</th><th>악보</th><th>기기</th><th>가입</th><th>마지막 로그인</th><th>상태</th></tr></thead>
+    <tbody>
+    {% for u in page %}
+    <tr class="{% if not u.is_active %}muted{% endif %}">
+      <td><a href="{% url 'web:user_edit' u.pk %}">{{ u.username }}</a></td>
+      <td class="small">{{ u.email }}</td>
+      <td>{{ u.grade_label }}</td>
+      <td class="small">{{ u.used_quota_mb|floatformat:-1 }} / {{ u.total_quota_mb }}MB ({{ u.used_pct }}%)</td>
+      <td>{{ u.score_count }}</td>
+      <td>{{ u.device_count }}</td>
+      <td class="small">{{ u.date_joined|date:'Y-m-d' }}</td>
+      <td class="small">{{ u.last_login|date:'Y-m-d H:i'|default:'—' }}</td>
+      <td>{% if u.is_superuser %}<span class="badge">관리자</span> {% endif %}{% if not u.is_active %}<span class="badge plain">사용 중지</span>{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="9" class="muted">사용자가 없습니다.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if page.has_other_pages %}
+<div class="row" style="margin-top:.8rem">
+  {% if page.has_previous %}<a class="btn sm" href="?q={{ q|urlencode }}&page={{ page.previous_page_number }}">이전</a>{% endif %}
+  <span class="muted small">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a class="btn sm" href="?q={{ q|urlencode }}&page={{ page.next_page_number }}">다음</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

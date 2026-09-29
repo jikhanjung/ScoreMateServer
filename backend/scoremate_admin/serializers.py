@@ -9,10 +9,11 @@ class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = (
-            'id', 'email', 'username', 'is_active', 'is_staff',
+            'id', 'email', 'username', 'is_active', 'is_staff', 'is_superuser',
             'plan', 'total_quota_mb', 'used_quota_mb', 'date_joined', 'last_login'
         )
-        read_only_fields = ('id', 'email', 'username', 'date_joined', 'last_login')
+        # 바꿀 수 있는 것(plan · total_quota_mb · is_superuser · is_active)은 core/services.update_user 를 거친다
+        read_only_fields = ('id', 'email', 'username', 'is_staff', 'used_quota_mb', 'date_joined', 'last_login')
 
 
 class AdminTaskSerializer(serializers.ModelSerializer):

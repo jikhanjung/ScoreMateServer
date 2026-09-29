@@ -1,0 +1,41 @@
+{% extends 'web/base.html' %}
+{% block title %}{{ target.username }} · 사용자 관리{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>{{ target.username }}</h1><p class="muted"><a href="{% url 'web:users' %}">← 사용자 관리</a></p></div>
+</div>
+<div class="box" style="max-width:640px">
+  <dl class="meta" style="margin-top:0">
+    <dt>이메일</dt><dd>{{ target.email|default:'—' }}</dd>
+    <dt>가입</dt><dd>{{ target.date_joined|date:'Y-m-d H:i' }}</dd>
+    <dt>마지막 로그인</dt><dd>{{ target.last_login|date:'Y-m-d H:i'|default:'—' }}</dd>
+    <dt>올린 악보</dt><dd>{{ score_count }}개</dd>
+    <dt>연결 기기</dt><dd>{% for d in devices %}{{ d.name }}{% if d.last_seen_at %} <span class="muted small">({{ d.last_seen_at|date:'Y-m-d' }})</span>{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}없음{% endfor %}</dd>
+  </dl>
+  <div class="small">저장 공간 {{ target.used_quota_mb|floatformat:-1 }}MB / {{ target.total_quota_mb }}MB · 등급 {{ grade_label }}</div>
+  <div class="quota"><span style="width:{{ used_pct }}%"></span></div>
+</div>
+
+<h2>바꾸기</h2>
+<div class="box" style="max-width:640px">
+  <form method="post" class="stack">{% csrf_token %}
+    <label>등급
+      <select name="grade">
+        {% for key, label, quota in grades %}<option value="{{ key }}" {% if key == target.plan %}selected{% endif %}>{{ label }} — 기본 {{ quota }}MB</option>{% endfor %}
+      </select>
+    </label>
+    <label>저장 공간 한도(MB)
+      <input type="number" name="quota_mb" min="0" step="1" value="{{ target.total_quota_mb }}">
+    </label>
+    <p class="muted small">등급을 바꾸고 한도를 그대로 두면 그 등급의 기본 한도가 들어갑니다. 한도를 따로 적으면 그 값이 들어갑니다.</p>
+    <label class="choice"><input type="checkbox" name="is_superuser" {% if target.is_superuser %}checked{% endif %} {% if is_self %}disabled{% endif %}> 관리자 — 사용자 관리와 Django 관리 화면(/admin/)을 쓸 수 있습니다</label>
+    <label class="choice"><input type="checkbox" name="is_active" {% if target.is_active %}checked{% endif %} {% if is_self %}disabled{% endif %}> 사용 중 — 끄면 로그인 · 기기 동기화가 모두 막힙니다(악보는 그대로)</label>
+    {% if is_self %}
+    <input type="hidden" name="is_superuser" value="{% if target.is_superuser %}on{% endif %}">
+    <input type="hidden" name="is_active" value="{% if target.is_active %}on{% endif %}">
+    <p class="muted small">자기 자신의 관리자 권한과 사용 여부는 바꿀 수 없습니다.</p>
+    {% endif %}
+    <button class="btn primary" type="submit">저장</button>
+  </form>
+</div>
+{% endblock %}

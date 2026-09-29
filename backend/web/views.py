@@ -28,6 +28,7 @@ from devices import services as device_services
 from devices.models import Device
 from ensembles import services as ensemble_services
 from ensembles.models import Ensemble, Membership, Invite
+from core import services as user_services
 from core.models import SocialAccount
 from files.utils import LocalStorageHandler, generate_upload_s3_key, get_storage
 from scores.models import Score
@@ -923,3 +924,68 @@ def google_callback(request):
     if created_user:
         messages.success(request, '가입했습니다.')
     return redirect(next_url or reverse('web:scores'))
+
+
+# --- 사용자 관리(관리자만) — 규칙은 core/services.py. devlog 075 ---
+
+def _superuser_only(request):
+    if not request.user.is_superuser:
+        raise Http404
+
+
+@login_required
+def user_list(request):
+    _superuser_only(request)
+    users = get_user_model().objects.annotate(
+        score_count=Count('scores', distinct=True),
+        device_count=Count('devices', filter=Q(devices__revoked_at__isnull=True), distinct=True),
+    ).order_by('-is_active', '-is_superuser', 'username')
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        users = users.filter(Q(username__icontains=q) | Q(email__icontains=q) |
+                             Q(first_name__icontains=q) | Q(last_name__icontains=q))
+    page = Paginator(users, 50).get_page(request.GET.get('page'))
+    for u in page:
+        u.grade_label = user_services.grade_label(u.plan)
+        u.used_pct = min(100, round(u.used_quota_mb * 100 / u.total_quota_mb)) if u.total_quota_mb else 0
+    return render(request, 'web/manage/users.html', {'page': page, 'q': q})
+
+
+@login_required
+def user_edit(request, pk):
+    _superuser_only(request)
+    target = get_object_or_404(get_user_model(), pk=pk)
+    if request.method == 'POST':
+        quota = (request.POST.get('quota_mb') or '').strip()
+        grade = request.POST.get('grade') or None
+        try:
+            if quota and not quota.isdigit():
+                raise user_services.UserRuleError('저장 공간은 0 이상의 정수(MB)로 적어 주세요.')
+            # 등급을 바꾸면서 한도 칸을 그대로 두면 등급 기본 한도가 들어간다
+            quota_mb = int(quota) if quota and not (grade != target.plan and int(quota) == target.total_quota_mb) else None
+            changes = user_services.update_user(
+                request.user, target, grade=grade, quota_mb=quota_mb,
+                is_superuser=request.POST.get('is_superuser') == 'on',
+                is_active=request.POST.get('is_active') == 'on')
+        except user_services.UserRuleError as exc:
+            messages.error(request, _USER_RULE_MESSAGES.get(str(exc), str(exc)))
+        else:
+            messages.success(request, f'{target.username}: ' + ', '.join(changes) if changes else '바뀐 것이 없습니다.')
+            return redirect('web:user_edit', pk=target.pk)
+    used = target.used_quota_mb
+    return render(request, 'web/manage/user_edit.html', {
+        'target': target, 'grades': user_services.grades(),
+        'grade_label': user_services.grade_label(target.plan),
+        'used_pct': min(100, round(used * 100 / target.total_quota_mb)) if target.total_quota_mb else 0,
+        'score_count': Score.objects.filter(user=target).count(),
+        'devices': Device.objects.filter(user=target, revoked_at__isnull=True).order_by('-last_seen_at'),
+        'is_self': target.pk == request.user.pk,
+    })
+
+
+_USER_RULE_MESSAGES = {
+    'You cannot remove your own administrator role.': '자기 자신의 관리자 권한은 뺄 수 없습니다.',
+    'You cannot deactivate yourself.': '자기 자신은 사용 중지할 수 없습니다.',
+    'At least one active administrator must remain.': '사용 중인 관리자가 적어도 한 명 있어야 합니다.',
+    'Quota must not be negative.': '저장 공간은 0 이상이어야 합니다.',
+}

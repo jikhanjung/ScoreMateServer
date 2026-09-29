@@ -1,11 +1,12 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import BasePermission, IsAdminUser
 from rest_framework.response import Response
 from django.contrib.auth.hashers import make_password
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
+from core import services as user_services
 from core.models import User
 from tasks.models import Task
 from .serializers import AdminUserSerializer, AdminTaskSerializer
@@ -14,10 +15,16 @@ from scores.models import Score
 from setlists.models import Setlist
 
 
+class IsSuperuser(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.is_superuser)
+
+
 class AdminUserViewSet(viewsets.ModelViewSet):
+    """사용자 관리 — 관리자(superuser)만. 바꾸기는 웹 /manage/users/ 와 같은 규칙(core/services.py)"""
     queryset = User.objects.all().order_by('-date_joined')
     serializer_class = AdminUserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsSuperuser]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['is_active', 'is_staff', 'plan']
     search_fields = ['email', 'username']
@@ -25,7 +32,20 @@ class AdminUserViewSet(viewsets.ModelViewSet):
 
     http_method_names = ['get', 'patch', 'head', 'options']
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def partial_update(self, request, *args, **kwargs):
+        user = self.get_object()
+        serializer = self.get_serializer(user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            user_services.update_user(request.user, user, grade=data.get('plan'), quota_mb=data.get('total_quota_mb'),
+                                      is_superuser=data.get('is_superuser'), is_active=data.get('is_active'))
+        except user_services.UserRuleError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        user.refresh_from_db()
+        return Response(self.get_serializer(user).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsSuperuser])
     def reset_password(self, request, pk=None):
         user = self.get_object()
         new_password = request.data.get('new_password')

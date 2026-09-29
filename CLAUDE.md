@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - New rule: **personal scores are private; ensemble scores are readable by that ensemble's members only.** No public sharing (arrangements are copyrighted works).
 - Real-time sync (beat / bar / page) during rehearsal stays **client-to-client on the LAN** — the server is never in the real-time path.
 
-### Status (2026-09-29) — 499 backend tests passing, 0.12.4 in production (see HANDOFF.md)
+### Status (2026-09-29) — 511 backend tests passing, 0.13.0 in production (see HANDOFF.md)
 | Stage | Content | Status |
 |---|---|---|
 | S0 | Repo cleanup, SQLite by default, Celery optional (eager when no `REDIS_URL`) | ✅ |
@@ -37,6 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | — | One score pipeline (host cron `score_pipeline.sh`): ① PDF analysis → ② model layout → ③ recognition, page-by-page interleaving, hints from the trusted layout | ✅ devlog 072 |
 | — | Layout staffLabels from (human-corrected) recognized part names; model time signatures merged per system; summary of the two layout analyses | ✅ devlog 072, 073 |
 | — | Web menus: "악보 관리" (all scores · setlists sub-tabs) and "기기 관리"; window titles "ScoreMate · …"; "악보 추가" button | ✅ devlog 074 |
+| — | User management (superuser only, web `/manage/users/` + admin API): grade (`plan` → default quota, `USER_GRADES`), quota override, admin role, deactivate; rules in `core/services.py` | ✅ devlog 075 |
 
 ## Development Commands
 
@@ -136,7 +137,7 @@ Before moving to the next stage:
 ```
 backend/
   scoremateserver/   # settings (env vars), urls, celery
-  core/              # auth, users, quota, referrals
+  core/              # auth, users, quota, referrals; services.py = user management rules (grade/quota/admin/active)
   ensembles/         # Ensemble, Membership, Invite; services.py = membership/invite rules (API + web)
   devices/           # TV linking (RFC 8628): Device, DeviceAuthorization, device-aware JWT auth + refresh
   web/               # web UI (Django templates, session auth) — uses the same services/permissions as the API

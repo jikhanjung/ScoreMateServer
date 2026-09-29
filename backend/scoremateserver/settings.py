@@ -396,3 +396,10 @@ if LOG_DIR:
         'filename': os.path.join(LOG_DIR, 'scoremate.log'), 'formatter': 'verbose',
     }
     _log_handlers.append('file')
+
+# 사용자 등급(User.plan) → (이름, 기본 저장 공간 MB). 등급을 바꾸면 이 한도가 들어간다(사용자별로 따로 줄 수 있다). devlog 075
+USER_GRADES = {
+    'solo': ('기본', int(os.environ.get('GRADE_SOLO_MB', 200))),
+    'pro': ('프로', int(os.environ.get('GRADE_PRO_MB', 1000))),
+    'enterprise': ('단체', int(os.environ.get('GRADE_ENTERPRISE_MB', 5000))),
+}

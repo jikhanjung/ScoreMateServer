@@ -181,6 +181,17 @@ class UploadTest(WebTestBase):
         upload = self.client.get(reverse('web:score_upload'))
         self.assertContains(upload, '<title>ScoreMate · 악보 추가</title>', html=True)
 
+    def test_setlists_live_under_scores(self):
+        self.as_user(self.member)
+        scores = self.client.get(reverse('web:scores'))
+        self.assertNotContains(scores, 'class="">세트리스트</a>\n      <a href="/devices/"')
+        self.assertContains(scores, '<nav class="subtabs"')
+        self.assertContains(scores, f'<a href="{reverse("web:setlists")}" class="">세트리스트</a>', html=True)
+        setlists = self.client.get(reverse('web:setlists'))
+        self.assertContains(setlists, f'<a href="{reverse("web:setlists")}" class="on">세트리스트</a>', html=True)
+        self.assertContains(setlists, f'<a href="{reverse("web:scores")}" class="on">악보 관리</a>', html=True)   # 위쪽 메뉴
+        self.assertContains(setlists, f'<a href="{reverse("web:devices")}" class="">기기 관리</a>', html=True)
+
     def test_upload_page_has_big_dropzone(self):
         self.as_user(self.member)
         page = self.client.get(reverse('web:score_upload'))

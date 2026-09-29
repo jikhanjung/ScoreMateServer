@@ -214,3 +214,9 @@ details > summary { cursor: pointer; color: var(--accent); }
 .dropzone-file { padding: .15rem .55rem; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: .85rem; }
 
 .pipeline span.done { color: var(--ok); }
+
+/* 악보 영역의 하위 탭 — 모든 악보 | 세트리스트 */
+.subtabs { display: flex; gap: .25rem; margin: -.25rem 0 1rem; border-bottom: 1px solid var(--line); }
+.subtabs a { padding: .45rem .8rem; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.subtabs a:hover { color: var(--text); text-decoration: none; }
+.subtabs a.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }

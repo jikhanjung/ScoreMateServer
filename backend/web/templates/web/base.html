@@ -13,10 +13,9 @@
     {% if user.is_authenticated %}
     {% with url_name=request.resolver_match.url_name %}
     <nav class="nav">
-      <a href="{% url 'web:scores' %}" class="{% if url_name == 'scores' or url_name == 'score_detail' or url_name == 'score_edit' or url_name == 'score_upload' %}on{% endif %}">악보</a>
+      <a href="{% url 'web:scores' %}" class="{% if url_name == 'scores' or url_name == 'score_detail' or url_name == 'score_edit' or url_name == 'score_upload' or 'setlist' in url_name %}on{% endif %}">악보 관리</a>
 {% if ensembles_enabled %}<a href="{% url 'web:ensembles' %}" class="{% if 'ensemble' in url_name %}on{% endif %}">앙상블</a>{% endif %}
-      <a href="{% url 'web:setlists' %}" class="{% if 'setlist' in url_name %}on{% endif %}">세트리스트</a>
-      <a href="{% url 'web:devices' %}" class="{% if url_name == 'devices' or url_name == 'activate' %}on{% endif %}">연결 기기</a>
+      <a href="{% url 'web:devices' %}" class="{% if url_name == 'devices' or url_name == 'activate' %}on{% endif %}">기기 관리</a>
     </nav>
     {% endwith %}
     <div class="who">

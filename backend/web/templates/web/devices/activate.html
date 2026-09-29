@@ -23,7 +23,7 @@
         <label>이 기기가 받을 세트리스트</label>
         {% if setlists %}
         <div class="checklist">{% for s in setlists %}<label class="choice small"><input type="checkbox" name="setlists" value="{{ s.pk }}"> {{ s.title }}</label>{% endfor %}</div>
-        {% else %}<p class="hint">세트리스트가 아직 없습니다 — 연결한 뒤 세트리스트를 만들고 "연결 기기" 화면에서 고르세요.</p>{% endif %}
+        {% else %}<p class="hint">세트리스트가 아직 없습니다 — 연결한 뒤 세트리스트를 만들고 "기기 관리" 화면에서 고르세요.</p>{% endif %}
       </div>
       <div class="actions">
         <button class="btn primary" type="submit" name="decision" value="approve">연결</button>

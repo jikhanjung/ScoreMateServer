@@ -1,6 +1,7 @@
 {% extends 'web/base.html' %}
 {% block title %}세트리스트{% endblock %}
 {% block content %}
+{% include 'web/_library_tabs.html' %}
 <div class="head"><div><h1>세트리스트</h1><p class="muted">연주회 · 합주 곡목{% if ensembles_enabled %}. 앙상블 곡목은 멤버 모두의 기기에 갑니다{% endif %}.</p></div></div>
 {% if setlists %}
 <div class="box table-wrap">

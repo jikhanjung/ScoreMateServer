@@ -1,0 +1,6 @@
+{% with url_name=request.resolver_match.url_name %}
+<nav class="subtabs" aria-label="악보">
+  <a href="{% url 'web:scores' %}" class="{% if 'setlist' not in url_name %}on{% endif %}">모든 악보</a>
+  <a href="{% url 'web:setlists' %}" class="{% if 'setlist' in url_name %}on{% endif %}">세트리스트</a>
+</nav>
+{% endwith %}

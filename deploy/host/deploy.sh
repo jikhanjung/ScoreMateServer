@@ -4,7 +4,7 @@
 #   /srv/scoremate/deploy-prod.sh X.Y.Z    (DEPLOY_SNAPSHOT=1 — 배포 전 DB 스냅샷)
 #
 # 흐름: pull → .env IMAGE_TAG → down → pre-deploy DB 스냅샷 → up(전 서비스) → healthz 대기
-#       → DB · 파일 저장소 바인딩 게이트 → smoke. down~up 사이 nginx 가 502 → maintenance.html.
+#       → DB · 파일 저장소 바인딩 게이트 → smoke → 오래된 이미지 정리(PRUNE_KEEP, 기본 3). down~up 사이 nginx 가 502 → maintenance.html.
 # 근거: devdocs guides/web/deployment.md §5 · data-safety.md.
 # Usage: DEPLOY_SNAPSHOT=0|1 /srv/scoremate/deploy.sh X.Y.Z
 set -euo pipefail
@@ -135,5 +135,13 @@ else
 fi
 
 echo ""
+# 오래된 이미지 정리 — smoke 가 통과한 배포에서만(실패하면 위에서 끝나 되돌릴 이미지가 남는다).
+# 이 서비스 저장소만, 돌고 있는 것 포함 PRUNE_KEEP 개(기본 3 = 지금 + 되돌릴 둘). 0 이면 하지 않는다. 실패해도 배포는 성공이다.
+PRUNE_KEEP="${PRUNE_KEEP:-3}"
+if [ "${PRUNE_KEEP}" -gt 0 ] 2>/dev/null && [ -x "$ROOT/prune.sh" ]; then
+    echo "=== 오래된 이미지 정리 (최근 ${PRUNE_KEEP}개만) ==="
+    KEEP="${PRUNE_KEEP}" "$ROOT/prune.sh" 2>&1 | grep -E "^(Running|Removed|Nothing|Dry)" || echo "  (정리 실패 — 배포는 성공, 나중에 $ROOT/prune.sh)"
+fi
+
 echo "=== Done: scoremate -> ${VERSION} (port ${HOST_PORT}, smoke OK) ==="
 docker compose ps

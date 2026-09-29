@@ -89,6 +89,9 @@ sudo nginx -t && sudo systemctl reload nginx
 
 nginx(www-data)가 `files/` 를 읽을 수 있어야 한다 — 컨테이너가 umask 002 로 쓰므로 디렉터리 775 · 파일 664.
 
+오래된 이미지: 배포가 smoke 까지 통과하면 `prune.sh` 가 이 서비스 이미지를 **최근 3개**(돌고 있는 것 포함)만 남긴다.
+바꾸려면 `PRUNE_KEEP=5 ./deploy/remote-prod.sh X.Y.Z` 처럼, 끄려면 `PRUNE_KEEP=0`. 손으로: `KEEP=3 DRY_RUN=1 /srv/scoremate/prune.sh`.
+
 ## 백업 (data-safety.md)
 
 | 트랙 | 어디서 | 보관 |

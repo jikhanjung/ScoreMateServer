@@ -19,4 +19,5 @@ PROD_HOST=${PROD_HOST:-honestjung@cdgts.paleobytes.info}
 PROD_DEPLOY=${PROD_DEPLOY:-/srv/scoremate/deploy-prod.sh}
 
 echo "=== remote deploy → ${PROD_HOST}:${PROD_DEPLOY} $* ==="
-exec ssh "$PROD_HOST" "$PROD_DEPLOY" "$@"
+# PRUNE_KEEP: 배포 뒤 남길 이미지 수(기본 3, 0 = 정리 안 함) — 원격 deploy.sh 로 넘긴다
+exec ssh "$PROD_HOST" "PRUNE_KEEP=${PRUNE_KEEP:-3}" "$PROD_DEPLOY" "$@"
